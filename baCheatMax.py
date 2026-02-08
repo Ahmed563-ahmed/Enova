@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 
-import os, random, json
+import os, random, json, time
 
 import bascenev1 as bs
 
@@ -178,14 +178,6 @@ class Lang:
                 {"Spanish": "¡¡Eres ASOMBROSO!!",
                  "English": "You Are Amazing!!",
                  "Portuguese": "Você é incrível!!"},
-           "Owner Added":
-                {"Spanish": "¡Se agregó al propietario!",
-                 "English": "Owner added!",
-                 "Portuguese": "Proprietário adicionado!"},
-           "Is Owner":
-                {"Spanish": "¡Eres el propietario!",
-                 "English": "You are the owner!",
-                 "Portuguese": "Você é o proprietário!"},
            "Exe":
                 {"Spanish": "Comando Ejecutado",
                  "English": "Command Executed",
@@ -221,6 +213,39 @@ class Lang:
                 {"Spanish": "Necesitas tener activa la información.\n Usa el comando '-info' para activarle.",
                  "English": "You need to have info active.\n Use the '-info' command to activate it",
                  "Portuguese": "Você precisa ter as informações ativas.\n Use o comando '-info' para ativá-las"},
+            # الجمل الجديدة
+           "Custom Tag Set":
+                {"Spanish": f"Tag personalizado establecido para {subs}",
+                 "English": f"Custom tag set for {subs}",
+                 "Portuguese": f"Tag personalizado definido para {subs}"},
+           "Animation Tag Set":
+                {"Spanish": f"Tag animado establecido para {subs}",
+                 "English": f"Animation tag set for {subs}",
+                 "Portuguese": f"Tag animado definido para {subs}"},
+           "Ban Message":
+                {"Spanish": f"{subs[0]} ha sido baneado. Razón: {subs[1]}",
+                 "English": f"{subs[0]} has been banned. Reason: {subs[1]}",
+                 "Portuguese": f"{subs[0]} foi banido. Razão: {subs[1]}"},
+           "Unban Message":
+                {"Spanish": f"{subs} ha sido desbaneado",
+                 "English": f"{subs} has been unbanned",
+                 "Portuguese": f"{subs} foi desbanido"},
+           "Already Banned":
+                {"Spanish": f"{subs} ya está baneado",
+                 "English": f"{subs} is already banned",
+                 "Portuguese": f"{subs} já está banido"},
+           "Not Banned":
+                {"Spanish": f"{subs} no está baneado",
+                 "English": f"{subs} is not banned",
+                 "Portuguese": f"{subs} não está banido"},
+           "Banned Players":
+                {"Spanish": "Jugadores baneados:",
+                 "English": "Banned players:",
+                 "Portuguese": "Jogadores banidos:"},
+           "Player Banned Join":
+                {"Spanish": f"{subs} está baneado y no puede unirse",
+                 "English": f"{subs} is banned and cannot join",
+                 "Portuguese": f"{subs} está banido e não pode entrar"},
                      }
     
         language = ["Spanish", "English", "Portuguese"]
@@ -276,7 +301,349 @@ class PopupText(ptext.PopupText):
         
     def handlemessage(self, msg: Any) -> Any:
         pass
+
+class TagManager:
+    """مدير العلامات (التيجان) فوق رؤوس اللاعبين"""
     
+    def __init__(self):
+        self.tags = {}
+        self.animated_tags = {}
+        self.load_tags()
+    
+    def load_tags(self):
+        """تحميل العلامات المحفوظة"""
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxTags.json'
+        
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+            
+        if os.path.exists(file):
+            with open(file, 'r') as f:
+                data = json.load(f)
+                self.tags = data.get('tags', {})
+                self.animated_tags = data.get('animated_tags', {})
+    
+    def save_tags(self):
+        """حفظ العلامات"""
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxTags.json'
+        
+        data = {
+            'tags': self.tags,
+            'animated_tags': self.animated_tags
+        }
+        
+        with open(file, 'w') as f:
+            json.dump(data, f, indent=4)
+    
+    def set_custom_tag(self, client_id: int, text: str, color: str, scale: float = 1.0):
+        """تعيين علامة مخصصة للاعب"""
+        self.tags[str(client_id)] = {
+            'text': text,
+            'color': color,
+            'scale': scale,
+            'type': 'custom'
+        }
+        # إزالة إذا كان متحرك
+        if str(client_id) in self.animated_tags:
+            del self.animated_tags[str(client_id)]
+        self.save_tags()
+        self.apply_tag_to_player(client_id)
+    
+    def set_animation_tag(self, client_id: int, text: str, scale: float, 
+                         speed: float, colors: list[str]):
+        """تعيين علامة متحركة"""
+        self.animated_tags[str(client_id)] = {
+            'text': text,
+            'scale': scale,
+            'speed': speed,
+            'colors': colors,
+            'type': 'animated',
+            'current_color_index': 0
+        }
+        # إزالة إذا كان مخصص
+        if str(client_id) in self.tags:
+            del self.tags[str(client_id)]
+        self.save_tags()
+        self.apply_tag_to_player(client_id)
+    
+    def remove_tag(self, client_id: int):
+        """إزالة العلامة من اللاعب"""
+        client_str = str(client_id)
+        if client_str in self.tags:
+            del self.tags[client_str]
+        if client_str in self.animated_tags:
+            del self.animated_tags[client_str]
+        self.save_tags()
+        self.remove_tag_from_player(client_id)
+    
+    def apply_tag_to_player(self, client_id: int):
+        """تطبيق العلامة على اللاعب في اللعبة"""
+        with act().context:
+            actor = CommandFunctions.get_actor(client_id)
+            if actor:
+                self._apply_tag_to_actor(actor, client_id)
+    
+    def _apply_tag_to_actor(self, actor, client_id: int):
+        """تطبيق العلامة على الـ actor"""
+        client_str = str(client_id)
+        
+        # إزالة أي علامة موجودة
+        if hasattr(actor, '_custom_tag_timer'):
+            actor._custom_tag_timer = None
+        
+        # تطبيق علامة مخصصة
+        if client_str in self.tags:
+            tag_data = self.tags[client_str]
+            
+            # إنشاء عقدة نصية
+            pos = (-0.0, 1.5 * tag_data['scale'], 0.0)
+            
+            m = bs.newnode('math', owner=actor.node, attrs={'input1':
+                (pos[0], pos[1], pos[2]), 'operation': 'add'})
+            actor.node.connectattr('position_center', m, 'input2')
+            
+            color = Uts.colors().get(tag_data['color'], (1, 1, 1))
+            
+            actor._custom_tag = text.Text(
+                text=tag_data['text'],
+                color=color,
+                scale=tag_data['scale'],
+                h_align=text.Text.HAlign.CENTER
+            ).autoretain()
+            
+            m.connectattr('output', actor._custom_tag.node, 'position')
+        
+        # تطبيق علامة متحركة
+        elif client_str in self.animated_tags:
+            tag_data = self.animated_tags[client_str]
+            
+            # إنشاء عقدة نصية
+            pos = (-0.0, 1.5 * tag_data['scale'], 0.0)
+            
+            m = bs.newnode('math', owner=actor.node, attrs={'input1':
+                (pos[0], pos[1], pos[2]), 'operation': 'add'})
+            actor.node.connectattr('position_center', m, 'input2')
+            
+            actor._custom_tag = text.Text(
+                text=tag_data['text'],
+                color=Uts.colors().get(tag_data['colors'][0], (1, 1, 1)),
+                scale=tag_data['scale'],
+                h_align=text.Text.HAlign.CENTER
+            ).autoretain()
+            
+            m.connectattr('output', actor._custom_tag.node, 'position')
+            
+            # إنشاء مؤقت لتغيير الألوان
+            def change_color():
+                if not actor.node.exists():
+                    actor._custom_tag_timer = None
+                    return
+                
+                tag_data = self.animated_tags.get(client_str)
+                if not tag_data:
+                    return
+                
+                current_idx = tag_data.get('current_color_index', 0)
+                colors = tag_data.get('colors', [])
+                
+                if colors:
+                    next_idx = (current_idx + 1) % len(colors)
+                    color_name = colors[next_idx]
+                    color = Uts.colors().get(color_name, (1, 1, 1))
+                    
+                    if hasattr(actor, '_custom_tag') and actor._custom_tag.node.exists():
+                        actor._custom_tag.node.color = color
+                    
+                    # تحديث الفهرس
+                    tag_data['current_color_index'] = next_idx
+                    self.animated_tags[client_str] = tag_data
+            
+            actor._custom_tag_timer = bs.Timer(tag_data['speed'], change_color, repeat=True)
+    
+    def remove_tag_from_player(self, client_id: int):
+        """إزالة العلامة من اللاعب في اللعبة"""
+        with act().context:
+            actor = CommandFunctions.get_actor(client_id)
+            if actor and hasattr(actor, '_custom_tag'):
+                if actor._custom_tag.node.exists():
+                    actor._custom_tag.node.delete()
+                actor._custom_tag = None
+                
+                if hasattr(actor, '_custom_tag_timer'):
+                    actor._custom_tag_timer = None
+    
+    def get_tag_info(self, client_id: int) -> dict:
+        """الحصول على معلومات العلامة للاعب"""
+        client_str = str(client_id)
+        if client_str in self.tags:
+            return self.tags[client_str]
+        elif client_str in self.animated_tags:
+            return self.animated_tags[client_str]
+        return None
+
+class BanManager:
+    """مدير النظام لحظر اللاعبين"""
+    
+    def __init__(self):
+        self.bans = {}
+        self.load_bans()
+    
+    def load_bans(self):
+        """تحميل قائمة المحظورين"""
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxBans.json'
+        
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+            
+        if os.path.exists(file):
+            with open(file, 'r') as f:
+                self.bans = json.load(f)
+        else:
+            self.bans = {}
+    
+    def save_bans(self):
+        """حفظ قائمة المحظورين"""
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxBans.json'
+        
+        with open(file, 'w') as f:
+            json.dump(self.bans, f, indent=4)
+    
+    def ban_player(self, identifier, reason: str, banned_by: str):
+        """حظر لاعب"""
+        # البحث عن المعرف (قد يكون client_id أو pb_id)
+        player_info = self._find_player_info(identifier)
+        
+        if not player_info:
+            return False, "Player not found"
+        
+        player_id = player_info.get('pb_id', identifier)
+        
+        if str(player_id) in self.bans:
+            return False, "Player already banned"
+        
+        self.bans[str(player_id)] = {
+            'name': player_info.get('name', 'Unknown'),
+            'reason': reason,
+            'banned_by': banned_by,
+            'timestamp': time.time(),
+            'client_id': player_info.get('client_id'),
+            'pb_id': player_info.get('pb_id')
+        }
+        
+        self.save_bans()
+        
+        # فصل اللاعب إذا كان متصل
+        if player_info.get('client_id') != -1:
+            bs.disconnect_client(player_info['client_id'])
+        
+        return True, f"Player {player_info.get('name')} banned"
+    
+    def unban_player(self, identifier):
+        """إلغاء حظر لاعب"""
+        # البحث في المحظورين
+        for player_id, ban_info in list(self.bans.items()):
+            if (str(identifier) == player_id or 
+                str(identifier) == str(ban_info.get('client_id')) or
+                str(identifier).lower() in ban_info.get('name', '').lower()):
+                player_name = ban_info.get('name', 'Unknown')
+                del self.bans[player_id]
+                self.save_bans()
+                return True, f"Player {player_name} unbanned"
+        
+        return False, "Player not found in ban list"
+    
+    def is_banned(self, client_id: int, pb_id: str = None) -> bool:
+        """التحقق إذا كان اللاعب محظور"""
+        # التحقق بالـ client_id
+        for ban_info in self.bans.values():
+            if ban_info.get('client_id') == client_id:
+                return True
+        
+        # التحقق بالـ pb_id
+        if pb_id and str(pb_id) in self.bans:
+            return True
+            
+        return False
+    
+    def get_banned_player_info(self, client_id: int):
+        """الحصول على معلومات اللاعب المحظور"""
+        for ban_info in self.bans.values():
+            if ban_info.get('client_id') == client_id:
+                return ban_info
+        return None
+    
+    def get_ban_list(self) -> str:
+        """الحصول على قائمة المحظورين كنص"""
+        if not self.bans:
+            return "No banned players"
+        
+        result = getlanguage('Banned Players') + "\n"
+        result += "=" * 30 + "\n"
+        
+        for player_id, ban_info in self.bans.items():
+            name = ban_info.get('name', 'Unknown')
+            reason = ban_info.get('reason', 'No reason')
+            banned_by = ban_info.get('banned_by', 'Unknown')
+            
+            # تحويل التوقيت
+            timestamp = ban_info.get('timestamp', 0)
+            if timestamp:
+                time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
+            else:
+                time_str = "Unknown"
+            
+            result += f"Name: {name}\n"
+            result += f"Reason: {reason}\n"
+            result += f"Banned by: {banned_by}\n"
+            result += f"Time: {time_str}\n"
+            result += "-" * 20 + "\n"
+        
+        return result
+    
+    def _find_player_info(self, identifier):
+        """البحث عن معلومات اللاعب"""
+        # محاولة كـ client_id
+        try:
+            client_id = int(identifier)
+            if client_id in Uts.usernames:
+                return {
+                    'client_id': client_id,
+                    'name': Uts.usernames[client_id],
+                    'pb_id': Uts.userpbs.get(client_id)
+                }
+        except ValueError:
+            pass
+        
+        # البحث بالاسم
+        for cid, name in Uts.usernames.items():
+            if str(identifier).lower() in name.lower():
+                return {
+                    'client_id': cid,
+                    'name': name,
+                    'pb_id': Uts.userpbs.get(cid)
+                }
+        
+        # البحث بالـ pb_id
+        if identifier in Uts.userpbs.values():
+            for cid, pid in Uts.userpbs.items():
+                if pid == identifier:
+                    return {
+                        'client_id': cid,
+                        'name': Uts.usernames.get(cid, 'Unknown'),
+                        'pb_id': pid
+                    }
+        
+        return None
+
+# إنشاء مديري النظام
+tag_manager = TagManager()
+ban_manager = BanManager()
+
+
 class Commands:
     """Usa los distintos comandos dependiendo tu rango (All, Admins).
     
@@ -331,10 +698,10 @@ class Commands:
         
         if 'info' in ms[0].lower():
             with act().context:
-                bs.timer(0.01, bs.CallStrict(self.util.create_data_text, act()))
+                bs.timer(0.01, bs.Call(self.util.create_data_text, act()))
                 
         with act().context:
-            bs.timer(0.01, bs.CallStrict(self.util.create_live_chat, act(),
+            bs.timer(0.01, bs.Call(self.util.create_live_chat, act(),
                 chat=[self.client_id, self.message],
                 admin=self.fct.user_is_admin(self.client_id)))
     
@@ -342,10 +709,6 @@ class Commands:
         
         if self.fct.user_is_admin(self.client_id):
             self.admin_commands()
-            
-        # أوامر خاصة بالمالك
-        if self.fct.user_is_owner(self.client_id):
-            self.owner_commands()
     
     def command_all(self) -> None:
         msg = self.msg.strip()
@@ -406,7 +769,7 @@ class Commands:
                     subs=ms[0] + ' 0  La Pulga | ' + ms[0] + ' all La Pulga'), color=color)
             else:
                 self.fct.actor_command(ms=ms,
-                    call=bs.CallStrict(self.fct.actor_name, ' '.join(ms[2:])),
+                    call=bs.Call(self.fct.actor_name, ' '.join(ms[2:])),
                     attrs={'Actor': cls_node,
                            'ClientMessage': ClientMessage})
     
@@ -555,7 +918,7 @@ class Commands:
                     subs=ms[0] + ' 0  yellow | ' + ms[0] + ' all green'))
             else:
                 self.fct.actor_command(ms=ms,
-                    call=bs.CallStrict(self.fct.player_color, color),
+                    call=bs.Call(self.fct.player_color, color),
                     attrs={'Actor': cls_node,
                            'ClientMessage': ClientMessage})
     
@@ -689,29 +1052,119 @@ class Commands:
                 call=self.fct.spaz_sjump,
                 attrs={'Actor': cls_node,
                        'ClientMessage': ClientMessage})
-                       
-    def owner_commands(self) -> None:
-        msg = self.msg.strip()
-        ms = self.arguments
-        cls_node = self.fct.get_actor(self.client_id)
-        ClientMessage = self.clientmessage
         
-        ms[0] = ms[0].lower()
+        # === الأوامر الجديدة ===
+        elif ms[0] == '/customtag':
+            if len(ms) < 5:
+                ClientMessage(getlanguage('EJ', subs='/customtag Hello red 1.0 113'))
+            else:
+                try:
+                    text = ms[1]
+                    color = ms[2]
+                    scale = float(ms[3])
+                    target_id = int(ms[4])
+                    
+                    if color not in self.util.colors():
+                        ClientMessage(getlanguage('Info Color'))
+                        return
+                    
+                    if target_id not in self.util.usernames:
+                        ClientMessage(getlanguage('User Invalid', subs=target_id))
+                        return
+                    
+                    # التحقق من الصلاحيات (أدمنز وأونرز فقط)
+                    if not self.fct.user_is_admin(self.client_id):
+                        ClientMessage("You need admin permissions!")
+                        return
+                    
+                    tag_manager.set_custom_tag(target_id, text, color, scale)
+                    
+                    user = self.util.usernames[target_id]
+                    ClientMessage(getlanguage('Custom Tag Set', subs=user), color=(0, 1, 0))
+                    
+                except Exception as e:
+                    ClientMessage(f"Error: {e}")
         
-        # إضافة أوامر خاصة بالمالك هنا
-        if ms[0] == "/owner":
-            ClientMessage(getlanguage('Is Owner'), color=(1.0, 0.5, 0.0))
+        elif ms[0] == '/animationtag':
+            if len(ms) < 7:
+                ClientMessage(getlanguage('EJ', subs='/animationtag Hello 1.0 0.5 113 red green blue'))
+            else:
+                try:
+                    text = ms[1]
+                    scale = float(ms[2])
+                    speed = float(ms[3])
+                    target_id = int(ms[4])
+                    colors = ms[5:]
+                    
+                    if target_id not in self.util.usernames:
+                        ClientMessage(getlanguage('User Invalid', subs=target_id))
+                        return
+                    
+                    # التحقق من الألوان
+                    for color in colors:
+                        if color not in self.util.colors():
+                            ClientMessage(getlanguage('Info Color'))
+                            return
+                    
+                    # التحقق من الصلاحيات (أدمنز وأونرز فقط)
+                    if not self.fct.user_is_admin(self.client_id):
+                        ClientMessage("You need admin permissions!")
+                        return
+                    
+                    tag_manager.set_animation_tag(target_id, text, scale, speed, colors)
+                    
+                    user = self.util.usernames[target_id]
+                    ClientMessage(getlanguage('Animation Tag Set', subs=user), color=(0, 1, 0))
+                    
+                except Exception as e:
+                    ClientMessage(f"Error: {e}")
+        
+        elif ms[0] == '/ban':
+            if len(ms) < 3:
+                ClientMessage(getlanguage('EJ', subs='/ban 113 cheating'))
+            else:
+                identifier = ms[1]
+                reason = ' '.join(ms[2:])
+                
+                # التحقق من الصلاحيات
+                if not self.fct.user_is_admin(self.client_id):
+                    ClientMessage("You need admin permissions!")
+                    return
+                
+                banned_by = self.util.usernames.get(self.client_id, "Admin")
+                success, message = ban_manager.ban_player(identifier, reason, banned_by)
+                
+                if success:
+                    ClientMessage(getlanguage('Ban Message', subs=[identifier, reason]), color=(1, 0, 0))
+                else:
+                    ClientMessage(message, color=(1, 0.5, 0))
+        
+        elif ms[0] == '/unban':
+            if len(ms) < 2:
+                ClientMessage(getlanguage('EJ', subs='/unban 113'))
+            else:
+                identifier = ms[1]
+                
+                # التحقق من الصلاحيات
+                if not self.fct.user_is_admin(self.client_id):
+                    ClientMessage("You need admin permissions!")
+                    return
+                
+                success, message = ban_manager.unban_player(identifier)
+                
+                if success:
+                    ClientMessage(getlanguage('Unban Message', subs=identifier), color=(0, 1, 0))
+                else:
+                    ClientMessage(message, color=(1, 0.5, 0))
+        
+        elif ms[0] == '/banlist':
+            # التحقق من الصلاحيات
+            if not self.fct.user_is_admin(self.client_id):
+                ClientMessage("You need admin permissions!")
+                return
             
-        elif ms[0] == "/fullpower":
-            # إعطاء قوة كاملة للاعب
-            if cls_node is not None:
-                with act().context:
-                    # إعطاء جميع الـ powerups
-                    powerups = ['triple_bombs', 'punch', 'ice_bombs', 'impact_bombs', 
-                               'land_mines', 'sticky_bombs', 'shield', 'health', 'curse']
-                    for powerup in powerups:
-                        cls_node.handlemessage(bs.PowerupMessage(powerup))
-                    ClientMessage("Full Power Activated!", color=(1.0, 0.0, 1.0))
+            ban_list = ban_manager.get_ban_list()
+            ClientMessage(ban_list)
                        
 class CommandFunctions:
     def all_cmd() -> list[str]:
@@ -730,6 +1183,7 @@ class CommandFunctions:
             '/mute', '/unmute', '/gm', '-slow', '/speed',
             '/effect', '/punch', '/mbox', '/drop', '/gift',
             '/curse', '/superjump',
+            '/customtag', '/animationtag', '/ban', '/unban', '/banlist'  # الأوامر الجديدة
             ]
 
     def effects() -> list[str]:
@@ -796,7 +1250,7 @@ class CommandFunctions:
     def spaz_sleep(node: bs.Node) -> None:
         with act().context:
             for x in range(5):
-                bs.timer(x, bs.CallStrict(node.handlemessage, 'knockout', 5000.0))
+                bs.timer(x, bs.Call(node.handlemessage, 'knockout', 5000.0))
             
     def player_color(color: str, node: bs.Node) -> None:
         with act().context:
@@ -933,7 +1387,7 @@ class CommandFunctions:
             act()._ids.node.opacity = 0.5
             
             t_id = id(act()._ids.node)
-            bs.timer(8.0, bs.CallStrict(delete_text, t_id))
+            bs.timer(8.0, bs.Call(delete_text, t_id))
     
         txt = str()
         txts = [getlanguage('Players Data'),
@@ -971,23 +1425,6 @@ class CommandFunctions:
             return Uts.accounts[c_id]['Admin']
         else:
             return False
-            
-    def user_is_owner(c_id: int) -> bool:
-        """تحقق إذا كان اللاعب هو المالك"""
-        if c_id == -1:
-            return True
-    
-        if c_id in Uts.accounts:
-            # تحقق إذا كان اللاعب في قائمة المالكين
-            account_id = None
-            for acc_id, data in Uts.pdata.items():
-                if data.get('Owner', False):
-                    # تحقق إذا كان هذا الحساب مرتبطًا بـ client_id الحالي
-                    if c_id in Uts.userpbs and Uts.userpbs[c_id] == acc_id:
-                        return True
-            return Uts.accounts[c_id].get('Owner', False)
-        else:
-            return False
     
     def get_actor(c_id: int) -> spaz.Spaz:
         act = bs.get_foreground_host_activity()
@@ -1015,7 +1452,8 @@ def ActorMessage(msg: str, actor: spaz.Spaz):
         actor.my_message = popup = PopupText(
              text=msg, color=c, scale=1.5).autoretain()
         m.connectattr('output', popup.node, 'position')
-        bs.timer(5.0, bs.CallStrict(die, popup.node))
+        bs.timer(5.0, bs.Call(die, popup.node))
+
 
 
 
@@ -1073,7 +1511,7 @@ def aure(self) -> None:
                      'draw_beauty': True,
                      'additive': False})
         self.node.connectattr(pos, loc, 'position')
-        bs.timer(0.1 * i, bs.CallStrict(anim, loc))
+        bs.timer(0.1 * i, bs.Call(anim, loc))
     
 def stars(self) -> None:
     def die(node: bs.Node) -> None:
@@ -1134,7 +1572,7 @@ def stars(self) -> None:
                               random.uniform(0.5, 1.5)),
                     'radius': 0.035})
             node.connectattr('position', light, 'position')
-            bs.timer(0.25, bs.CallStrict(die, node))
+            bs.timer(0.25, bs.Call(die, node))
             
 def chispitas(self) -> None:
     def die(node: bs.Node) -> None:
@@ -1191,7 +1629,7 @@ def chispitas(self) -> None:
                               random.uniform(0.5, 1.5)),
                     'radius': 0.035})
             node.connectattr('position', light, 'position')
-            bs.timer(0.25, bs.CallStrict(die, node))
+            bs.timer(0.25, bs.Call(die, node))
             
 def darkmagic(self) -> None:
     def die(node: bs.Node) -> None:
@@ -1248,7 +1686,7 @@ def darkmagic(self) -> None:
                        'color': (0.5, 0.0, 1.0),
                        'radius': 0.035})
             node.connectattr('position', light, 'position')
-            bs.timer(0.25, bs.CallStrict(die, node))
+            bs.timer(0.25, bs.Call(die, node))
             
 def _rainbow(self) -> None:
     keys = {
@@ -1265,29 +1703,29 @@ def _rainbow(self) -> None:
             self.node.color = color
 
     for time, color in keys:
-        bs.timer(time, bs.CallStrict(_changecolor, color))
+        bs.timer(time, bs.Call(_changecolor, color))
            
 def apply_effect(self, eff: str) -> None:
     if eff == 'fire':
-        call = bs.CallStrict(_fire, self)
+        call = bs.Call(_fire, self)
         self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
     elif eff == 'spark':
-        call = bs.CallStrict(_spark, self)
+        call = bs.Call(_spark, self)
         self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
     elif eff == 'footprint':
-        call = bs.CallStrict(footprint, self)
+        call = bs.Call(footprint, self)
         self._cm_effect_timer = bs.Timer(0.15, call, repeat=True)
     elif eff == 'stars':
-        call = bs.CallStrict(stars, self)
+        call = bs.Call(stars, self)
         self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
     elif eff == 'chispitas':
-        call = bs.CallStrict(chispitas, self)
+        call = bs.Call(chispitas, self)
         self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
     elif eff == 'darkmagic':
-        call = bs.CallStrict(darkmagic, self)
+        call = bs.Call(darkmagic, self)
         self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
     elif eff == 'rainbow':
-        call = bs.CallStrict(_rainbow, self)
+        call = bs.Call(_rainbow, self)
         self._cm_effect_timer = bs.Timer(1.2, call, repeat=True)
     elif eff == 'aure':
         aure(self)
@@ -1307,7 +1745,33 @@ def new_ga_on_transition_in(self) -> None:
 
 def new_on_player_join(self, player: bs.Player) -> None:
     calls['OnPlayerJoin'](self, player)
+    
+    # التحقق من الحظر قبل السماح للاعب بالانضمام
+    try:
+        client_id = player.sessionplayer.inputdevice.client_id
+        pb_id = player.sessionplayer.get_v1_account_id()
+        
+        if ban_manager.is_banned(client_id, pb_id):
+            ban_info = ban_manager.get_banned_player_info(client_id)
+            if ban_info:
+                reason = ban_info.get('reason', 'No reason specified')
+                name = ban_info.get('name', 'Unknown')
+                bs.disconnect_client(client_id)
+                
+                # إرسال رسالة للمضيف
+                host_msg = getlanguage('Player Banned Join', subs=name)
+                Uts.sm(host_msg, color=(1, 0, 0), transient=True)
+                return
+    except:
+        pass
+    
     Uts.player_join(player)
+    
+    # تطبيق التيجان إذا كان اللاعب لديه
+    client_id = player.sessionplayer.inputdevice.client_id
+    tag_info = tag_manager.get_tag_info(client_id)
+    if tag_info:
+        bs.timer(0.5, bs.Call(tag_manager.apply_tag_to_player, client_id))
     
 def new_playerspaz_init_(self, *args, **kwargs) -> None:
     calls['PlayerSpazInit'](self, *args, **kwargs)
@@ -1324,6 +1788,13 @@ def new_playerspaz_init_(self, *args, **kwargs) -> None:
     if user in Uts.pdata:
         eff = Uts.pdata[user]['Effect']
         apply_effect(self, eff)
+    
+    # تطبيق التيجان
+    try:
+        client_id = self._player.sessionplayer.inputdevice.client_id
+        bs.timer(0.1, bs.Call(tag_manager.apply_tag_to_player, client_id))
+    except:
+        pass
             
 def new_playerspaz_on_jump_press(self) -> None:    
     calls['OnJumpPress'](self)
@@ -1423,7 +1894,7 @@ class ExplosiveGift(bs.Actor):
         region.connectattr('position', shield, 'position')
         
         bs.getsound('explosion03').play(1, self.node.position)
-        bs.timer(0.1, bs.CallStrict(
+        bs.timer(0.1, bs.Call(
             self.handlemessage, bs.DieMessage()))
         
     def call(self) -> None:
@@ -1486,6 +1957,7 @@ class MagicBox(bs.Actor):
                 self.node.delete()
         else:
             return super().handlemessage(msg)
+
 
 
 
@@ -1556,18 +2028,6 @@ class Uts:
                 if d['Admin']:
                     admins.append(p)
         return admins
-        
-    def get_owners() -> list[str]:
-        """الحصول على قائمة المالكين"""
-        owners = []
-        if not hasattr(Uts, 'pdata'): 
-            Uts.create_players_data()
-        
-        if len(Uts.pdata) > 0:
-            for p, d in getattr(Uts, 'pdata', {}).items():
-                if d.get('Owner', False):
-                    owners.append(p)
-        return owners
 
     def add_or_del_user(c_id: int, add: bool = True) -> None:
         if c_id == -1:
@@ -1594,26 +2054,6 @@ class Uts:
                         Uts.pdata[user]['Admin'] = add
                         Uts.cm(getlanguage('Delete Admin Msg', subs=Uts.usernames[c_id]))
             Uts.save_players_data()
-            
-    def add_owner(account_id: str) -> None:
-        """إضافة مالك جديد"""
-        if not hasattr(Uts, 'pdata'): 
-            Uts.create_players_data()
-        
-        if account_id not in Uts.pdata:
-            Uts.pdata[account_id] = {
-                'Mute': False,
-                'Effect': 'none',
-                'Admin': True,  # المالك يكون مشرف أيضًا
-                'Owner': True,  # هذا هو الحقل الجديد للمالك
-                'Accounts': []
-            }
-        else:
-            Uts.pdata[account_id]['Admin'] = True
-            Uts.pdata[account_id]['Owner'] = True
-            
-        Uts.save_players_data()
-        print(f"Added owner: {account_id}")
 
     def create_players_data() -> None:
         # Check if already created to avoid recursion
@@ -1668,10 +2108,6 @@ class Uts:
                     Uts.save_players_data()
                     
                 Uts.accounts[client_id] = Uts.pdata[account_id]
-                
-                # إذا كان المالك، أرسل رسالة ترحيب
-                if Uts.pdata[account_id].get('Owner', False):
-                    Uts.sm(getlanguage('Is Owner'), color=(1.0, 0.5, 0.0), transient=True, clients=[client_id])
             
             Uts.usernames[client_id] = account_name
             Uts.useraccounts[client_id] = account_name
@@ -1710,7 +2146,6 @@ class Uts:
                 'Mute': False,
                 'Effect': 'none',
                 'Admin': False,
-                'Owner': False,  # حقل جديد للمالك
                 'Accounts': []}
             Uts.save_players_data()
 
@@ -1839,7 +2274,6 @@ class Uts:
 
 
 
-
 def _install() -> None:
     from bascenev1 import _hooks
     from babase import _app, modutils
@@ -1848,8 +2282,8 @@ def _install() -> None:
     
     def seq():
         bs.screenmessage(getlanguage("Installing"))
-        bs.apptimer(2.0, bs.CallStrict(Uts.sm, getlanguage("Installed"), (0.0, 1.0, 0.0)))
-        bs.apptimer(4.0, bs.CallStrict(Uts.sm, getlanguage("Restart Msg")))
+        bs.apptimer(2.0, bs.Call(Uts.sm, getlanguage("Installed"), (0.0, 1.0, 0.0)))
+        bs.apptimer(4.0, bs.Call(Uts.sm, getlanguage("Restart Msg")))
         bs.apptimer(6.0, bui.quit)
     
     # Create directories if they don't exist
@@ -1893,13 +2327,6 @@ def _install() -> None:
     # Initialize data
     Uts.create_players_data()
     Uts.save_players_data()
-    
-    # إضافة المالك pb-IF4yVRIDXA==
-    owner_account = 'pb-IF4yVRIDXA=='
-    Uts.add_owner(owner_account)
-    
-    # إرسال رسالة تأكيد
-    bs.apptimer(3.0, lambda: Uts.sm(getlanguage("Owner Added"), color=(1.0, 0.5, 0.0)))
 
 
 def settings():
