@@ -1,701 +1,3582 @@
 # ba_meta require api 9
-"""
-Billy Command System - All-in-One with Hardcoded Owner
-يتعرف على المالك من PBID: pb-IF4nXhIECg==
-"""
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
-import babase
+
+
+
+import os, random, json
+
 import bascenev1 as bs
-import json
-import os
+
+import bauiv1 as bui
+
+import babase as ba
+
+import _babase
+
+
+
+from bascenev1._activity import Activity
+
+from bascenev1lib.actor.bomb import Bomb
+
+from bascenev1lib.gameutils import SharedObjects
+
+from bascenev1lib.mainmenu import MainMenuActivity
+
+from bascenev1lib.actor.playerspaz import PlayerSpaz
+
+from bascenev1lib.actor.spazfactory import SpazFactory
+
+
+
+import bascenev1lib.actor.popuptext as ptext
+
+import bascenev1lib.actor.text as text
+
+import bascenev1lib.actor.image as image
+
+import bascenev1lib.actor.spaz as spaz
+
+
 
 if TYPE_CHECKING:
-    pass
 
-# ================ HARDCODED OWNER PBID ================
-# هنا تضيف PBID الخاص بك ليكون مالكاً دائماً
-HARDCODED_OWNER_PBID = "pb-IF4nXhIECg=="
+    from typing import Sequence, Any, Callable
 
-# ================ CONFIGURATION ================
-class BillyConfig:
-    """فئة لإدارة إعدادات بيلي"""
-    
-    @staticmethod
-    def get_config_path():
-        """الحصول على مسار مجلد الإعدادات"""
-        appdata = babase.appdata_directory()
-        config_dir = os.path.join(appdata, 'configs')
-        
-        # إنشاء مجلد configs إذا لم يكن موجوداً
-        if not os.path.exists(config_dir):
-            os.makedirs(config_dir)
-            print(f"[BILLY] Created configs directory: {config_dir}")
-        
-        return config_dir
-    
-    @staticmethod
-    def get_roles_file():
-        """الحصول على مسار ملف الأدوار"""
-        return os.path.join(BillyConfig.get_config_path(), 'billy_roles.json')
-    
-    @staticmethod
-    def get_tags_file():
-        """الحصول على مسار ملف العلامات"""
-        return os.path.join(BillyConfig.get_config_path(), 'billy_tags.json')
 
-# ================ BILLY ROLES SYSTEM ================
-class BillyRoles:
-    def __init__(self) -> None:
-        self.HIERARCHY = {'owner': 100, 'admin': 80, 'vip': 10, 'member': 0}
-        self.data = self._load_default_roles()
-        self.load()
+
+class Lang:
+
+    def __init__(self,
+
+                 text: str,
+
+                 subs: list[str] = 'none'):
+
         
-        # التأكد من أن PBID المالك مضاف إلى القائمة
-        self._ensure_owner_pbid()
-        
-        # طباعة معلومات التحميل
-        print(f"[BILLY ROLES] Loaded {len(self.data)} roles")
-        print(f"[BILLY ROLES] Hardcoded Owner PBID: {HARDCODED_OWNER_PBID}")
-        
-    def _load_default_roles(self):
-        """إرجاع بيانات الأدوار الافتراضية"""
-        return {
-            'owner': {
-                'accounts': [HARDCODED_OWNER_PBID],  # إضافة PBID الخاص بك هنا تلقائياً
-                'tag': '[OWNER]',
-                'color': [1.0, 0.5, 0.0],  # برتقالي
-                'icon': '👑'
+
+        icons = [bui.charstr(bui.SpecialChar.CROWN),
+
+                 bui.charstr(bui.SpecialChar.LOGO)]
+
+ 
+
+        lang = bs.app.lang.language
+
+        setphrases = {
+
+            "Installing":
+
+                {"Spanish": f"Instalando <{__name__}>",
+
+                 "English": f"Installing <{__name__}>",
+
+                 "Portuguese": f"Instalando <{__name__}>"},
+
+            "Installed":
+
+                {"Spanish": f"¡<{__name__}> Se instaló correctamente!",
+
+                 "English": f"<{__name__}> Installed successfully!",
+
+                 "Portuguese": f"<{__name__}> Instalado com sucesso!"},
+
+            "Make Sys":
+
+                {"Spanish": "Se creó la carpeta sys",
+
+                 "English": "Sys folder created",
+
+                 "Portuguese": "Pasta sys criada"},
+
+            "Restart Msg":
+
+                {"Spanish": "Reiniciando...",
+
+                 "English": "Rebooting...",
+
+                 "Portuguese": "Reinício..."},
+
+            "EJ":
+
+                {"Spanish": f"Datos incompletos \n Ejemplo: {subs}",
+
+                 "English": f"Incomplete data \n Example: {subs}",
+
+                 "Portuguese": f"Dados incompletos \n Exemplo: {subs}"},
+
+            "EX":
+
+                {"Spanish": f"Ejemplo: {subs}",
+
+                 "English": f"Example: {subs}",
+
+                 "Portuguese": f"Exemplo: {subs}"},
+
+            "Error Entering Client ID":
+
+                {"Spanish": f"'{subs[0]}' no es válido. \n Ingresa números \n Ejemplo: {subs[1]}",
+
+                 "English": f"'{subs[0]}' is invalid. \n Enter numbers \n Example: {subs[1]}",
+
+                 "Portuguese": f"'{subs[0]}' é inválido. \n Digite os números \n Exemplo: {subs[1]}"},
+
+            "Error Entering Player ID":
+
+                {"Spanish": f"'{subs}' no es válido. \n Ingresa el ID del jugador. consulta el comando '-i'",
+
+                 "English": f"'{subs}' no es válido. \n Add the player ID. use the '-i' command for more information.",
+
+                 "Portuguese": f"'{subs}' no es válido. \n Adicione o ID do jogador. use o comando '-i' para obter mais informações."},
+
+            "Happy":
+
+                {"Spanish": "¡Estás felíz!",
+
+                 "English": "Are you happy!",
+
+                 "Portuguese": "Você está feliz!"},
+
+            "Add Admin Msg":
+
+                {"Spanish": f"'{subs}' Se agregó a la lista de Admins",
+
+                 "English": f"'{subs}' Added to Admins list",
+
+                 "Portuguese": f"'{subs}' Adicionado à lista de administradores"},
+
+            "Delete Admin Msg":
+
+                {"Spanish": f"Se removió a '{subs}' de la lista de Admins",
+
+                 "English": f"'{subs}' was removed from the Admins list",
+
+                 "Portuguese": f"'{subs}' foi removido da lista de administradores"},
+
+            "Players Data":
+
+                {"Spanish": "Nombre | Jugador ID | Cliente ID",
+
+                 "English": "Name | Player ID | Client ID",
+
+                 "Portuguese": "Nome |  Jogador ID |  ID do Cliente"},
+
+            "Party Info":
+
+                {"Spanish": f"{icons[0]}|Host: {subs[0]}\n{icons[1]}|Descripción: {subs[1]}\n{icons[1]}|Versión: {_babase.app.env.engine_version}",
+
+                 "English": f"{icons[0]}|Host: {subs[0]}\n{icons[1]}|Description: {subs[1]}\n{icons[1]}|Version: {_babase.app.env.engine_version}",
+
+                 "Portuguese": f"{icons[0]}|Host: {subs[0]}\n{icons[1]}|Descrição: {subs[1]}|\n{icons[1]}|Versão: {_babase.app.env.engine_version}"},
+
+            "Same Player":
+
+                  {"Spanish": "No puedes expulsarte a tí mismo",
+
+                   "English": "You cannot expel yourself",
+
+                   "Portuguese": "Você não pode se expulsar"},
+
+            "Kick Msg":
+
+                  {"Spanish": f"Sin rodeos, {subs[0]} ha expulsado a {subs[1]}",
+
+                   "English": f"{subs[0]} kicked {subs[1]} Goodbye!",
+
+                   "Portuguese": f"{subs[0]} expulsou {subs[1]}"},
+
+            "User Invalid":
+
+                {"Spanish": f"'{subs}' No le pertenece a ningún jugador.",
+
+                 "English": f"'{subs}' Does not belong to any player.",
+
+                 "Portuguese": f"'{subs}' Não pertence a nenhum jogador."},
+
+            "Chat Live":
+
+                {"Spanish": f"{icons[0]} CHAT EN VIVO {icons[0]}",
+
+                 "English": f"{icons[0]} CHAT LIVE {icons[0]}",
+
+                 "Portuguese": f"{icons[0]} BATE-PAPO AO VIVO {icons[0]}"},
+
+            "Not Exists Node":
+
+                {"Spanish": "No estás en el juego",
+
+                 "English": "You're not in the game",
+
+                 "Portuguese": "Você não está no jogo"},
+
+            "Show Spaz Messages":
+
+                {"Spanish": "Mostrar mensajes arriba de los jugadores.",
+
+                 "English": "Show messages above players.",
+
+                 "Portuguese": "Mostrar mensagens acima dos jogadores."},
+
+            "Mute Message":
+
+                {"Spanish": f"Se silenció a {subs}",
+
+                 "English": f"{subs} was muted",
+
+                 "Portuguese": f"{subs} foi silenciado"},
+
+            "Unmute Message":
+
+                {"Spanish": f"Se quitó el muteo a {subs}",
+
+                 "English": f"{subs} can chat again",
+
+                 "Portuguese": f"{subs} pode conversar novamente"},
+
+            "Not In Admins":
+
+                {"Spanish": f"No se puede silenciar a [{subs}] porque es administrador.",
+
+                 "English": f"[{subs}] cannot be muted because he is an administrator.",
+
+                 "Portuguese": f"[{subs}] não pode ser silenciado porque é um administrador."},
+
+            "Module Not Found":
+
+                {"Spanish": "No se encontraron los módulos. usa el comando '!dw' para descargarlos.",
+
+                 "English": "Modules not found. use the '!dw' command to download them.",
+
+                 "Portuguese": "Módulos não encontrados.  use o comando '!dw' para baixá-los."},
+
+            "Clima Error Message":
+
+                {"Spanish": "Selecciona un clima,\n Usa el comando '-climas' para más información.",
+
+                 "English": "Select a weather,\n Use the command '-climas' for more information.",
+
+                 "Portuguese": "Selecione um clima,\n Use o comando '-climas' para mais informações."},
+
+            "Clima Message":
+
+                {"Spanish": f"Se cambió el clima a '{subs}'",
+
+                 "English": f"The weather is now '{subs}'",
+
+                 "Portuguese": f"O tempo está agora '{subs}'"},
+
+           "None Account":
+
+                {"Spanish": "Información del jugador no válida.",
+
+                 "English": "Informações do jogador inválidas.",
+
+                 "Portuguese": "Informações do jogador inválidas."}, 
+
+           "Error ID User":
+
+                {"Spanish": f"Se produjo un error al ingresar el ID del jugador. \n '{subs}' no es válido.",
+
+                 "English": f"An error occurred while entering the player ID. \n '{subs}' is not valid.",
+
+                 "Portuguese": f"Ocorreu um erro ao inserir o ID do jogador.  \n '{subs}' não é válido."},
+
+           "Effect Invalid":
+
+                {"Spanish": f"'{subs}' es inválido. ingresa el comando '-effects' para más información.",
+
+                 "English": f"'{subs}' is invalid. enter the command '-effects' for more information.",
+
+                 "Portuguese": f"'{subs}' é inválido. digite o comando '-effects' para mais informações."},
+
+           "Use -i Command":
+
+                {"Spanish": "Le sugerimos usar el comando '-i'",
+
+                 "English": "We suggest you use the '-i' command",
+
+                 "Portuguese": "Sugerimos que você use o comando '-i'"},
+
+           "Add Effect Message":
+
+                {"Spanish": f"Se agregó el efecto '{subs[0]}' a {subs[1]}",
+
+                 "English": f"Added '{subs[0]}' effect to {subs[1]}",
+
+                 "Portuguese": f"Adicionado efeito '{subs[0]}' para {subs[1]}"},
+
+           "You Are Amazing":
+
+                {"Spanish": "¡¡Eres ASOMBROSO!!",
+
+                 "English": "You Are Amazing!!",
+
+                 "Portuguese": "Desculpe, o anfitrião é a autoridade máxima."},
+
+           "Exe":
+
+                {"Spanish": "Comando Ejecutado",
+
+                 "English": "Command Executed",
+
+                 "Portuguese": "Comando Executado"
+
             },
-            'admin': {
-                'accounts': [],
-                'tag': '[ADMIN]',
-                'color': [1.0, 0.0, 0.0],  # أحمر
-                'icon': '⚡'
-            },
-            'vip': {
-                'accounts': [],
-                'tag': '[VIP]',
-                'color': [0.0, 1.0, 0.0],  # أخضر
-                'icon': '⭐'
-            }
-        }
+
+                 
+
+            # ES
+
+            "Agrega un texto":
+
+                {"Spanish": "Añade un texto",
+
+                 "English": "Add text",
+
+                 "Portuguese": "Adicione texto"},
+
+            "Cambios Guardados":
+
+                {"Spanish": "Información guardada correctamente",
+
+                 "English": "Information saved successfully",
+
+                 "Portuguese": "Informações salvas com sucesso"},
+
+            "Info Color":
+
+                {"Spanish": "Argumento no válido, \n te sugerimos usar el comando '-colors'",
+
+                 "English": "Invalid argument, \n we suggest you use the '-colors' command",
+
+                 "Portuguese": "Argumento inválido, \n sugerimos que você use o comando '-colors'"},
+
+            "ID Cliente Msj":
+
+                {"Spanish": "Agrega el ID del cliente. \n utilice el comando '-i' para más información.",
+
+                 "English": "Add the client ID.  \n use the '-i' command for more information.",
+
+                 "Portuguese": "Adicione o ID do cliente. \n use o comando '-i' para mais informações."},
+
+            "Guardando Informacion":
+
+                {"Spanish": "Estamos guardando sus datos...",
+
+                 "English": "Saving user data...",
+
+                 "Portuguese": "Estamos salvando seus dados..."},
+
+            "Ban A Admin Mensaje":
+
+                {"Spanish": f"No puedes expulsar a [{subs}] porque es administrador",
+
+                 "English": f"You can't kick [{subs}] because he's an admin",
+
+                 "Portuguese": f"Você não pode chutar [{subs}] porque ele é um administrador"},
+
+            "No Info Activa":
+
+                {"Spanish": "Necesitas tener activa la información.\n Usa el comando '-info' para activarle.",
+
+                 "English": "You need to have info active.\n Use the '-info' command to activate it",
+
+                 "Portuguese": "Você precisa ter as informações ativas.\n Use o comando '-info' para ativá-las"},
+
+                     }
+
     
-    def _ensure_owner_pbid(self):
-        """التأكد من أن PBID المالك موجود في قائمة owner"""
-        if HARDCODED_OWNER_PBID not in self.data['owner']['accounts']:
-            self.data['owner']['accounts'].append(HARDCODED_OWNER_PBID)
-            self.save()
-            print(f"[BILLY ROLES] Added hardcoded owner PBID to list")
+
+        language = ["Spanish", "English", "Portuguese"]
+
+        if lang not in language:
+
+            lang = "English"
+
+            
+
+        if text not in setphrases:
+
+            self.text = text
+
+        else:
+
+            self.text = setphrases[text][lang]
+
     
-    def load(self) -> None:
-        """تحميل بيانات الأدوار من ملف JSON"""
-        roles_file = BillyConfig.get_roles_file()
+
+    def get(self):
+
+        return self.text
+
+
+
+def getlanguage(*args, **kwargs) -> str:
+
+    subs = kwargs.get('subs', 'none')
+
+    
+
+    if type(subs) is not list:
+
+        subs = str(subs)
+
+    else:
+
+        subs = [str(s) for s in subs]
+
+    try:
+
+        text = Lang(*args, subs=subs).get()
+
+    except (IndexError, Exception):
+
+        text = Lang(*args).get()
+
+        text = text.replace('none', str(subs))
+
+    finally:
+
+        return text
+
+
+
+calls: dict[str, Any] = {}
+
+Chats: list[str] = []
+
+roster = bs.get_game_roster
+
+act = bs.get_foreground_host_activity
+
+mutelist = list()
+
+
+
+cfg = dict()
+
+
+
+class PopupText(ptext.PopupText):
+
+    """New PopupText.
+
+    
+
+    category: **Messages In Game**
+
+    """
+
+    
+
+    def __init__(self, *args, **kwargs) -> None:
+
+        super().__init__(*args, **kwargs)
+
+        self.node.shadow = 10.0
+
+        self.node.color = (1.5, 1.5, 1.5, 1.0)
+
+        bs.animate(self._combine, 'input3', {0: 0, 0.1: 1.0})
+
         
-        try:
-            if os.path.exists(roles_file):
-                with open(roles_file, 'r', encoding='utf-8') as f:
-                    loaded_data = json.load(f)
+
+    def handlemessage(self, msg: Any) -> Any:
+
+        pass
+
+    
+
+class Commands:
+
+    """Usa los distintos comandos dependiendo tu rango (All, Admins).
+
+    
+
+    Category: **Command Class**
+
+    """
+
+
+
+    fct: CommandFunctions
+
+    "Llama los distintos comandos"
+
+    
+
+    util: Uts
+
+    "Llama a las distintas utilidades"
+
+    
+
+    @property
+
+    def get(self) -> str:
+
+        return self.value
+
+    
+
+    def __init__(self,
+
+                 msg: str,
+
+                 client_id: int,
+
+                 arguments: list[str] = []) -> None:
+
+            
+
+        self.message = msg
+
+        self.msg = msg.strip()
+
+        self.client_id = client_id
+
+        self.arguments = arguments
+
+        self.value = None
+
+
+
+        self.util = Uts
+
+        self.fct = CommandFunctions
+
+
+
+        self.filter_chat()
+
+        
+
+    def clientmessage(self, msg: str,
+
+            color: Sequence[float] = None):
+
+                
+
+        self.util.sm(msg, color=color,
+
+            transient=True,
+
+            clients=[self.client_id])
+
+    
+
+    def filter_chat(self) -> None:
+
+        ms = self.arguments
+
+        self.util.update_usernames()
+
+                
+
+        if self.client_id in self.util.accounts:
+
+            if self.util.accounts[self.client_id]['Mute']:
+
+                return setattr(self, 'value', '@')
+
+        
+
+        if cfg['Commands'].get('ShowMessages'):
+
+            cls_node = self.fct.get_actor(self.client_id)
+
+            if cls_node is not None:
+
+                ActorMessage(self.msg, cls_node)
+
+        
+
+        if 'info' in ms[0].lower():
+
+            with act().context:
+
+                bs.timer(0.01, bs.Call(self.util.create_data_text, act()))
+
+                
+
+        with act().context:
+
+            bs.timer(0.01, bs.Call(self.util.create_live_chat, act(),
+
+                chat=[self.client_id, self.message],
+
+                admin=self.fct.user_is_admin(self.client_id)))
+
+    
+
+        self.command_all()
+
+        
+
+        if self.fct.user_is_admin(self.client_id):
+
+            self.admin_commands()
+
+    
+
+    def command_all(self) -> None:
+
+        msg = self.msg.strip()
+
+        ms = self.arguments
+
+        cmd = self.fct.all_cmd()
+
+        cls_node = self.fct.get_actor(self.client_id)
+
+        ClientMessage = self.clientmessage
+
+    
+
+        if msg.lower() == cmd[0]: # -i
+
+            self.fct.get_user_list(self.client_id)
+
+    
+
+        elif msg.lower() == cmd[1]: # -pan
+
+            self.util.cm("¡Haz recibido pan de \ue061Sr.Palomo!")
+
+            #return setattr(self, 'value', '@')
+
+            
+
+        elif msg.lower() == cmd[2]: # -ceb
+
+            with act().context:
+
+                cls_node.handlemessage(
+
+                    bs.CelebrateMessage(duration=3.0))
+
+            ClientMessage(getlanguage('Happy'), color=(1.0, 1.0, 0.0))
+
+            
+
+        elif msg.lower() == cmd[3]: # -colors
+
+            cols = str()
+
+            cols_list = self.util.sort_list(self.util.colors())
+
+            for c in cols_list:
+
+                cols += (' | '.join(c) + '\n')
+
+            ClientMessage(cols)
+
+            
+
+        elif msg.lower() == cmd[4]: # -mp (max players)
+
+            mp = bs.get_public_party_max_size()
+
+            ClientMessage(bs.Lstr(value='${LSTR}: ${COUNT}',
+
+                    subs=[('${LSTR}', bs.Lstr(resource='maxPartySizeText')),
+
+                          ('${COUNT}', str(mp))]))
+
+
+
+        elif msg.lower() == cmd[5]: # -pb
+
+            self.fct.get_my_pb(self.client_id)
+
+    
+
+        elif msg.lower() == cmd[6]: # -effects
+
+            cols = str()
+
+            for e in self.fct.effects():
+
+                cols += (' | ' + e)
+
+            ClientMessage(cols)
+
+    
+
+    def admin_commands(self) -> None:
+
+        msg = self.msg.strip()
+
+        ms = self.arguments
+
+        cls_node = self.fct.get_actor(self.client_id)
+
+        ClientMessage = self.clientmessage
+
+
+
+        ms[0] = ms[0].lower()
+
+        cmd = [cd.lower() for cd in self.fct.admins_cmd()]
+
+    
+
+        if ms[0] == cmd[0]: # /name 0 La Pulga
+
+            try: name = ms[2]
+
+            except:
+
+                color = self.util.colors()['orange']
+
+                ClientMessage(getlanguage('EJ',
+
+                    subs=ms[0] + ' 0  La Pulga | ' + ms[0] + ' all La Pulga'), color=color)
+
+            else:
+
+                self.fct.actor_command(ms=ms,
+
+                    call=bs.Call(self.fct.actor_name, ' '.join(ms[2:])),
+
+                    attrs={'Actor': cls_node,
+
+                           'ClientMessage': ClientMessage})
+
+    
+
+        elif ms[0] == cmd[1]: # /imp
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.impulse,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+            
+
+        elif ms[0] == cmd[2]: # /box
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.spaz_box,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+                       
+
+        elif ms[0] == cmd[3] or ms[0] == cmd[4]: # /addAdmin
+
+            if len(ms) == 1:
+
+                ClientMessage(getlanguage('ID Cliente Msj'))
+
+            else:
+
+                try:
+
+                    c_id = int(ms[1])
+
+                except ValueError:
+
+                    ClientMessage(
+
+                            getlanguage('Error Entering Client ID',
+
+                                subs=[ms[1], '/addAdmin 113']))
+
+                else:
+
+                    if c_id not in self.util.usernames:
+
+                            ClientMessage(getlanguage('User Invalid', subs=c_id))
+
+                    else:
+
+                        if ms[0] == cmd[3]:
+
+                            self.util.add_or_del_user(c_id, add=True)
+
+                        else:
+
+                            self.util.add_or_del_user(c_id, add=False)
+
+                        
+
+        elif ms[0] == cmd[5]: # /kill
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.kill_spaz,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+                        
+
+        elif ms[0] == cmd[6]: # -pause
+
+            self.fct.pause()
+
+                        
+
+        elif ms[0] == cmd[7]: # /infoHost
+
+            if not cfg['Commands'].get('ShowInfo'):
+
+                ClientMessage(getlanguage('No Info Activa'))
+
+            else:
+
+                if len(ms) == 1:
+
+                    ClientMessage(getlanguage('Agrega un texto'))
+
+                else:
+
+                    cfg['Commands']['HostName'] = ' '.join(ms[1:])
+
+                    self.util.save_settings()
+
+                    ClientMessage(getlanguage('Informacion guardada'), color=(0.0, 1.0, 0.0))
+
+                
+
+        elif ms[0] == cmd[8]: # /infoDes
+
+            if not cfg['Commands'].get('ShowInfo'):
+
+                ClientMessage(getlanguage('No Info Activa'))
+
+            else:
+
+                if len(ms) == 1:
+
+                    ClientMessage(getlanguage('Agrega un texto'))
+
+                else:
+
+                    cfg['Commands']['Description'] = ' '.join(ms[1:])
+
+                    self.util.save_settings()
+
+                    ClientMessage(getlanguage('Informacion guardada'), color=(0.0, 1.0, 0.0))
+
+    
+
+        elif ms[0] == cmd[9]: # -info
+
+            if cfg['Commands'].get('ShowInfo'):
+
+                cfg['Commands']['ShowInfo'] = False
+
+                color = self.util.colors()['red']
+
+            else:
+
+                cfg['Commands']['ShowInfo'] = True
+
+                color = self.util.colors()['green']
+
+                
+
+            self.util.save_settings()
+
+            ClientMessage(getlanguage('Cambios Guardados'), color=color)
+
+    
+
+        elif ms[0] == cmd[10]: # /infoColor
+
+            if not cfg['Commands'].get('ShowInfo'):
+
+                ClientMessage(getlanguage('No Info Activa'))
+
+            else:
+
+                if len(ms) == 1:
+
+                    ClientMessage(getlanguage('Info Color'))
+
+                else:
+
+                    if ms[1] not in self.util.colors():
+
+                        ClientMessage(getlanguage('Info Color'), color=(1, 0.5, 0))
+
+                    else:
+
+                        cfg['Commands']['InfoColor'] = self.util.colors()[ms[1]]
+
+                        self.util.save_settings()
+
+                        ClientMessage(getlanguage('Cambios Guardados'), color=(1, 1, 0))
+
+    
+
+        elif ms[0] == cmd[11]: # -end
+
+            with act().context:
+
+                act().end_game()
+
+    
+
+        elif ms[0] == cmd[12]: # /kick
+
+            if len(ms) == 1:
+
+                ClientMessage(getlanguage('ID Cliente Msj'))
+
+            else:
+
+                try:
+
+                    c_id = int(ms[1])
+
+                except Exception as exc:
+
+                    type_error = type(exc)
+
+                    if type_error is ValueError:
+
+                        ClientMessage(
+
+                            getlanguage('Error Entering Client ID',
+
+                                subs=[ms[1], ms[0] + ' 113']))
+
+                    else:
+
+                        ClientMessage(f'{type(e).__name__}: {e}')
+
+                else:
+
+                    if self.client_id == c_id:
+
+                        ClientMessage(getlanguage('Same Player'))
+
+                    else:
+
+                        if c_id not in self.util.usernames:
+
+                            ClientMessage(getlanguage('User Invalid', subs=c_id))
+
+                        else:
+
+                            user1 = self.util.usernames[self.client_id]
+
+                            user2 = self.util.usernames[c_id]
+
+                            if self.fct.user_is_admin(c_id):
+
+                                ClientMessage(getlanguage('Ban A Admin Mensaje', subs=user2))
+
+                            else:
+
+                                self.util.cm(getlanguage('Kick Msg', subs=[user1, user2]))
+
+                                bs.disconnect_client(c_id)
+
+    
+
+        elif ms[0] == cmd[13]: # /-chatLive
+
+            if cfg['Commands'].get('ChatLive'):
+
+                cfg['Commands']['ChatLive'] = False
+
+                color = self.util.colors()['red']
+
+            else:
+
+                cfg['Commands']['ChatLive'] = True
+
+                color = self.util.colors()['green']
+
+    
+
+            self.util.save_settings()
+
+            ClientMessage(getlanguage('Cambios Guardados'), color=color)
+
+    
+
+        elif ms[0] == cmd[14]: # /freeze
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.freeze_spaz,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+            
+
+        elif ms[0] == cmd[15]: # /playerColor
+
+            try: color = ms[2]
+
+            except IndexError:
+
+                ClientMessage(getlanguage('Info Color'))
+
+                ClientMessage(getlanguage('EJ',
+
+                    subs=ms[0] + ' 0  yellow | ' + ms[0] + ' all green'))
+
+            else:
+
+                self.fct.actor_command(ms=ms,
+
+                    call=bs.Call(self.fct.player_color, color),
+
+                    attrs={'Actor': cls_node,
+
+                           'ClientMessage': ClientMessage})
+
+    
+
+        elif ms[0] == cmd[16]: # /maxPlayers
+
+            try:
+
+                val = int(ms[1])
+
+            except:
+
+                ClientMessage(getlanguage('EJ', subs=ms[0] + ' 5'))
+
+            else:
+
+                bs.set_public_party_max_size(val)
+
+                ClientMessage(
+
+                    bs.Lstr(value='${LSTR}: ${COUNT}',
+
+                        subs=[('${LSTR}', bs.Lstr(resource='maxPartySizeText')),
+
+                              ('${COUNT}', ms[1])]))
+
+    
+
+        elif ms[0] == cmd[17]: # -showMessages
+
+            if cfg['Commands'].get('ShowMessages'):
+
+                cfg['Commands']['ShowMessages'] = False
+
+                color = self.util.colors()['red']
+
+            else:
+
+                cfg['Commands']['ShowMessages'] = True
+
+                color = self.util.colors()['green']
+
+    
+
+            self.util.save_settings()
+
+            ClientMessage(getlanguage('Show Spaz Messages'), color=color)
+
+    
+
+        elif ms[0] == cmd[18]: # /sleep
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.spaz_sleep,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+    
+
+        elif ms[0] == cmd[19] or ms[0] == cmd[20]: # /mute /unmute
+
+            if len(ms) == 1:
+
+                ClientMessage(getlanguage('ID Cliente Msj'))
+
+            else:
+
+                try:
+
+                    c_id = int(ms[1])
+
+                except Exception as e:
+
+                    ClientMessage(
+
+                        getlanguage('Error Entering Client ID',
+
+                            subs=[ms[1], ms[0] + ' 113']))
+
+                else:
+
+                    if c_id not in self.util.accounts:
+
+                        ClientMessage(getlanguage('User Invalid', subs=c_id))
+
+                    else:
+
+                        user = self.util.usernames[c_id]
+
+                        if ms[0] == cmd[19]:
+
+                            if self.fct.user_is_admin(c_id):
+
+                                self.util.cm(getlanguage('Not In Admins', subs=Uts.usernames[c_id]))
+
+                                return
+
+                            if not self.util.accounts[c_id]['Mute']:
+
+                                self.util.accounts[c_id]['Mute'] = True
+
+                                self.util.cm(getlanguage('Mute Message', subs=user))
+
+                        elif ms[0] == cmd[20]:
+
+                            if self.util.accounts[c_id]['Mute']:
+
+                                self.util.accounts[c_id]['Mute'] = False
+
+                                self.util.cm(getlanguage('Unmute Message', subs=user))
+
+                        Uts.save_players_data()
+
+
+
+        elif ms[0] == cmd[21]: # /gm
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.spaz_gm,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+    
+
+        elif ms[0] == cmd[22]: # -slow
+
+            self.fct.slow()
+
+
+
+        elif ms[0] == cmd[23]: # /speed
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.spaz_speed,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+                      
+
+        elif ms[0] == cmd[24]: # /effect
+
+            try:
+
+                c_id = int(ms[1])
+
+                eff = ms[2]
+
+            except ValueError:
+
+                ClientMessage(getlanguage('Error ID User', subs=ms[1]), color=(1, 0, 0))
+
+            except IndexError:
+
+                ClientMessage(getlanguage('ID Cliente Msj'), color=(1, 0.5, 0))
+
+                ClientMessage(getlanguage('EJ', subs=ms[0] + ' 113 fire'), color=(1, 0.5, 0))
+
+            else:
+
+                if c_id not in self.util.accounts:
+
+                    ClientMessage(getlanguage('User Invalid', subs=c_id), color=(1, 0.5, 0))
+
+                    ClientMessage(getlanguage('Use -i Command'), color=(1, 0.5, 0))
+
+                else:
+
+                    if eff not in self.fct.effects():
+
+                        ClientMessage(getlanguage('Effect Invalid', subs=eff), color=(1, 0.5, 0))
+
+                    else:
+
+                        self.util.accounts[c_id]['Effect'] = eff
+
+                        self.util.save_players_data()
+
+                        user = self.util.usernames[c_id]
+
+                        ClientMessage(getlanguage('Add Effect Message',
+
+                            subs=[eff, user]), color=(0, 0.5, 1))
+
+
+
+        elif ms[0] == cmd[25]: # /punch
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.spaz_punch,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+        
+
+        elif ms[0] == cmd[26]: # /mbox
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.spaz_mgb,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+                       
+
+        elif ms[0] == cmd[27]: # /drop
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.spaz_drop,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+
+
+        elif ms[0] == cmd[28]: # /gift
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.spaz_gift,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+                       
+
+        elif ms[0] == cmd[29]: # /curse
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.spaz_curse,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+                       
+
+        elif ms[0] == cmd[30]: # /superjump
+
+            self.fct.actor_command(ms=ms,
+
+                call=self.fct.spaz_sjump,
+
+                attrs={'Actor': cls_node,
+
+                       'ClientMessage': ClientMessage})
+
+                       
+
+class CommandFunctions:
+
+    def all_cmd() -> list[str]:
+
+        return [
+
+            '-i', '-pan', '-ceb', '-colors',
+
+            '-mp', '-pb', '-effects',
+
+            ]
+
+            
+
+    def admins_cmd() -> list[str]:
+
+        return [
+
+            '/name', '/imp', '/box', '/addAdmin',
+
+            '/delAdmin', '/kill', '-pause', '/infoHost',
+
+            '/infoDes', '-info', '/infoColor', '-end',
+
+            '/kick', '-chatLive', '/freeze', '/playerColor',
+
+            '/maxPlayers', '-showMessages', '/sleep',
+
+            '/mute', '/unmute', '/gm', '-slow', '/speed',
+
+            '/effect', '/punch', '/mbox', '/drop', '/gift',
+
+            '/curse', '/superjump',
+
+            ]
+
+
+
+    def effects() -> list[str]:
+
+        return ['none', 'footprint', 'fire', 'darkmagic',
+
+                'spark', 'stars', 'aure', 'chispitas', 'rainbow']
+
+
+
+    def get_my_pb(client_id: int) -> None:
+
+        print(Uts.userpbs)
+
+        if Uts.userpbs.get(client_id):
+
+            pb = Uts.userpbs[client_id]
+
+            Uts.sm(pb, transient=True, clients=[client_id])
+
+    
+
+    def spaz_sjump(node: bs.Node) -> None:
+
+        actor = node.source_player.actor
+
+        del node # Unused by default.
+
+        
+
+        with act().context:
+
+            if getattr(actor, 'cm_superjump', None):
+
+                actor.cm_superjump = False
+
+            else:
+
+                actor.cm_superjump = True
+
+    
+
+    def spaz_curse(node: bs.Node) -> None:
+
+        with act().context:
+
+            node.handlemessage(bs.PowerupMessage('curse', node))
+
+    
+
+    def spaz_gift(node: bs.Node) -> None:
+
+        with act().context:
+
+            ExplosiveGift(owner=node)
+
+    
+
+    def spaz_mgb(node: bs.Node) -> None:
+
+        with act().context:
+
+            MagicBox(pos=node.position).autoretain()
+
+            
+
+    def spaz_punch(node: bs.Node) -> None:
+
+        actor = node.source_player.actor
+
+        del node # Unused by default.
+
+        
+
+        with act().context:
+
+            actor._punch_power_scale = 8.0
+
+            
+
+    def spaz_speed(node: bs.Node) -> None:
+
+        with act().context:
+
+            if node.hockey:
+
+                node.hockey = False
+
+            else:
+
+                node.hockey = True
+
+
+
+    def slow() -> None:
+
+        with act().context:
+
+            gnode = act().globalsnode
+
+            if gnode.slow_motion:
+
+                gnode.slow_motion = False
+
+            else:
+
+                gnode.slow_motion = True
+
+            
+
+    def spaz_gm(node: bs.Node) -> None:
+
+        with act().context:
+
+            if node.invincible:
+
+                node.invincible = False
+
+            else:
+
+                node.invincible = True
+
+            
+
+    def spaz_sleep(node: bs.Node) -> None:
+
+        with act().context:
+
+            for x in range(5):
+
+                bs.timer(x, bs.Call(node.handlemessage, 'knockout', 5000.0))
+
+            
+
+    def player_color(color: str, node: bs.Node) -> None:
+
+        with act().context:
+
+            node.color = Uts.colors()[color]
+
+            
+
+    def freeze_spaz(node: bs.Node) -> None:
+
+        actor = node.source_player.actor
+
+        del node # Unused by default.
+
+        
+
+        with act().context:
+
+            if actor.shield:
+
+                actor.shield.delete()
+
+                
+
+            actor.handlemessage(bs.FreezeMessage())
+
+
+
+    def pause() -> None:
+
+        with act().context:
+
+            globs = act().globalsnode
+
+            if globs.paused:
+
+                globs.paused = False
+
+            else:
+
+                globs.paused = True
+
+
+
+    def kill_spaz(node: bs.Node) -> None:
+
+        with act().context:
+
+            node.handlemessage(
+
+                bs.DieMessage())
+
+
+
+    def spaz_box(node: bs.Node) -> None:
+
+        with act().context:
+
+            node.torso_mesh = bs.getmesh('tnt')
+
+            node.head_mesh = None
+
+            node.pelvis_mesh = None
+
+            node.forearm_mesh = None
+
+            node.color_texture = node.color_mask_texture = bs.gettexture('tnt')
+
+            node.color = node.highlight = (1,1,1)
+
+            node.style = 'cyborg'
+
+
+
+    def impulse(node: bs.Node) -> None:
+
+        msg = bs.HitMessage(pos=node.position,
+
+                            velocity=node.velocity,
+
+                            magnitude=500 * 4,
+
+                            hit_subtype='imp',
+
+                            radius=7840)
+
+                          
+
+        if isinstance(msg, bs.HitMessage):
+
+            for i in range(2):
+
+                with act().context:
+
+                    node.handlemessage(
+
+                        'impulse', msg.pos[0], msg.pos[1], msg.pos[2],
+
+                        msg.velocity[0], msg.velocity[1]+2.0, msg.velocity[2], msg.magnitude,
+
+                        msg.velocity_magnitude, msg.radius, 0, msg.force_direction[0],
+
+                        msg.force_direction[1], msg.force_direction[2])
+
+
+
+    def actor_name(name: str, node: bs.Node) -> None:
+
+        with act().context:
+
+            node.name = name
+
+
+
+    def actor_command(
+
+            ms: list[str],
+
+            call: Callable,
+
+            attrs: dict[str, Any]) -> None:
+
+        ClientMessage = attrs['ClientMessage']
+
+                
+
+        def new_call(node: bs.Node):
+
+            ClientMessage(getlanguage('Exe'), color=(0, 1, 0))
+
+            call(node)
+
+                
+
+        if len(ms) == 1:
+
+            if attrs['Actor'] is None:
+
+                ClientMessage(getlanguage('Not Exists Node'))
+
+            else:
+
+                actor = attrs['Actor']
+
+                new_call(actor.node)
+
+        else:
+
+            if ms[1] == 'all':
+
+                for p in act().players:
+
+                    node = p.actor.node
+
+                    new_call(node)
+
+            else:
+
+                try:
+
+                    p_id = int(ms[1])
+
+                    node = act().players[p_id].actor.node
+
+                except Exception as exc:
+
+                    color = Uts.colors()['orange']
+
+                    type_error = type(exc)
+
+                    if type_error is ValueError:
+
+                        ClientMessage(getlanguage('Error Entering Player ID', subs=ms[1]), color=color)
+
+                    elif type_error is IndexError:
+
+                        ClientMessage(getlanguage('User Invalid', subs=p_id), color=color)
+
+                    else:
+
+                        ClientMessage(f'{type(e).__name__}: {e}')
+
+                    ClientMessage(getlanguage('EX', subs=ms[0] + ' 0 | ' + ms[0] + ' all'))
+
+                else:
+
+                    new_call(node)
+
+
+
+    def spaz_drop(node: bs.Node) -> None:
+
+        self = node.source_player.actor
+
+        del node # Unused by default.
+
+
+
+        def drop():
+
+            pos = self.node.position
+
+            psts = [
+
+                (pos[0]-1,pos[1]+4,pos[2]+1),
+
+                (pos[0]+1,pos[1]+4,pos[2]+1),
+
+                (pos[0],pos[1]+4,pos[2]-1),
+
+                (pos[0]-2,pos[1]+4,pos[2]),
+
+                (pos[0]+2,pos[1]+4,pos[2]),
+
+                (pos[0]+2,pos[1]+4,pos[2]-1),
+
+                (pos[0]-2,pos[1]+4,pos[2]-1),
+
+                (pos[0],pos[1]+4,pos[2]+2)]
+
+                
+
+            for p in psts:
+
+                bomb = Bomb(
+
+                    position=p,
+
+                    bomb_scale=1.3,
+
+                    bomb_type='sticky').autoretain()
+
+                bomb.node.gravity_scale = 4.0
+
+                bomb.node.color_texture = bs.gettexture('bombStickyColor')
+
                     
-                    # دمج البيانات المحملة مع الافتراضية (للحفاظ على الهيكل)
-                    for role, info in loaded_data.items():
-                        if role in self.data:
-                            # الحفاظ على PBID المالك في القائمة
-                            if role == 'owner' and HARDCODED_OWNER_PBID not in info.get('accounts', []):
-                                info['accounts'].append(HARDCODED_OWNER_PBID)
-                            self.data[role].update(info)
-                print(f"[BILLY ROLES] Loaded from {roles_file}")
-            else:
-                # حفظ البيانات الافتراضية لأول مرة
-                self.save()
-                print(f"[BILLY ROLES] Created new roles file: {roles_file}")
-                
-        except Exception as e:
-            print(f"[BILLY ROLES ERROR] {e}")
-            # في حالة الخطأ، نستخدم البيانات الافتراضية ونحفظها
-            self.save()
-    
-    def save(self) -> None:
-        """حفظ بيانات الأدوار إلى ملف JSON"""
-        roles_file = BillyConfig.get_roles_file()
-        
-        try:
-            # التأكد من أن PBID المالك موجود قبل الحفظ
-            self._ensure_owner_pbid()
-            
-            with open(roles_file, 'w', encoding='utf-8') as f:
-                json.dump(self.data, f, indent=2, ensure_ascii=False)
-            print(f"[BILLY ROLES] Saved to {roles_file}")
-        except Exception as e:
-            print(f"[BILLY ROLES SAVE ERROR] {e}")
-    
-    def get_role(self, pbid: str) -> str:
-        """الحصول على دور اللاعب"""
-        if not pbid:
-            return 'member'
-        
-        # التحقق أولاً إذا كان PBID المالك الثابت
-        if pbid == HARDCODED_OWNER_PBID:
-            return 'owner'
-        
-        for role, info in self.data.items():
-            if pbid in info.get('accounts', []):
-                return role
-        return 'member'
-    
-    def has_perm(self, pbid: str, required_role: str) -> bool:
-        """فحص صلاحية اللاعب"""
-        if not pbid:
-            return False
-        
-        # المالك الثابت لديه جميع الصلاحيات
-        if pbid == HARDCODED_OWNER_PBID:
-            return True
-        
-        player_role = self.get_role(pbid)
-        player_level = self.HIERARCHY.get(player_role, 0)
-        required_level = self.HIERARCHY.get(required_role, 0)
-        
-        return player_level >= required_level
 
-# ================ BILLY TAGS SYSTEM ================
-class BillyTags:
-    def __init__(self) -> None:
-        self.data = {}
-        self.load()
-        print(f"[BILLY TAGS] Loaded {len(self.data)} player tags")
-    
-    def load(self) -> None:
-        """تحميل بيانات العلامات من ملف JSON"""
-        tags_file = BillyConfig.get_tags_file()
-        
-        try:
-            if os.path.exists(tags_file):
-                with open(tags_file, 'r', encoding='utf-8') as f:
-                    self.data = json.load(f)
-                print(f"[BILLY TAGS] Loaded from {tags_file}")
-            else:
-                # حفظ ملف فارغ لأول مرة
-                self.save()
-                print(f"[BILLY TAGS] Created new tags file: {tags_file}")
-                
-        except Exception as e:
-            print(f"[BILLY TAGS ERROR] {e}")
-            self.data = {}
-            self.save()
-    
-    def save(self) -> None:
-        """حفظ بيانات العلامات إلى ملف JSON"""
-        tags_file = BillyConfig.get_tags_file()
-        
-        try:
-            with open(tags_file, 'w', encoding='utf-8') as f:
-                json.dump(self.data, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"[BILLY TAGS SAVE ERROR] {e}")
-    
-    def get_tag(self, pbid: str) -> dict:
-        """الحصول على علامة اللاعب"""
-        return self.data.get(pbid, {})
+        for x in range(2):
 
-# ================ GLOBAL MANAGERS ================
-roles_manager = BillyRoles()
-tags_manager = BillyTags()
+            with act().context:
 
-# ================ CHAT COMMAND SYSTEM ================
-class BillyCmd(babase.Plugin):
-    """نظام أوامر الشات"""
+                bs.timer(x * 0.308, drop)
+
+
+
+    def get_user_list(c_id: int) -> None:
+
+        def delete_text(t_id: int):
+
+            if t_id == id(act()._ids.node):
+
+                act()._ids.node.opacity = 0.0
+
+            
+
+        def gText(txt: str):
+
+            act()._ids = text.Text(txt, position=(-0.0, 270.0),
+
+                h_align=text.Text.HAlign.CENTER, scale=1.1,
+
+                transition=text.Text.Transition.FADE_IN).autoretain()
+
+            act()._ids.node.opacity = 0.5
+
+            
+
+            t_id = id(act()._ids.node)
+
+            bs.timer(8.0, bs.Call(delete_text, t_id))
+
     
-    def __init__(self) -> None:
-        super().__init__()
-        self.print_banner()
-        
-        # ربط حدث الشات
-        self._chat_cb = bs.ChatMessage(self.on_chat_message)
-    
-    def print_banner(self) -> None:
-        """طباعة بانر التحميل"""
-        print("╔══════════════════════════════════════════╗")
-        print("║     BILLY COMMAND SYSTEM v2.0 - OWNER    ║")
-        print("║  Hardcoded Owner: pb-IF4nXhIECg==        ║")
-        print("╚══════════════════════════════════════════╝")
-        print("👑 Owner PBID:", HARDCODED_OWNER_PBID)
-        print("📁 Configs Path:", BillyConfig.get_config_path())
-        print("✅ Ready! You are automatically OWNER")
-        print("=" * 50)
-    
-    def on_chat_message(self, msg: str, client_id: int) -> bool:
-        """معالجة رسائل الشات"""
+
+        txt = str()
+
+        txts = [getlanguage('Players Data'),
+
+                "______________________"]
+
+
+
         try:
-            if not msg.startswith('/'):
-                return True  # رسالة عادية، اتركها تمر
-            
-            # تجزئة الأمر
-            parts = msg[1:].split()
-            if not parts:
-                return False
-            
-            cmd = parts[0].lower()
-            args = parts[1:]
-            
-            # الحصول على معلومات اللاعب
-            player = self.get_player_info(client_id)
-            if not player:
-                return False
-            
-            pbid, name = player
-            
-            # عرض PBID للمساعدة في التصحيح
-            if cmd == 'debug':
-                self.send_message(f"Your PBID: {pbid}", client_id)
-                return False
-            
-            # معالجة الأوامر
-            if cmd == 'help':
-                self.show_help(pbid, client_id)
-                return False
-                
-            elif cmd == 'myrole':
-                self.show_role(pbid, client_id)
-                return False
-                
-            elif cmd == 'whoami':
-                self.show_whoami(pbid, name, client_id)
-                return False
-                
-            elif cmd == 'kick':
-                self.cmd_kick(pbid, args, client_id)
-                return False
-                
-            elif cmd == 'end':
-                self.cmd_end(pbid, client_id)
-                return False
-                
-            elif cmd == 'restart':
-                self.cmd_restart(pbid, client_id)
-                return False
-                
-            elif cmd == 'addrole':
-                self.cmd_addrole(pbid, args, client_id)
-                return False
-                
-            elif cmd == 'removerole':
-                self.cmd_removerole(pbid, args, client_id)
-                return False
-                
-            elif cmd == 'tag':
-                self.cmd_tag(pbid, args, client_id)
-                return False
-                
-            elif cmd == 'tagcolor':
-                self.cmd_tagcolor(pbid, args, client_id)
-                return False
-                
-            elif cmd == 'taganim':
-                self.cmd_taganim(pbid, args, client_id)
-                return False
-                
-            elif cmd == 'removetag':
-                self.cmd_removetag(pbid, client_id)
-                return False
-                
-            elif cmd == 'mytag':
-                self.show_tag(pbid, client_id)
-                return False
-                
-            else:
-                # أمر غير معروف
-                self.send_error(f"Unknown command: /{cmd}", client_id)
-                return False
-                
-        except Exception as e:
-            print(f"[BILLY CMD ERROR] {e}")
-            import traceback
-            traceback.print_exc()
-            return True
-    
-    def get_player_info(self, client_id: int) -> tuple | None:
-        """الحصول على معلومات اللاعب"""
-        try:
-            roster = bs.get_game_roster()
-            for entry in roster:
-                if entry['client_id'] == client_id:
-                    pbid = entry.get('account_id', '')
-                    name = entry.get('display_string', 'Unknown')
-                    return (pbid, name)
-            return None
-        except:
-            return None
-    
-    def send_message(self, text: str, client_id: int, color=(0.7, 0.9, 1.0)) -> None:
-        """إرسال رسالة للاعب"""
-        try:
-            bs.broadcastmessage(
-                text,
-                color=color,
-                transient=True,
-                clients=[client_id]
-            )
-        except:
-            pass
-    
-    def send_error(self, text: str, client_id: int) -> None:
-        """إرسال رسالة خطأ"""
-        self.send_message(f"❌ {text}", client_id, (1, 0.3, 0.3))
-    
-    def send_success(self, text: str, client_id: int) -> None:
-        """إرسال رسالة نجاح"""
-        self.send_message(f"✅ {text}", client_id, (0.3, 1, 0.3))
-    
-    def send_info(self, text: str, client_id: int) -> None:
-        """إرسال رسالة معلومات"""
-        self.send_message(f"ℹ️ {text}", client_id, (0.5, 0.8, 1))
-    
-    def show_help(self, pbid: str, client_id: int) -> None:
-        """عرض قائمة المساعدة"""
-        role = roles_manager.get_role(pbid)
-        
-        help_text = f"""👑 **BILLY COMMANDS HELP** (Your Role: {role.upper()})
 
-🔹 **BASIC COMMANDS**
-/help - Show this help menu
-/myrole - Show your current role
-/whoami - Show your PBID and role
-/mytag - Show your current tag
+            players = act().players
 
-🔹 **ADMIN COMMANDS** (Admin+)
-/kick <id> - Kick a player by client ID
-/end - End the current game
-/restart - Restart the server
-
-🔹 **ROLE MANAGEMENT** (Owner+)
-/addrole <pbid> <role> - Add role to player
-/removerole <pbid> <role> - Remove role from player
-
-🔹 **TAG SYSTEM** (VIP+)
-/tag <text> - Set your tag text
-/tagcolor <r> <g> <b> - Set tag color (0-1)
-/taganim <effect> - Set tag animation
-/removetag - Remove your tag
-
-📌 **Available Roles:** owner, admin, vip
-"""
-        self.send_message(help_text, client_id)
-    
-    def show_whoami(self, pbid: str, name: str, client_id: int) -> None:
-        """عرض معلومات اللاعب"""
-        role = roles_manager.get_role(pbid)
-        
-        # التحقق إذا كان المالك الثابت
-        is_hardcoded_owner = (pbid == HARDCODED_OWNER_PBID)
-        
-        message = f"""👤 **WHO AM I**
-Name: {name}
-PBID: {pbid}
-Role: {role.upper()} {"(Hardcoded Owner)" if is_hardcoded_owner else ""}
-Permission Level: {roles_manager.HIERARCHY.get(role, 0)}
-"""
-        self.send_message(message, client_id)
-    
-    def show_role(self, pbid: str, client_id: int) -> None:
-        """عرض دور اللاعب"""
-        role = roles_manager.get_role(pbid)
-        is_hardcoded_owner = (pbid == HARDCODED_OWNER_PBID)
-        
-        if role in roles_manager.data:
-            role_data = roles_manager.data.get(role, {})
-            icon = role_data.get('icon', '')
-            color = role_data.get('color', [1, 1, 1])
-        else:
-            icon = '👤'
-            color = [0.8, 0.8, 0.8]
-        
-        status = " (Hardcoded Owner)" if is_hardcoded_owner else ""
-        
-        self.send_message(
-            f"{icon} Your Role: **{role.upper()}**{status}\n"
-            f"Permissions Level: {roles_manager.HIERARCHY.get(role, 0)}\n"
-            f"You can use: /help to see available commands",
-            client_id,
-            tuple(color)
-        )
-    
-    def cmd_kick(self, pbid: str, args: list, client_id: int) -> None:
-        """أمر الطرد"""
-        if not roles_manager.has_perm(pbid, 'admin'):
-            self.send_error("You need ADMIN role!", client_id)
-            return
-        
-        if not args:
-            self.send_error("Usage: /kick <client_id>", client_id)
-            return
-        
-        try:
-            target_id = int(args[0])
-            
-            # لا يمكن طرد نفسه
-            player_info = self.get_player_info(client_id)
-            target_info = self.get_player_info(target_id)
-            
-            if target_info and target_info[0] == pbid:
-                self.send_error("You cannot kick yourself!", client_id)
-                return
-            
-            # طرد اللاعب
-            bs.disconnect_client(target_id)
-            self.send_success(f"Player {target_id} kicked!", client_id)
-            
-        except ValueError:
-            self.send_error("Invalid client ID! Must be a number", client_id)
-        except Exception as e:
-            self.send_error(f"Failed to kick: {str(e)}", client_id)
-    
-    def cmd_end(self, pbid: str, client_id: int) -> None:
-        """أمر إنهاء الجولة"""
-        if not roles_manager.has_perm(pbid, 'admin'):
-            self.send_error("You need ADMIN role!", client_id)
-            return
-        
-        activity = bs.get_foreground_host_activity()
-        if activity and hasattr(activity, 'end_game'):
-            activity.end_game()
-            self.send_success("Game ended!", client_id)
-        else:
-            self.send_error("No active game found!", client_id)
-    
-    def cmd_restart(self, pbid: str, client_id: int) -> None:
-        """أمر إعادة التشغيل"""
-        if not roles_manager.has_perm(pbid, 'admin'):
-            self.send_error("You need ADMIN role!", client_id)
-            return
-        
-        self.send_info("Restarting server...", client_id)
-        babase.quit()
-    
-    def cmd_addrole(self, pbid: str, args: list, client_id: int) -> None:
-        """إضافة دور"""
-        if not roles_manager.has_perm(pbid, 'owner'):
-            self.send_error("You need OWNER role!", client_id)
-            return
-        
-        if len(args) < 2:
-            self.send_error("Usage: /addrole <pbid> <role>", client_id)
-            return
-        
-        target_pbid, role = args[0], args[1].lower()
-        
-        if role not in roles_manager.data:
-            self.send_error(f"Invalid role! Available: {', '.join(roles_manager.data.keys())}", client_id)
-            return
-        
-        # لا يمكن تعديل المالك الثابت
-        if target_pbid == HARDCODED_OWNER_PBID:
-            self.send_error("Cannot modify hardcoded owner!", client_id)
-            return
-        
-        # إزالة من الأدوار الأخرى أولاً
-        for r in roles_manager.data:
-            if target_pbid in roles_manager.data[r]['accounts']:
-                roles_manager.data[r]['accounts'].remove(target_pbid)
-        
-        # إضافة للدور الجديد
-        if target_pbid not in roles_manager.data[role]['accounts']:
-            roles_manager.data[role]['accounts'].append(target_pbid)
-            roles_manager.save()
-            self.send_success(f"Added {role} role to {target_pbid}", client_id)
-        else:
-            self.send_info(f"Player already has {role} role", client_id)
-    
-    def cmd_removerole(self, pbid: str, args: list, client_id: int) -> None:
-        """إزالة دور"""
-        if not roles_manager.has_perm(pbid, 'owner'):
-            self.send_error("You need OWNER role!", client_id)
-            return
-        
-        if len(args) < 2:
-            self.send_error("Usage: /removerole <pbid> <role>", client_id)
-            return
-        
-        target_pbid, role = args[0], args[1].lower()
-        
-        if role not in roles_manager.data:
-            self.send_error(f"Invalid role! Available: {', '.join(roles_manager.data.keys())}", client_id)
-            return
-        
-        # لا يمكن تعديل المالك الثابت
-        if target_pbid == HARDCODED_OWNER_PBID:
-            self.send_error("Cannot modify hardcoded owner!", client_id)
-            return
-        
-        if target_pbid in roles_manager.data[role]['accounts']:
-            roles_manager.data[role]['accounts'].remove(target_pbid)
-            roles_manager.save()
-            self.send_success(f"Removed {role} role from {target_pbid}", client_id)
-        else:
-            self.send_error(f"Player doesn't have {role} role!", client_id)
-    
-    def cmd_tag(self, pbid: str, args: list, client_id: int) -> None:
-        """تعيين علامة"""
-        if not roles_manager.has_perm(pbid, 'vip'):
-            self.send_error("You need VIP role!", client_id)
-            return
-        
-        if not args:
-            self.send_error("Usage: /tag <text>", client_id)
-            return
-        
-        tag_text = " ".join(args)
-        
-        if pbid not in tags_manager.data:
-            tags_manager.data[pbid] = {}
-        
-        tags_manager.data[pbid]['text'] = tag_text
-        tags_manager.save()
-        
-        self.send_success(f"Tag set: {tag_text}", client_id)
-    
-    def cmd_tagcolor(self, pbid: str, args: list, client_id: int) -> None:
-        """تعيين لون العلامة"""
-        if not roles_manager.has_perm(pbid, 'vip'):
-            self.send_error("You need VIP role!", client_id)
-            return
-        
-        if len(args) != 3:
-            self.send_error("Usage: /tagcolor <r> <g> <b> (values 0-1)", client_id)
-            return
-        
-        try:
-            r = float(args[0])
-            g = float(args[1])
-            b = float(args[2])
-            
-            # التحقق من القيم
-            if any(val < 0 or val > 1 for val in [r, g, b]):
-                raise ValueError("Values must be between 0 and 1")
-            
-            if pbid not in tags_manager.data:
-                tags_manager.data[pbid] = {}
-            
-            tags_manager.data[pbid]['color'] = [r, g, b]
-            tags_manager.save()
-            
-            self.send_success(f"Tag color set to ({r:.2f}, {g:.2f}, {b:.2f})", client_id, (r, g, b))
-            
-        except ValueError as e:
-            self.send_error(str(e), client_id)
         except Exception:
-            self.send_error("Invalid color values!", client_id)
-    
-    def cmd_taganim(self, pbid: str, args: list, client_id: int) -> None:
-        """تعيين حركة العلامة"""
-        if not roles_manager.has_perm(pbid, 'vip'):
-            self.send_error("You need VIP role!", client_id)
-            return
-        
-        if not args:
-            self.send_error("Usage: /taganim <effect>", client_id)
-            return
-        
-        effect = args[0].lower()
-        available_effects = ['gold', 'rainbow', 'pulse', 'fire']
-        
-        if effect not in available_effects:
-            self.send_error(f"Available effects: {', '.join(available_effects)}", client_id)
-            return
-        
-        if pbid not in tags_manager.data:
-            tags_manager.data[pbid] = {}
-        
-        tags_manager.data[pbid]['anim'] = effect
-        tags_manager.save()
-        
-        self.send_success(f"Tag animation set to: {effect}", client_id)
-    
-    def cmd_removetag(self, pbid: str, client_id: int) -> None:
-        """إزالة العلامة"""
-        if not roles_manager.has_perm(pbid, 'vip'):
-            self.send_error("You need VIP role!", client_id)
-            return
-        
-        if pbid in tags_manager.data:
-            del tags_manager.data[pbid]
-            tags_manager.save()
-            self.send_success("Tag removed!", client_id)
+
+            players = []
+
         else:
-            self.send_error("You don't have a tag!", client_id)
+
+            for idx, p in enumerate(players):
+
+                if p.is_alive():
+
+                    s = p.sessionplayer
+
+                    txts.append(f"{s.getname(False)} | {idx} | {s.inputdevice.client_id}")
+
+        
+
+        txt = '\n'.join(txts)
+
+
+
+        with act().context:
+
+            try:
+
+                if act()._ids.node.exists():
+
+                    act()._ids.node.delete()
+
+                    gText(txt)
+
+            except AttributeError:
+
+                gText(txt)
+
+        bs.screenmessage(txt, clients=[c_id], transient=True)
+
     
-    def show_tag(self, pbid: str, client_id: int) -> None:
-        """عرض علامة اللاعب"""
-        tag_data = tags_manager.get_tag(pbid)
-        
-        if not tag_data:
-            self.send_info("You don't have a tag set", client_id)
-            return
-        
-        response = "🏷️ **YOUR TAG**\n"
-        
-        if 'text' in tag_data:
-            response += f"Text: {tag_data['text']}\n"
-        
-        if 'color' in tag_data:
-            r, g, b = tag_data['color']
-            response += f"Color: ({r:.2f}, {g:.2f}, {b:.2f})\n"
-        
-        if 'anim' in tag_data:
-            response += f"Animation: {tag_data['anim']}\n"
-        
-        self.send_message(response, client_id)
 
-# ================ REGISTER PLUGIN ================
-billy_plugin = BillyCmd()
+    def get_characters() -> list[str]:
 
-# ================ HOOKS FOR BOMBSQUAD ================
-def ba_get_api_version():
-    return 9
+        return bs.app.spaz_appearances
 
-def ba_get_modules():
-    return [billy_plugin]
-
-def ba_get_plugin_classes():
-    return [BillyCmd]
-
-# ================ QUICK SETUP COMMANDS ================
-def setup_billy_system():
-    """إعدادات سريعة للنظام"""
-    print("\n" + "="*50)
-    print("BILLY SYSTEM - HARDCODED OWNER SETUP")
-    print("="*50)
     
-    # 1. إنشاء ملفات JSON تلقائياً
-    config_path = BillyConfig.get_config_path()
-    print(f"✓ Configs directory: {config_path}")
+
+    def user_is_admin(c_id: int) -> bool:
+
+        if c_id == -1:
+
+            return True
+
     
-    # 2. تحميل المديرين
-    global roles_manager, tags_manager
-    print(f"✓ Loaded roles manager with hardcoded owner: {HARDCODED_OWNER_PBID}")
-    print(f"✓ Owner PBID: {HARDCODED_OWNER_PBID}")
+
+        if c_id in Uts.accounts:
+
+            return Uts.accounts[c_id]['Admin']
+
+        else:
+
+            return False
+
     
-    # 3. عرض ملفات JSON
-    roles_file = BillyConfig.get_roles_file()
-    if os.path.exists(roles_file):
-        print(f"✓ Roles file exists: {roles_file}")
-        # عرض محتوى الملف
+
+    def get_actor(c_id: int) -> spaz.Spaz:
+
+        act = bs.get_foreground_host_activity()
+
+        for player in act.players:
+
+            if c_id == player.sessionplayer.inputdevice.client_id:
+
+                return player.actor
+
+        
+
+def ActorMessage(msg: str, actor: spaz.Spaz):
+
+    def die(node: bs.Node):
+
+        if node.exists():
+
+            bs.animate(popup.node, 'opacity', {0: 1.0, 0.1: 0.0})
+
+            bs.timer(0.1, popup.node.delete)
+
+        
+
+    with act().context:
+
+        if getattr(actor, 'my_message', None):
+
+            actor.my_message.node.delete()
+
+        
+
+        c = (1.0, 1.0, 1.0)
+
+        position = (-0.0, 0.5, 0.0)
+
+
+
+        m = bs.newnode('math', owner=actor.node, attrs={'input1':
+
+            (position[0], position[1], position[2]), 'operation': 'add'})
+
+        actor.node.connectattr('position_center', m, 'input2')
+
+        
+
+        actor.my_message = popup = PopupText(
+
+             text=msg, color=c, scale=1.5).autoretain()
+
+        m.connectattr('output', popup.node, 'position')
+
+        bs.timer(5.0, bs.Call(die, popup.node))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Effects
+
+def _fire(self) -> None:
+
+    if not self.node.exists():
+
+        self._cm_effect_timer = None
+
+    else:
+
+        bs.emitfx(position=self.node.position,
+
+        scale=3,count=50*2,spread=0.3,
+
+        chunk_type='sweat')
+
+    
+
+def _spark(self) -> None:
+
+    if not self.node.exists():
+
+        self._cm_effect_timer = None
+
+    else:
+
+        bs.emitfx(position=self.node.position,
+
+        scale=0.7,count=50*2,spread=0.3,
+
+        chunk_type='spark')
+
+    
+
+def footprint(self) -> None:
+
+    if not self.node.exists():
+
+        self._cm_effect_timer = None
+
+    else:
+
+        loc = bs.newnode('locator', owner=self.node,
+
+              attrs={
+
+                     'position': self.node.position,
+
+                     'shape': 'circle',
+
+                     'color': self.node.color,
+
+                     'size': [0.2],
+
+                     'draw_beauty': False,
+
+                     'additive': False})
+
+        bs.animate(loc, 'opacity', {0: 1.0, 1.9: 0.0})
+
+        bs.timer(2.0, loc.delete)
+
+    
+
+def aure(self) -> None:
+
+    def anim(node: bs.Node) -> None:
+
+        bs.animate_array(node, 'color', 3,
+
+            {0: (1,1,0), 0.1: (0,1,0),
+
+             0.2: (1,0,0), 0.3: (0,0.5,1),
+
+             0.4: (1,0,1)}, loop=True)
+
+        bs.animate_array(node, 'size', 1,
+
+            {0: [1.0], 0.2: [1.5], 0.3: [1.0]}, loop=True)
+
+
+
+    attrs = ['torso_position', 'position_center', 'position']
+
+    for i, pos in enumerate(attrs):
+
+        loc = bs.newnode('locator', owner=self.node,
+
+              attrs={'shape': 'circleOutline',
+
+                     'color': self.node.color,
+
+                     'opacity': 1.0,
+
+                     'draw_beauty': True,
+
+                     'additive': False})
+
+        self.node.connectattr(pos, loc, 'position')
+
+        bs.timer(0.1 * i, bs.Call(anim, loc))
+
+    
+
+def stars(self) -> None:
+
+    def die(node: bs.Node) -> None:
+
+        if node:
+
+            m = node.mesh_scale
+
+            bs.animate(node, 'mesh_scale', {0: m, 0.1: 0})
+
+            bs.timer(0.1, node.delete)
+
+    
+
+    if not self.node.exists() or self._dead:
+
+        self._cm_effect_timer = None
+
+    else:
+
+        c = 0.3
+
+        pos_list = [
+
+            (c, 0, 0), (0, 0, c),
+
+            (-c, 0, 0), (0, 0, -c)]
+
+            
+
+        for p in pos_list:
+
+            m = 1.5
+
+            np = self.node.position
+
+            pos = (np[0]+p[0], np[1]+p[1]+0.0, np[2]+p[2])
+
+            vel = (random.uniform(-m, m), random.uniform(2, 7), random.uniform(-m, m))
+
+
+
+            texs = ['bombStickyColor', 'aliColor', 'aliColorMask', 'eggTex3']
+
+            tex = bs.gettexture(random.choice(texs))
+
+            mesh = bs.getmesh('flash')
+
+            factory = SpazFactory.get()
+
+            
+
+            mat = bs.Material()
+
+            mat.add_actions(
+
+                conditions=('they_have_material', factory.punch_material),
+
+                actions=(
+
+                    ('modify_part_collision', 'collide', False),
+
+                    ('modify_part_collision', 'physical', False),
+
+                ))
+
+
+
+            node = bs.newnode('prop',
+
+                owner=self.node,
+
+                attrs={'body': 'sphere',
+
+                       'position': pos,
+
+                       'velocity': vel,
+
+                       'mesh': mesh,
+
+                       'mesh_scale': 0.1,
+
+                       'body_scale': 0.0,
+
+                       'shadow_size': 0.0,
+
+                       'gravity_scale': 0.5,
+
+                       'color_texture': tex,
+
+                       'reflection': 'soft',
+
+                       'reflection_scale': [1.5],
+
+                       'materials': [mat]})
+
+            
+
+            light = bs.newnode('light',
+
+                owner=node,
+
+                attrs={
+
+                    'intensity': 0.3,
+
+                    'volume_intensity_scale': 0.5,
+
+                    'color': (random.uniform(0.5, 1.5),
+
+                              random.uniform(0.5, 1.5),
+
+                              random.uniform(0.5, 1.5)),
+
+                    'radius': 0.035})
+
+            node.connectattr('position', light, 'position')
+
+            bs.timer(0.25, bs.Call(die, node))
+
+            
+
+def chispitas(self) -> None:
+
+    def die(node: bs.Node) -> None:
+
+        if node:
+
+            m = node.mesh_scale
+
+            bs.animate(node, 'mesh_scale', {0: m, 0.1: 0})
+
+            bs.timer(0.1, node.delete)
+
+    
+
+    if not self.node.exists() or self._dead:
+
+        self._cm_effect_timer = None
+
+    else:
+
+        c = 0.3
+
+        pos_list = [
+
+            (c, 0, 0), (0, 0, c),
+
+            (-c, 0, 0), (0, 0, -c)]
+
+            
+
+        for p in pos_list:
+
+            m = 1.5
+
+            np = self.node.position
+
+            pos = (np[0]+p[0], np[1]+p[1]+0.0, np[2]+p[2])
+
+            vel = (random.uniform(-m, m), random.uniform(2, 7), random.uniform(-m, m))
+
+
+
+            tex = bs.gettexture('null')
+
+            mesh = None
+
+            factory = SpazFactory.get()
+
+            
+
+            mat = bs.Material()
+
+            mat.add_actions(
+
+                conditions=('they_have_material', factory.punch_material),
+
+                actions=(
+
+                    ('modify_part_collision', 'collide', False),
+
+                    ('modify_part_collision', 'physical', False),
+
+                ))
+
+
+
+            node = bs.newnode('bomb',
+
+                owner=self.node,
+
+                attrs={'body': 'sphere',
+
+                       'position': pos,
+
+                       'velocity': vel,
+
+                       'mesh': mesh,
+
+                       'mesh_scale': 0.1,
+
+                       'body_scale': 0.0,
+
+                       'color_texture': tex,
+
+                       'fuse_length': 0.1,
+
+                       'materials': [mat]})
+
+            
+
+            light = bs.newnode('light',
+
+                owner=node,
+
+                attrs={
+
+                    'intensity': 0.3,
+
+                    'volume_intensity_scale': 0.5,
+
+                    'color': (random.uniform(0.5, 1.5),
+
+                              random.uniform(0.5, 1.5),
+
+                              random.uniform(0.5, 1.5)),
+
+                    'radius': 0.035})
+
+            node.connectattr('position', light, 'position')
+
+            bs.timer(0.25, bs.Call(die, node))
+
+            
+
+def darkmagic(self) -> None:
+
+    def die(node: bs.Node) -> None:
+
+        if node:
+
+            m = node.mesh_scale
+
+            bs.animate(node, 'mesh_scale', {0: m, 0.1: 0})
+
+            bs.timer(0.1, node.delete)
+
+    
+
+    if not self.node.exists() or self._dead:
+
+        self._cm_effect_timer = None
+
+    else:
+
+        c = 0.3
+
+        pos_list = [
+
+            (c, 0, 0), (0, 0, c),
+
+            (-c, 0, 0), (0, 0, -c)]
+
+            
+
+        for p in pos_list:
+
+            m = 1.5
+
+            np = self.node.position
+
+            pos = (np[0]+p[0], np[1]+p[1]+0.0, np[2]+p[2])
+
+            vel = (random.uniform(-m, m), 30.0, random.uniform(-m, m))
+
+
+
+            tex = bs.gettexture('impactBombColor')
+
+            mesh = bs.getmesh('impactBomb')
+
+            factory = SpazFactory.get()
+
+            
+
+            mat = bs.Material()
+
+            mat.add_actions(
+
+                conditions=('they_have_material', factory.punch_material),
+
+                actions=(
+
+                    ('modify_part_collision', 'collide', False),
+
+                    ('modify_part_collision', 'physical', False),
+
+                ))
+
+
+
+            node = bs.newnode('prop',
+
+                owner=self.node,
+
+                attrs={'body': 'sphere',
+
+                       'position': pos,
+
+                       'velocity': vel,
+
+                       'mesh': mesh,
+
+                       'mesh_scale': 0.4,
+
+                       'body_scale': 0.0,
+
+                       'shadow_size': 0.0,
+
+                       'gravity_scale': 0.5,
+
+                       'color_texture': tex,
+
+                       'reflection': 'soft',
+
+                       'reflection_scale': [0.0],
+
+                       'materials': [mat]})
+
+            
+
+            light = bs.newnode('light',
+
+                owner=node,
+
+                attrs={'intensity': 1.0,
+
+                       'volume_intensity_scale': 0.5,
+
+                       'color': (0.5, 0.0, 1.0),
+
+                       'radius': 0.035})
+
+            node.connectattr('position', light, 'position')
+
+            bs.timer(0.25, bs.Call(die, node))
+
+            
+
+def _rainbow(self) -> None:
+
+    keys = {
+
+        0.0: (2.0, 0.0, 0.0),
+
+        0.2: (2.0, 1.5, 0.5),
+
+        0.4: (2.0, 2.0, 0.0),
+
+        0.6: (0.0, 2.0, 0.0),
+
+        0.8: (0.0, 2.0, 2.0),
+
+        1.0: (0.0, 0.0, 2.0),
+
+    }.items()
+
+
+
+    def _changecolor(color: Sequence[float]) -> None:
+
+        if self.node.exists():
+
+            self.node.color = color
+
+
+
+    for time, color in keys:
+
+        bs.timer(time, bs.Call(_changecolor, color))
+
+           
+
+def apply_effect(self, eff: str) -> None:
+
+    if eff == 'fire':
+
+        call = bs.Call(_fire, self)
+
+        self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
+
+    elif eff == 'spark':
+
+        call = bs.Call(_spark, self)
+
+        self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
+
+    elif eff == 'footprint':
+
+        call = bs.Call(footprint, self)
+
+        self._cm_effect_timer = bs.Timer(0.15, call, repeat=True)
+
+    elif eff == 'stars':
+
+        call = bs.Call(stars, self)
+
+        self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
+
+    elif eff == 'chispitas':
+
+        call = bs.Call(chispitas, self)
+
+        self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
+
+    elif eff == 'darkmagic':
+
+        call = bs.Call(darkmagic, self)
+
+        self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
+
+    elif eff == 'rainbow':
+
+        call = bs.Call(_rainbow, self)
+
+        self._cm_effect_timer = bs.Timer(1.2, call, repeat=True)
+
+    elif eff == 'aure':
+
+        aure(self)
+
+    
+
+# -----------
+
+
+
+def filter_chat_message(msg: str, client_id: int) -> None:
+
+    command = Commands(msg, client_id, msg.split(' '))
+
+    return command.get
+
+    
+
+def new_ga_on_transition_in(self) -> None:
+
+    calls['GA_OnTransitionIn'](self)
+
+    # bui.set_party_icon_always_visible(True)
+
+    Uts.create_data_text(self)
+
+    Uts.create_live_chat(self, live=False)
+
+
+
+def new_on_player_join(self, player: bs.Player) -> None:
+
+    calls['OnPlayerJoin'](self, player)
+
+    Uts.player_join(player)
+
+    
+
+def new_playerspaz_init_(self, *args, **kwargs) -> None:
+
+    calls['PlayerSpazInit'](self, *args, **kwargs)
+
+    Uts.update_usernames()
+
+
+
+    try:
+
+        user = self._player.sessionplayer.get_v1_account_id()
+
+    except (AttributeError, ba.SessionPlayerNotFoundError):
+
+        user = None
+
+        
+
+    if user in Uts.pdata:
+
+        eff = Uts.pdata[user]['Effect']
+
+        apply_effect(self, eff)
+
+            
+
+def new_playerspaz_on_jump_press(self) -> None:    
+
+    calls['OnJumpPress'](self)
+
+    
+
+    if not getattr(self, 'cm_superjump', False):
+
+        return
+
+        
+
+    if (not self.node or not self.node.jump_pressed):
+
+        return
+
+    
+
+    msg = bs.HitMessage(pos=self.node.position,
+
+                        velocity=self.node.velocity,
+
+                        magnitude=160*2,
+
+                        hit_subtype='imp',
+
+                        radius=460*2)
+
+                      
+
+    if isinstance(msg, bs.HitMessage):
+
+        for i in range(2):
+
+            with act().context:
+
+                self.node.handlemessage(
+
+                    'impulse', msg.pos[0], msg.pos[1], msg.pos[2],
+
+                    msg.velocity[0], msg.velocity[1]+2.0, msg.velocity[2], msg.magnitude,
+
+                    msg.velocity_magnitude, msg.radius, 0, msg.force_direction[0],
+
+                    msg.force_direction[1], msg.force_direction[2])
+
+            
+
+# -----------
+
+
+
+class ExplosiveGift(bs.Actor):
+
+    def __init__(self,
+
+                 time: float = 3.0,
+
+                 owner: bs.Node = None):
+
+        super().__init__()
+
+        
+
+        self.time = time
+
+        self.owner = owner
+
+        self.scale = 0.8
+
+        self.touch = False
+
+        
+
+        pos = list(owner.position)
+
+        velocity = (0.0, 60, 0.0)
+
+        position = (pos[0], pos[1]+1.47, pos[2])
+
+                     
+
+        tex = bs.gettexture('crossOutMask')
+
+        mesh = bs.getmesh('tnt')
+
+                     
+
+        self.node = bs.newnode('bomb',
+
+                               delegate=self,
+
+                               attrs={'body': 'sphere',
+
+                                      'position': position,
+
+                                      'velocity': velocity,
+
+                                      'mesh': mesh,
+
+                                      'body_scale': self.scale,
+
+                                      'shadow_size': 0.3,
+
+                                      'color_texture': tex,
+
+                                      'sticky': True,
+
+                                      'owner': owner,
+
+                                      'reflection': 'soft',
+
+                                      'reflection_scale': [0.22]})
+
+        bs.animate(self.node, 'mesh_scale',
+
+           {0: 0,
+
+            0.2: self.scale * 1.3,
+
+            0.26: self.scale})
+
+        bs.animate(self.node, 'fuse_length', {0.0: 1.0, time: 0.0})
+
+        bs.timer(time, self._xplosion)
+
+        
+
+    def _xplosion(self):
+
+        radius = 3.0
+
+        shared = SharedObjects.get()
+
+        
+
+        mat = bs.Material()
+
+        mat.add_actions(
+
+            conditions=(
+
+                ('they_have_material', shared.player_material), 'or',
+
+                ('they_have_material', shared.object_material)
+
+            ),
+
+            actions=(
+
+                ('modify_part_collision', 'collide', True),
+
+                ('modify_part_collision', 'physical', False),
+
+                ('call', 'at_connect', self.call)
+
+            ))
+
+        
+
+        rmats = [mat, shared.attack_material]
+
+
+
+        region = bs.newnode('region',
+
+            delegate=self,
+
+            owner=self.node,
+
+            attrs={'scale': tuple(radius*0.7 for s in range(3)),
+
+                   'type': 'sphere',
+
+                   'materials': rmats})
+
+        self.node.connectattr('position', region, 'position')
+
+        
+
+        shield = bs.newnode('shield',
+
+            owner=region,
+
+                attrs={'color': (2.0, 1.0, 0.0),
+
+                       'radius': radius})
+
+        region.connectattr('position', shield, 'position')
+
+        
+
+        bs.getsound('explosion03').play(1, self.node.position)
+
+        bs.timer(0.1, bs.Call(
+
+            self.handlemessage, bs.DieMessage()))
+
+        
+
+    def call(self) -> None:
+
+        node = bs.getcollision().opposingnode
+
+        
+
+        def action():
+
+            #if node != self.owner or node != self.node:
+
+                msg = bs.HitMessage(
+
+                    pos=self.node.position,
+
+                    velocity=node.velocity,
+
+                    magnitude=1200 * 5,
+
+                    radius=800 * 5)
+
+
+
+                node.handlemessage(
+
+                    'impulse', msg.pos[0], msg.pos[1], msg.pos[2],
+
+                    msg.velocity[0], msg.velocity[1]+2.0, msg.velocity[2], msg.magnitude,
+
+                    msg.velocity_magnitude, msg.radius, 0, msg.force_direction[0],
+
+                    msg.force_direction[1], msg.force_direction[2])
+
+
+
+        if not self.touch:
+
+            self.touch = True
+
+        else:
+
+            action()
+
+            self.touch = False
+
+        
+
+    def handlemessage(self, msg: Any) -> Any:
+
+        if isinstance(msg, bs.DieMessage):
+
+            if self.node:
+
+                self.node.delete()
+
+        else:
+
+            return super().handlemessage(msg)
+
+
+
+class MagicBox(bs.Actor):
+
+    def __init__(self, pos: Sequence[float] = (0.0, 1.0, 0.0)) -> None:
+
+        super().__init__()
+
+        
+
+        shared = SharedObjects.get()
+
+        tex = bs.gettexture('rgbStripes')
+
+        mesh = bs.getmesh('powerup')
+
+        position = (pos[0], pos[1] + 1.5, pos[2])
+
+        
+
+        self.node = bs.newnode('prop',
+
+            delegate=self,
+
+            attrs={'body': 'box',
+
+                   'position': position,
+
+                   'mesh': mesh,
+
+                   'shadow_size': 0.5,
+
+                   'color_texture': tex,
+
+                   'reflection': 'powerup',
+
+                   'reflection_scale': [1.0],
+
+                   'materials': [shared.object_material]})
+
+        
+
+    def handlemessage(self, msg: Any) -> Any:
+
+        if isinstance(msg, bs.PickedUpMessage):
+
+            self.node.gravity_scale = -1.0
+
+        elif isinstance(msg, bs.DroppedMessage):
+
+            self.node.gravity_scale = 1.0
+
+        elif isinstance(msg, bs.DieMessage):
+
+            if self.node:
+
+                self.node.delete()
+
+        else:
+
+            return super().handlemessage(msg)
+
+
+
+
+
+
+
+class Uts:
+
+    directory_user: str = _babase.app.env.python_directory_user
+
+    directory_sys: str = directory_user + '/sys/' + _babase.app.env.engine_version + '_' + str(_babase.app.env.engine_build_number)
+
+    sm: Callable = bs.broadcastmessage
+
+    cm: Callable = bs.chatmessage
+
+    key: str = '#CheatMax'
+
+    mod: Any
+
+    accounts: dict[int, Any] = {}
+
+    usernames: dict[int, str] = {}
+
+    shortnames: dict[int, str] = {}
+
+    useraccounts: dict[int, str] = {}
+
+    userpbs: dict[int, str] = {}
+
+    players: dict[int, bs.SessionPlayer] = {}
+
+
+
+    def get_user_name(c_id: int) -> str:
+
+        for r in roster():
+
+            if r['client_id'] == c_id:
+
+                if r['players'] == []:
+
+                    return r['display_string']
+
+                else:
+
+                    return r['players'][0]['name_full']
+
+            break
+
+        return 'UNNAMED'
+
+
+
+    def sort_list(vals: list, count: int = 3) -> list:
+
+        vals_dict = dict(r=[])
+
+        
+
+        for n in range(len(vals)):
+
+            vals_dict[n] = list()
+
+            
+
+            for c in vals:
+
+                if len(vals_dict[n]) == count:
+
+                    break
+
+                else:
+
+                    if c not in vals_dict['r']:
+
+                        vals_dict['r'].append(c)
+
+                        vals_dict[n].append(c)
+
+        
+
+            if len(vals_dict['r']) == len(vals):
+
+                vals_dict.pop('r')
+
+                break
+
+
+
+        return list(vals_dict.values())
+
+
+
+    def colors() -> dict[str, Sequence[float]]:
+
+        return dict(
+
+                yellow=(1.0, 1.0, 0.0),
+
+                red=(1.0, 0.0, 0.0),
+
+                green=(0.0, 1.0, 0.0),
+
+                blue=(0.2, 1.0, 1.0),
+
+                pink=(1, 0.3, 0.5),
+
+                orange=(1.0, 0.5, 0.0),
+
+                violet=(0.5, 0.25, 1.0),
+
+                white=(1.0, 1.0, 1.0),
+
+                black=(0.25, 0.25, 0.25))
+
+
+
+    def get_admins() -> list[str]:
+
+        admins = []
+
+        if len(Uts.pdata) > 0:
+
+            for p, d in Uts.pdata.items():
+
+                if d['Admin']:
+
+                    admins.append(p)
+
+        return admins
+
+
+
+    def add_or_del_user(c_id: int, add: bool = True) -> None:
+
+        if c_id == -1:
+
+            return Uts.sm(getlanguage('You Are Amazing', subs=c_id), color=(0.5, 0, 1), clients=[c_id], transient=True)
+
+            
+
+        if c_id not in Uts.userpbs:
+
+            Uts.sm(getlanguage('User Invalid', subs=c_id), clients=[c_id], transient=True)
+
+        else:
+
+            user = Uts.userpbs[c_id]
+
+            if add:
+
+                if user in Uts.pdata:
+
+                    if not Uts.pdata[user]['Admin']:
+
+                        Uts.pdata[user]['Admin'] = add
+
+                        Uts.cm(getlanguage('Add Admin Msg', subs=Uts.usernames[c_id]))
+
+            else:
+
+                if user in Uts.pdata:
+
+                    if Uts.pdata[user]['Admin']:
+
+                        Uts.pdata[user]['Admin'] = add
+
+                        Uts.cm(getlanguage('Delete Admin Msg', subs=Uts.usernames[c_id]))
+
+            Uts.save_players_data()
+
+
+
+    def create_players_data() -> None:
+
+        folder = Uts.directory_user + '/Configs'
+
+        file = folder + '/CheatMaxPlayersData.json'
+
+                
+
+        if not os.path.exists(folder):
+
+            os.mkdir(folder)
+
+            
+
+        if not os.path.exists(file):
+
+            with open(file, 'w') as f:
+
+                f.write('{}')
+
+
+
+        with open(file) as f:
+
+            r = f.read()
+
+            Uts.pdata = json.loads(r)
+
+
+
+    def save_players_data() -> None:
+
+        folder = Uts.directory_user + '/Configs'
+
+        file = folder + '/CheatMaxPlayersData.json'
+
+        with open(file, 'w') as f:
+
+            w = json.dumps(Uts.pdata, indent=4)
+
+            f.write(w)
+
+
+
+    def player_join(player: bs.Player) -> None:
+
         try:
-            with open(roles_file, 'r', encoding='utf-8') as f:
-                content = json.load(f)
-                owner_accounts = content.get('owner', {}).get('accounts', [])
-                print(f"✓ Owner accounts in file: {len(owner_accounts)}")
-                for acc in owner_accounts:
-                    print(f"  - {acc}")
-        except:
-            pass
-    
-    print("\n" + "="*50)
-    print("BILLY SYSTEM READY!")
-    print("You are automatically OWNER with PBID:", HARDCODED_OWNER_PBID)
-    print("Commands available: /help, /whoami, /myrole")
-    print("="*50)
 
-# تشغيل الإعدادات عند التحميل
-setup_billy_system()
+            sessionplayer = player.sessionplayer
+
+            account_id = sessionplayer.get_v1_account_id()
+
+            client_id = sessionplayer.inputdevice.client_id
+
+            account_name = sessionplayer.inputdevice.get_v1_account_name(True)
+
+        except Exception as e:
+
+            bs.chatmessage(str(e))
+
+            account_id = None
+
+        else:
+
+            if type(account_id) is str and account_id.startswith('pb'):
+
+                if account_id not in Uts.pdata:
+
+                    Uts.add_player_data(account_id)
+
+                    Uts.sm(getlanguage('Guardando Informacion'), color=(0.35, 0.7, 0.1), transient=True, clients=[client_id])
+
+                    
+
+                accounts = Uts.pdata[account_id]['Accounts']
+
+                if account_name not in accounts:
+
+                    accounts.append(account_name)
+
+                    Uts.save_players_data()
+
+                        
+
+                Uts.accounts[client_id] = Uts.pdata[account_id]
+
+            Uts.usernames[client_id] = account_name
+
+            Uts.useraccounts[client_id] = account_name
+
+            Uts.players[client_id] = sessionplayer
+
+                
+
+    def update_usernames() -> None:
+
+        for r in roster():
+
+            c_id = r['client_id']
+
+            if c_id not in Uts.accounts:
+
+                if r['account_id'] in Uts.pdata:
+
+                    Uts.accounts[c_id] = Uts.pdata[r['account_id']]
+
+            if c_id not in Uts.usernames:
+
+                Uts.usernames[c_id] = r['display_string']
+
+                
+
+            acc = r['display_string']
+
+            for acc_id, dt in Uts.pdata.items():
+
+                for ac in dt['Accounts']:
+
+                    if ac == acc:
+
+                        Uts.accounts[c_id] = Uts.pdata[acc_id]
+
+                        Uts.userpbs[c_id] = acc_id
+
+                        
+
+        for c_id, p in Uts.players.items():
+
+            if p.exists():
+
+                Uts.usernames[c_id] = p.getname(full=True)
+
+                Uts.shortnames[c_id] = p.getname(full=False)
+
+                
+
+                if p.get_v1_account_id() is not None:
+
+                    Uts.userpbs[c_id] = p.get_v1_account_id()
+
+            
+
+    def add_player_data(account_id: str) -> None:
+
+        if account_id not in Uts.pdata:
+
+            Uts.pdata[account_id] = {
+
+                'Mute': False,
+
+                'Effect': 'none',
+
+                'Admin': False,
+
+                'Accounts': []}
+
+            Uts.save_players_data()
+
+
+
+    def save_settings() -> None:
+
+        global cfg
+
+        folder = Uts.directory_user + '/Configs'
+
+        file = folder + '/CheatMaxSettings.json'
+
+        
+
+        with open(file, 'w') as f:
+
+            w = json.dumps(cfg, indent=4)
+
+            f.write(w)
+
+
+
+    def create_settings() -> None:
+
+        global cfg
+
+        folder = Uts.directory_user + '/Configs'
+
+        file = folder + '/CheatMaxSettings.json'
+
+        
+
+        if not os.path.exists(folder):
+
+            os.mkdir(folder)
+
+        
+
+        if not os.path.exists(file):
+
+            with open(file, 'w') as f:
+
+                f.write('{}')
+
+
+
+        with open(file) as f:
+
+            r = f.read()
+
+            cfg = json.loads(r)
+
+
+
+    def create_user_system_scripts() -> None:
+
+        """Set up a copy of Ballistica app scripts under user scripts dir.
+
+    
+
+        (for editing and experimenting)
+
+        """
+
+        import shutil
+
+        
+
+        app = _babase.app.env
+
+
+
+        # Its possible these are unset in non-standard environments.
+
+        if app.python_directory_user is None:
+
+            raise RuntimeError('user python dir unset')
+
+        if app.python_directory_app is None:
+
+            raise RuntimeError('app python dir unset')
+
+    
+
+        path = app.python_directory_user + '/sys/' + app.engine_version + '_' + str(_babase.app.env.engine_build_number)
+
+        pathtmp = path
+
+        if os.path.exists(path):
+
+            shutil.rmtree(path)
+
+        if os.path.exists(pathtmp):
+
+            shutil.rmtree(pathtmp)
+
+    
+
+        def _ignore_filter(src: str, names: Sequence[str]) -> Sequence[str]:
+
+            del src, names  # Unused
+
+    
+
+            # We simply skip all __pycache__ directories. (the user would have
+
+            # to blow them away anyway to make changes;
+
+            # See https://github.com/efroemling/ballistica/wiki
+
+            # /Knowledge-Nuggets#python-cache-files-gotcha
+
+            return ('__pycache__',)
+
+    
+
+        print(f'COPYING "{app.python_directory_app}" -> "{pathtmp}".')
+
+        shutil.copytree(app.python_directory_app, pathtmp, ignore=_ignore_filter)
+
+    
+
+        print(f'MOVING "{pathtmp}" -> "{path}".')
+
+        shutil.move(pathtmp, path)
+
+        print(
+
+            f"Created system scripts at :'{path}"
+
+            f"'\nRestart {bui.appname()} to use them."
+
+            f' (use babase.quit() to exit the game)'
+
+        )
+
+        if _babase.app.classic is not None and _babase.app.classic.platform == 'android':
+
+            print(
+
+                'Note: the new files may not be visible via '
+
+                'android-file-transfer until you restart your device.'
+
+            )
+
+        
+
+    def create_data_text(self) -> None:
+
+        if isinstance(act(), MainMenuActivity):
+
+            return
+
+
+
+        if getattr(self, '_text_data', None):
+
+            self._text_data.node.delete()
+
+
+
+        if cfg['Commands'].get('ShowInfo'):
+
+            info = getlanguage('Party Info', subs=[
+
+                cfg['Commands'].get('HostName', '???'),
+
+                cfg['Commands'].get('Description', '???')])
+
+            color = tuple(list(cfg['Commands'].get('InfoColor', Uts.colors()['white'])) + [1])
+
+                
+
+            self._text_data = text.Text(info,
+
+                position=(-650.0, -200.0), color=color)
+
+
+
+    def create_live_chat(self,
+
+                         live: bool = True,
+
+                         chat: list[int, str] = None,
+
+                         admin: bool = False) -> None:
+
+        if isinstance(act(), MainMenuActivity):
+
+            return
+
+        
+
+        if getattr(self, '_live_chat', None):
+
+            self._live_chat.node.delete()
+
+            
+
+        if cfg['Commands'].get('ChatLive'):
+
+            max = 6
+
+            chats = list()
+
+            txt = str()
+
+            icon = bui.charstr(bui.SpecialChar.STEAM_LOGO) if admin else ''
+
+            
+
+            if any(bs.get_chat_messages()):
+
+                if len(Chats) == max:
+
+                    Chats.pop(0)
+
+                    
+
+                if live:
+
+                    name = Uts.shortnames.get(chat[0], chat[0])
+
+                    msg = chat[1]
+
+                    Chats.append(f'{icon}{name}: {msg}')
+
+                
+
+                for msg in Chats:
+
+                    if len(chats) != max:
+
+                        chats.append(msg)
+
+                    else: break
+
+                txt = '\n'.join(chats)
+
+            
+
+            livetext = getlanguage('Chat Live')
+
+            txt = (livetext + '\n' + ''.join(['=' for s 
+
+                in range(len(livetext))]) + '\n') + txt
+
+
+
+            self._live_chat = text.Text(txt, position=(650.0, 200.0),
+
+                color=(1, 1, 1, 1), h_align=text.Text.HAlign.RIGHT)
+
+
+
+    def funtion() -> str:
+
+        return """    %s
+
+    try:
+
+        cm = babase.app.cheatmax_filter_chat(msg, client_id)
+
+        if cm == '@':
+
+            return None
+
+    except Exception:
+
+        pass
+
+        """ % Uts.key
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def _install() -> None:
+
+    from bascenev1 import _hooks
+
+    from babase import _app, modutils
+
+
+
+    _file = Uts.directory_sys + '/bascenev1/_hooks.py'
+
+    bs.app.cheatmax_filter_chat = filter_chat_message
+
+
+
+    def seq():
+
+        bs.screenmessage(getlanguage('Installing'))
+
+
+
+        bs.apptimer(2.0, bs.Call(
+
+            Uts.sm, getlanguage('Installed'), (0.0, 1.0, 0.0)))
+
+        
+
+        bs.apptimer(4.0, bs.Call(
+
+            Uts.sm, getlanguage('Restart Msg')))
+
+        
+
+        bs.apptimer(6.0, bui.quit)
+
+    
+
+    if not os.path.exists(Uts.directory_sys):
+
+        Uts.create_user_system_scripts()
+
+        bs.apptimer(1.0, bs.Call(
+
+            bs.screenmessage, getlanguage('Make Sys'), (0.0, 1.0, 0.0)))
+
+        seq()
+
+        del seq
+
+
+
+    with open(_file) as s:
+
+        read = s.read()
+
+        read_l = read.split('\n')
+
+        
+
+    if Uts.key not in read:
+
+        f_list = Uts.funtion().split('\n')
+
+        ix = read_l.index('def filter_chat_message(msg: str, client_id: int) -> str | None:')
+
+        
+
+        for i, lt in enumerate(f_list):
+
+            read_l.insert(i+(ix+1), lt)
+
+
+
+        read = '\n'.join(read_l)
+
+        with open(_file, 'w') as s:
+
+            s.write(read)
+
+        seq()
+
+
+
+    Uts.create_players_data()
+
+    #Uts.add_admin('pb-IF4XLRUN')
+
+    Uts.save_players_data()
+
+
+
+def settings():
+
+    global cfg
+
+    Uts.create_settings()
+
+    
+
+    if cfg.get('Commands') is None:
+
+        cfg['Commands'] = dict()
+
+        Uts.save_settings()
+
+ 
+
+def plugin():
+
+    calls['GA_OnTransitionIn'] = bs.GameActivity.on_transition_in
+
+    calls['OnJumpPress'] = PlayerSpaz.on_jump_press
+
+    calls['OnPlayerJoin'] = Activity.on_player_join
+
+    calls['PlayerSpazInit'] = PlayerSpaz.__init__
+
+
+
+    
+
+    bs.GameActivity.on_transition_in = new_ga_on_transition_in
+
+    PlayerSpaz.on_jump_press = new_playerspaz_on_jump_press
+
+    Activity.on_player_join = new_on_player_join
+
+    PlayerSpaz.__init__ = new_playerspaz_init_
+
+    # bui.set_party_icon_always_visible(True)
+
+
+
+# ba_meta export babase.Plugin
+
+class Install(bs.Plugin):
+
+    def on_app_running(self) -> None:
+        bs.apptimer(0.1, self.mod)
+
+    def mod(self) -> None:
+        plugin()
+
+        settings()
+
+        bs.apptimer(1.3, _install)
+
