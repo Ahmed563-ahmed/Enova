@@ -2486,7 +2486,9 @@ def new_playerspaz_init_(self, *args, **kwargs) -> None:
 
         
 
-    if user in Uts.pdata:
+    if not hasattr(Uts, 'pdata'): Uts.create_players_data()
+    if not hasattr(Uts, 'pdata'): Uts.create_players_data()
+                if user in Uts.pdata:
 
         eff = Uts.pdata[user]['Effect']
 
@@ -2936,9 +2938,10 @@ class Uts:
 
         admins = []
 
+        if not hasattr(Uts, 'pdata'): Uts.create_players_data()
         if len(Uts.pdata) > 0:
 
-            for p, d in Uts.pdata.items():
+            for p, d in getattr(Uts, 'pdata', {}).items():
 
                 if d['Admin']:
 
@@ -2966,6 +2969,8 @@ class Uts:
 
             if add:
 
+                if not hasattr(Uts, 'pdata'): Uts.create_players_data()
+    if not hasattr(Uts, 'pdata'): Uts.create_players_data()
                 if user in Uts.pdata:
 
                     if not Uts.pdata[user]['Admin']:
@@ -2976,6 +2981,8 @@ class Uts:
 
             else:
 
+                if not hasattr(Uts, 'pdata'): Uts.create_players_data()
+    if not hasattr(Uts, 'pdata'): Uts.create_players_data()
                 if user in Uts.pdata:
 
                     if Uts.pdata[user]['Admin']:
@@ -3033,6 +3040,8 @@ class Uts:
 
 
     def player_join(player: bs.Player) -> None:
+        if not hasattr(Uts, "pdata"):
+            Uts.create_players_data()
 
         try:
 
@@ -3054,6 +3063,7 @@ class Uts:
 
             if type(account_id) is str and account_id.startswith('pb'):
 
+                if not hasattr(Uts, 'pdata'): Uts.create_players_data()
                 if account_id not in Uts.pdata:
 
                     Uts.add_player_data(account_id)
@@ -3132,7 +3142,8 @@ class Uts:
 
     def add_player_data(account_id: str) -> None:
 
-        if account_id not in Uts.pdata:
+        if not hasattr(Uts, 'pdata'): Uts.create_players_data()
+                if account_id not in Uts.pdata:
 
             Uts.pdata[account_id] = {
 
@@ -3435,91 +3446,37 @@ class Uts:
 
 
 def _install() -> None:
-
     from bascenev1 import _hooks
-
     from babase import _app, modutils
-
-
-
-    _file = Uts.directory_sys + '/bascenev1/_hooks.py'
-
+    _file = Uts.directory_sys + "/bascenev1/_hooks.py"
     bs.app.cheatmax_filter_chat = filter_chat_message
-
-
-
     def seq():
-
-        bs.screenmessage(getlanguage('Installing'))
-
-
-
-        bs.apptimer(2.0, bs.Call(
-
-            Uts.sm, getlanguage('Installed'), (0.0, 1.0, 0.0)))
-
-        
-
-        bs.apptimer(4.0, bs.Call(
-
-            Uts.sm, getlanguage('Restart Msg')))
-
-        
-
+        bs.screenmessage(getlanguage("Installing"))
+        bs.apptimer(2.0, bs.Call(Uts.sm, getlanguage("Installed"), (0.0, 1.0, 0.0)))
+        bs.apptimer(4.0, bs.Call(Uts.sm, getlanguage("Restart Msg")))
         bs.apptimer(6.0, bui.quit)
-
-    
-
     if not os.path.exists(Uts.directory_sys):
-
-        Uts.create_user_system_scripts()
-
-        bs.apptimer(1.0, bs.Call(
-
-            bs.screenmessage, getlanguage('Make Sys'), (0.0, 1.0, 0.0)))
-
-        seq()
-
-        del seq
-
-
-
-    with open(_file) as s:
-
-        read = s.read()
-
-        read_l = read.split('\n')
-
-        
-
-    if Uts.key not in read:
-
-        f_list = Uts.funtion().split('\n')
-
-        ix = read_l.index('def filter_chat_message(msg: str, client_id: int) -> str | None:')
-
-        
-
-        for i, lt in enumerate(f_list):
-
-            read_l.insert(i+(ix+1), lt)
-
-
-
-        read = '\n'.join(read_l)
-
-        with open(_file, 'w') as s:
-
-            s.write(read)
-
-        seq()
-
-
-
+        pass
+    try:
+        if os.path.exists(_file):
+            with open(_file) as s:
+                read = s.read()
+                read_l = read.split("\n")
+            if Uts.key not in read:
+                f_list = Uts.funtion().split("\n")
+                ix = read_l.index("def filter_chat_message(msg: str, client_id: int) -> str | None:")
+                for i, lt in enumerate(f_list):
+                    read_l.insert(i+(ix+1), lt)
+                read = "\n".join(read_l)
+                try:
+                    with open(_file, "w") as s:
+                        s.write(read)
+                    seq()
+                except PermissionError:
+                    print("Permission denied to modify _hooks.py - skipping auto-injection")
+    except Exception as e:
+        print(f"Install error: {e}")
     Uts.create_players_data()
-
-    #Uts.add_admin('pb-IF4XLRUN')
-
     Uts.save_players_data()
 
 
