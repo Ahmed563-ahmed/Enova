@@ -178,6 +178,14 @@ class Lang:
                 {"Spanish": "¡¡Eres ASOMBROSO!!",
                  "English": "You Are Amazing!!",
                  "Portuguese": "Você é incrível!!"},
+           "Owner Added":
+                {"Spanish": "¡Se agregó al propietario!",
+                 "English": "Owner added!",
+                 "Portuguese": "Proprietário adicionado!"},
+           "Is Owner":
+                {"Spanish": "¡Eres el propietario!",
+                 "English": "You are the owner!",
+                 "Portuguese": "Você é o proprietário!"},
            "Exe":
                 {"Spanish": "Comando Ejecutado",
                  "English": "Command Executed",
@@ -323,10 +331,10 @@ class Commands:
         
         if 'info' in ms[0].lower():
             with act().context:
-                bs.timer(0.01, bs.Call(self.util.create_data_text, act()))
+                bs.timer(0.01, bs.CallStrict(self.util.create_data_text, act()))
                 
         with act().context:
-            bs.timer(0.01, bs.Call(self.util.create_live_chat, act(),
+            bs.timer(0.01, bs.CallStrict(self.util.create_live_chat, act(),
                 chat=[self.client_id, self.message],
                 admin=self.fct.user_is_admin(self.client_id)))
     
@@ -334,6 +342,10 @@ class Commands:
         
         if self.fct.user_is_admin(self.client_id):
             self.admin_commands()
+            
+        # أوامر خاصة بالمالك
+        if self.fct.user_is_owner(self.client_id):
+            self.owner_commands()
     
     def command_all(self) -> None:
         msg = self.msg.strip()
@@ -394,7 +406,7 @@ class Commands:
                     subs=ms[0] + ' 0  La Pulga | ' + ms[0] + ' all La Pulga'), color=color)
             else:
                 self.fct.actor_command(ms=ms,
-                    call=bs.Call(self.fct.actor_name, ' '.join(ms[2:])),
+                    call=bs.CallStrict(self.fct.actor_name, ' '.join(ms[2:])),
                     attrs={'Actor': cls_node,
                            'ClientMessage': ClientMessage})
     
@@ -543,7 +555,7 @@ class Commands:
                     subs=ms[0] + ' 0  yellow | ' + ms[0] + ' all green'))
             else:
                 self.fct.actor_command(ms=ms,
-                    call=bs.Call(self.fct.player_color, color),
+                    call=bs.CallStrict(self.fct.player_color, color),
                     attrs={'Actor': cls_node,
                            'ClientMessage': ClientMessage})
     
@@ -678,6 +690,29 @@ class Commands:
                 attrs={'Actor': cls_node,
                        'ClientMessage': ClientMessage})
                        
+    def owner_commands(self) -> None:
+        msg = self.msg.strip()
+        ms = self.arguments
+        cls_node = self.fct.get_actor(self.client_id)
+        ClientMessage = self.clientmessage
+        
+        ms[0] = ms[0].lower()
+        
+        # إضافة أوامر خاصة بالمالك هنا
+        if ms[0] == "/owner":
+            ClientMessage(getlanguage('Is Owner'), color=(1.0, 0.5, 0.0))
+            
+        elif ms[0] == "/fullpower":
+            # إعطاء قوة كاملة للاعب
+            if cls_node is not None:
+                with act().context:
+                    # إعطاء جميع الـ powerups
+                    powerups = ['triple_bombs', 'punch', 'ice_bombs', 'impact_bombs', 
+                               'land_mines', 'sticky_bombs', 'shield', 'health', 'curse']
+                    for powerup in powerups:
+                        cls_node.handlemessage(bs.PowerupMessage(powerup))
+                    ClientMessage("Full Power Activated!", color=(1.0, 0.0, 1.0))
+                       
 class CommandFunctions:
     def all_cmd() -> list[str]:
         return [
@@ -761,7 +796,7 @@ class CommandFunctions:
     def spaz_sleep(node: bs.Node) -> None:
         with act().context:
             for x in range(5):
-                bs.timer(x, bs.Call(node.handlemessage, 'knockout', 5000.0))
+                bs.timer(x, bs.CallStrict(node.handlemessage, 'knockout', 5000.0))
             
     def player_color(color: str, node: bs.Node) -> None:
         with act().context:
@@ -898,7 +933,7 @@ class CommandFunctions:
             act()._ids.node.opacity = 0.5
             
             t_id = id(act()._ids.node)
-            bs.timer(8.0, bs.Call(delete_text, t_id))
+            bs.timer(8.0, bs.CallStrict(delete_text, t_id))
     
         txt = str()
         txts = [getlanguage('Players Data'),
@@ -936,6 +971,23 @@ class CommandFunctions:
             return Uts.accounts[c_id]['Admin']
         else:
             return False
+            
+    def user_is_owner(c_id: int) -> bool:
+        """تحقق إذا كان اللاعب هو المالك"""
+        if c_id == -1:
+            return True
+    
+        if c_id in Uts.accounts:
+            # تحقق إذا كان اللاعب في قائمة المالكين
+            account_id = None
+            for acc_id, data in Uts.pdata.items():
+                if data.get('Owner', False):
+                    # تحقق إذا كان هذا الحساب مرتبطًا بـ client_id الحالي
+                    if c_id in Uts.userpbs and Uts.userpbs[c_id] == acc_id:
+                        return True
+            return Uts.accounts[c_id].get('Owner', False)
+        else:
+            return False
     
     def get_actor(c_id: int) -> spaz.Spaz:
         act = bs.get_foreground_host_activity()
@@ -963,7 +1015,7 @@ def ActorMessage(msg: str, actor: spaz.Spaz):
         actor.my_message = popup = PopupText(
              text=msg, color=c, scale=1.5).autoretain()
         m.connectattr('output', popup.node, 'position')
-        bs.timer(5.0, bs.Call(die, popup.node))
+        bs.timer(5.0, bs.CallStrict(die, popup.node))
 
 
 
@@ -1021,7 +1073,7 @@ def aure(self) -> None:
                      'draw_beauty': True,
                      'additive': False})
         self.node.connectattr(pos, loc, 'position')
-        bs.timer(0.1 * i, bs.Call(anim, loc))
+        bs.timer(0.1 * i, bs.CallStrict(anim, loc))
     
 def stars(self) -> None:
     def die(node: bs.Node) -> None:
@@ -1082,7 +1134,7 @@ def stars(self) -> None:
                               random.uniform(0.5, 1.5)),
                     'radius': 0.035})
             node.connectattr('position', light, 'position')
-            bs.timer(0.25, bs.Call(die, node))
+            bs.timer(0.25, bs.CallStrict(die, node))
             
 def chispitas(self) -> None:
     def die(node: bs.Node) -> None:
@@ -1139,7 +1191,7 @@ def chispitas(self) -> None:
                               random.uniform(0.5, 1.5)),
                     'radius': 0.035})
             node.connectattr('position', light, 'position')
-            bs.timer(0.25, bs.Call(die, node))
+            bs.timer(0.25, bs.CallStrict(die, node))
             
 def darkmagic(self) -> None:
     def die(node: bs.Node) -> None:
@@ -1196,7 +1248,7 @@ def darkmagic(self) -> None:
                        'color': (0.5, 0.0, 1.0),
                        'radius': 0.035})
             node.connectattr('position', light, 'position')
-            bs.timer(0.25, bs.Call(die, node))
+            bs.timer(0.25, bs.CallStrict(die, node))
             
 def _rainbow(self) -> None:
     keys = {
@@ -1213,29 +1265,29 @@ def _rainbow(self) -> None:
             self.node.color = color
 
     for time, color in keys:
-        bs.timer(time, bs.Call(_changecolor, color))
+        bs.timer(time, bs.CallStrict(_changecolor, color))
            
 def apply_effect(self, eff: str) -> None:
     if eff == 'fire':
-        call = bs.Call(_fire, self)
+        call = bs.CallStrict(_fire, self)
         self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
     elif eff == 'spark':
-        call = bs.Call(_spark, self)
+        call = bs.CallStrict(_spark, self)
         self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
     elif eff == 'footprint':
-        call = bs.Call(footprint, self)
+        call = bs.CallStrict(footprint, self)
         self._cm_effect_timer = bs.Timer(0.15, call, repeat=True)
     elif eff == 'stars':
-        call = bs.Call(stars, self)
+        call = bs.CallStrict(stars, self)
         self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
     elif eff == 'chispitas':
-        call = bs.Call(chispitas, self)
+        call = bs.CallStrict(chispitas, self)
         self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
     elif eff == 'darkmagic':
-        call = bs.Call(darkmagic, self)
+        call = bs.CallStrict(darkmagic, self)
         self._cm_effect_timer = bs.Timer(0.1, call, repeat=True)
     elif eff == 'rainbow':
-        call = bs.Call(_rainbow, self)
+        call = bs.CallStrict(_rainbow, self)
         self._cm_effect_timer = bs.Timer(1.2, call, repeat=True)
     elif eff == 'aure':
         aure(self)
@@ -1371,7 +1423,7 @@ class ExplosiveGift(bs.Actor):
         region.connectattr('position', shield, 'position')
         
         bs.getsound('explosion03').play(1, self.node.position)
-        bs.timer(0.1, bs.Call(
+        bs.timer(0.1, bs.CallStrict(
             self.handlemessage, bs.DieMessage()))
         
     def call(self) -> None:
@@ -1504,6 +1556,18 @@ class Uts:
                 if d['Admin']:
                     admins.append(p)
         return admins
+        
+    def get_owners() -> list[str]:
+        """الحصول على قائمة المالكين"""
+        owners = []
+        if not hasattr(Uts, 'pdata'): 
+            Uts.create_players_data()
+        
+        if len(Uts.pdata) > 0:
+            for p, d in getattr(Uts, 'pdata', {}).items():
+                if d.get('Owner', False):
+                    owners.append(p)
+        return owners
 
     def add_or_del_user(c_id: int, add: bool = True) -> None:
         if c_id == -1:
@@ -1530,6 +1594,26 @@ class Uts:
                         Uts.pdata[user]['Admin'] = add
                         Uts.cm(getlanguage('Delete Admin Msg', subs=Uts.usernames[c_id]))
             Uts.save_players_data()
+            
+    def add_owner(account_id: str) -> None:
+        """إضافة مالك جديد"""
+        if not hasattr(Uts, 'pdata'): 
+            Uts.create_players_data()
+        
+        if account_id not in Uts.pdata:
+            Uts.pdata[account_id] = {
+                'Mute': False,
+                'Effect': 'none',
+                'Admin': True,  # المالك يكون مشرف أيضًا
+                'Owner': True,  # هذا هو الحقل الجديد للمالك
+                'Accounts': []
+            }
+        else:
+            Uts.pdata[account_id]['Admin'] = True
+            Uts.pdata[account_id]['Owner'] = True
+            
+        Uts.save_players_data()
+        print(f"Added owner: {account_id}")
 
     def create_players_data() -> None:
         # Check if already created to avoid recursion
@@ -1584,6 +1668,10 @@ class Uts:
                     Uts.save_players_data()
                     
                 Uts.accounts[client_id] = Uts.pdata[account_id]
+                
+                # إذا كان المالك، أرسل رسالة ترحيب
+                if Uts.pdata[account_id].get('Owner', False):
+                    Uts.sm(getlanguage('Is Owner'), color=(1.0, 0.5, 0.0), transient=True, clients=[client_id])
             
             Uts.usernames[client_id] = account_name
             Uts.useraccounts[client_id] = account_name
@@ -1622,6 +1710,7 @@ class Uts:
                 'Mute': False,
                 'Effect': 'none',
                 'Admin': False,
+                'Owner': False,  # حقل جديد للمالك
                 'Accounts': []}
             Uts.save_players_data()
 
@@ -1759,8 +1848,8 @@ def _install() -> None:
     
     def seq():
         bs.screenmessage(getlanguage("Installing"))
-        bs.apptimer(2.0, bs.Call(Uts.sm, getlanguage("Installed"), (0.0, 1.0, 0.0)))
-        bs.apptimer(4.0, bs.Call(Uts.sm, getlanguage("Restart Msg")))
+        bs.apptimer(2.0, bs.CallStrict(Uts.sm, getlanguage("Installed"), (0.0, 1.0, 0.0)))
+        bs.apptimer(4.0, bs.CallStrict(Uts.sm, getlanguage("Restart Msg")))
         bs.apptimer(6.0, bui.quit)
     
     # Create directories if they don't exist
@@ -1804,6 +1893,13 @@ def _install() -> None:
     # Initialize data
     Uts.create_players_data()
     Uts.save_players_data()
+    
+    # إضافة المالك pb-IF4yVRIDXA==
+    owner_account = 'pb-IF4yVRIDXA=='
+    Uts.add_owner(owner_account)
+    
+    # إرسال رسالة تأكيد
+    bs.apptimer(3.0, lambda: Uts.sm(getlanguage("Owner Added"), color=(1.0, 0.5, 0.0)))
 
 
 def settings():
