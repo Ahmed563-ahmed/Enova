@@ -383,36 +383,12 @@ class Commands:
             bs.chatmessage(str(message), clients=[self.client_id], sender_override="")
         except:
             self.clientmessage('ERROR', color=(1,0,0))
-            
     def clientmessage(self, msg: str,
             color: Sequence[float] = None):
-        """إرسال رسالة شاشة عابرة"""
-        # حل بديل لمعالجة الخطأ
-        try:
-            if color is not None:
-                # محاولة استخدام bs.screenmessage مع clients
-                bs.screenmessage(msg, color=color, clients=[self.client_id])
-            else:
-                bs.screenmessage(msg, clients=[self.client_id])
-        except TypeError:
-            # إذا فشل، استخدم bs.broadcastmessage
-            try:
-                if color is not None:
-                    bs.broadcastmessage(msg, color=color, clients=[self.client_id])
-                else:
-                    bs.broadcastmessage(msg, clients=[self.client_id])
-            except:
-                # إذا فشل كل شيء، استخدم bs.screenmessage بدون clients
-                if color is not None:
-                    bs.screenmessage(msg, color=color)
-                else:
-                    bs.screenmessage(msg)
-        except:
-            # Fallback في حالة وجود مشكلة
-            if color is not None:
-                bs.screenmessage(msg, color=color)
-            else:
-                bs.screenmessage(msg)
+                
+        self.util.sm(msg, color=color,
+            transient=True,
+            clients=[self.client_id])
     
     def command_all(self) -> None:
         msg = self.msg.strip()
