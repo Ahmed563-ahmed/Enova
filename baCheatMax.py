@@ -2986,90 +2986,6 @@ class Uts:
     server_close_last_update = 0.0
 
     @staticmethod
-    def start_close_server_countdown():
-        """بدء عرض العد التنازلي لإغلاق السيرفر"""
-        try:
-            def update_countdown():
-                try:
-                    if not Uts.server_close_active:
-                        # إزالة النص إذا توقف الإغلاق
-                        if Uts.server_close_countdown_text and Uts.server_close_countdown_text.exists():
-                            Uts.server_close_countdown_text.delete()
-                            Uts.server_close_countdown_text = None
-                        return
-                    
-                    activity = bs.get_foreground_host_activity()
-                    if not activity:
-                        # إعادة المحاولة بعد ثانية
-                        bs.apptimer(1.0, update_countdown)
-                        return
-                    
-                    # حساب الوقت المتبقي باستخدام time.time()
-                    current_time = time.time()
-                    remaining_time = Uts.server_close_end_time - current_time
-                    
-                    if remaining_time <= 0:
-                        # انتهى الوقت، إوقف الإغلاق
-                        Uts.stop_server_closure()
-                        Uts.cm("✅ Server closure ended. Everyone can join now.")
-                        return
-                    
-                    # تحويل الوقت إلى تنسيق ساعات:دقائق:ثواني
-                    hours = int(remaining_time // 3600)
-                    minutes = int((remaining_time % 3600) // 60)
-                    seconds = int(remaining_time % 60)
-                    time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-                    
-                    # استخدام سياق النشاط لعرض النص
-                    if hasattr(activity, 'context'):
-                        with activity.context:
-                            # إنشاء أو تحديث نص العد التنازلي
-                            if Uts.server_close_countdown_text is None or not Uts.server_close_countdown_text.exists():
-                                # إنشاء نص جديد
-                                Uts.server_close_countdown_text = text.Text(
-                                    f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}",
-                                    position=(0, 250),
-                                    scale=1.0,
-                                    color=(1, 0, 0),
-                                    h_align=text.Text.HAlign.CENTER,
-                                    v_align=text.Text.VAlign.CENTER
-                                )
-                                Uts.server_close_countdown_text.node.opacity = 0.7
-                                
-                                # تخزين النص في قائمة للمراقبة
-                                if not hasattr(activity, '_closure_texts'):
-                                    activity._closure_texts = []
-                                activity._closure_texts.append(Uts.server_close_countdown_text.node)
-                            else:
-                                # تحديث النص الحالي مباشرة
-                                try:
-                                    Uts.server_close_countdown_text.node.text = f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}"
-                                except:
-                                    # إعادة إنشاء النص إذا كان هناك خطأ
-                                    Uts.server_close_countdown_text = text.Text(
-                                        f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}",
-                                        position=(0, 250),
-                                        scale=1.0,
-                                        color=(1, 0, 0),
-                                        h_align=text.Text.HAlign.CENTER,
-                                        v_align=text.Text.VAlign.CENTER
-                                    )
-                                    Uts.server_close_countdown_text.node.opacity = 0.7
-                    
-                    # جدولة التحديث التالي بعد ثانية واحدة
-                    bs.apptimer(1.0, update_countdown)
-                        
-                except Exception as e:
-                    print(f"❌ Error in countdown update: {e}")
-                    # إعادة المحاولة بعد 2 ثانية في حالة الخطأ
-                    bs.apptimer(2.0, update_countdown)
-            # بدء العد التنازلي
-            bs.apptimer(0.5, update_countdown)
-            print(f"✅ Countdown started for server closure")
-            
-        except Exception as e:
-            print(f"❌ Error starting countdown: {e}")
-    @staticmethod
     def start_server_closure(hours: float, tag_name: str, admin_client_id: int) -> bool:
         """بدء إغلاق السيرفر للتدريب"""
         try:
@@ -3163,119 +3079,104 @@ class Uts:
             print(f"❌ Error checking player allowance: {e}")
             return False
     
+    @staticmethod
+    def start_close_server_countdown():
+        """بدء عرض العد التنازلي لإغلاق السيرفر"""
+        try:
+            def update_countdown():
+                try:
+                    if not Uts.server_close_active:
+                        # إزالة النص إذا توقف الإغلاق
+                        if Uts.server_close_countdown_text and Uts.server_close_countdown_text.exists():
+                            Uts.server_close_countdown_text.delete()
+                            Uts.server_close_countdown_text = None
+                        return
+                    
+                    activity = bs.get_foreground_host_activity()
+                    if not activity:
+                        # إعادة المحاولة بعد ثانية
+                        bs.apptimer(1.0, update_countdown)
+                        return
+                    
+                    # حساب الوقت المتبقي باستخدام time.time()
+                    current_time = time.time()
+                    remaining_time = Uts.server_close_end_time - current_time
+                    
+                    if remaining_time <= 0:
+                        # انتهى الوقت، إوقف الإغلاق
+                        Uts.stop_server_closure()
+                        Uts.cm("✅ Server closure ended. Everyone can join now.")
+                        return
+                    
+                    # تحويل الوقت إلى تنسيق ساعات:دقائق:ثواني
+                    hours = int(remaining_time // 3600)
+                    minutes = int((remaining_time % 3600) // 60)
+                    seconds = int(remaining_time % 60)
+                    time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                    
+                    # استخدام سياق النشاط لعرض النص
+                    if hasattr(activity, 'context'):
+                        with activity.context:
+                            # إنشاء أو تحديث نص العد التنازلي
+                            if Uts.server_close_countdown_text is None or not Uts.server_close_countdown_text.exists():
+                                # إنشاء نص جديد
+                                Uts.server_close_countdown_text = text.Text(
+                                    f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}",
+                                    position=(0, 250),
+                                    scale=1.0,
+                                    color=(1, 0, 0),
+                                    h_align=text.Text.HAlign.CENTER,
+                                    v_align=text.Text.VAlign.CENTER
+                                )
+                                Uts.server_close_countdown_text.node.opacity = 0.7
+                            else:
+                                # تحديث النص الحالي مباشرة
+                                try:
+                                    Uts.server_close_countdown_text.node.text = f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}"
+                                except:
+                                    # إعادة إنشاء النص إذا كان هناك خطأ
+                                    Uts.server_close_countdown_text = text.Text(
+                                        f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}",
+                                        position=(0, 250),
+                                        scale=1.0,
+                                        color=(1, 0, 0),
+                                        h_align=text.Text.HAlign.CENTER,
+                                        v_align=text.Text.VAlign.CENTER
+                                    )
+                                    Uts.server_close_countdown_text.node.opacity = 0.7
+                    
+                    # جدولة التحديث التالي بعد ثانية واحدة
+                    bs.apptimer(1.0, update_countdown)
+                        
+                except Exception as e:
+                    print(f"❌ Error in countdown update: {e}")
+                    # إعادة المحاولة بعد 2 ثانية في حالة الخطأ
+                    bs.apptimer(2.0, update_countdown)
+            # بدء العد التنازلي
+            bs.apptimer(0.5, update_countdown)
+            print(f"✅ Countdown started for server closure")
+            
+        except Exception as e:
+            print(f"❌ Error starting countdown: {e}")
     
     @staticmethod
     def stop_server_closure():
-        """إيقاف إغلاق السيرفر وإزالة جميع النصوص المرتبطة"""
+        """إيقاف إغلاق السيرفر"""
         try:
             Uts.server_close_active = False
             Uts.server_close_end_time = 0.0
             Uts.server_close_tag_name = ""
             Uts.server_close_original_players = []
             
-            # إزالة نص العد التنازلي إذا كان موجودًا
+            # إزالة نص العد التنازلي
             if Uts.server_close_countdown_text and Uts.server_close_countdown_text.exists():
-                try:
-                    Uts.server_close_countdown_text.delete()
-                except:
-                    pass
+                Uts.server_close_countdown_text.delete()
                 Uts.server_close_countdown_text = None
             
-            # إزالة أي نصوص أخرى متعلقة بإغلاق السيرفر
-            activity = bs.get_foreground_host_activity()
-            if activity and hasattr(activity, 'context'):
-                try:
-                    with activity.context:
-                        # البحث عن أي نصوص تحتوي على كلمات مفتاحية وإزالتها
-                        from bascenev1lib.actor.text import Text
-                        # يمكنك إضافة المزيد من الكلمات المفتاحية حسب الحاجة
-                        keywords = ["SERVER CLOSED", "SERVER CLOSURE", "COUNTDOWN", "TRAINING"]
-                        
-                        # ملاحظة: هذه طريقة بسيطة، قد تحتاج لتحسين حسب نظامك
-                        # يمكنك حفظ مراجع النصوص في قائمة وإزالتها جميعًا
-                        if hasattr(activity, '_closure_texts'):
-                            for text_node in activity._closure_texts:
-                                try:
-                                    if text_node and text_node.exists():
-                                        text_node.delete()
-                                except:
-                                    pass
-                            activity._closure_texts = []
-                except:
-                    pass
-            
-            print("✅ Server closure stopped and all texts removed.")
+            print("✅ Server closure stopped.")
             
         except Exception as e:
             print(f"❌ Error stopping server closure: {e}")
-
-    def process_stop_close_server(self, client_id: int):
-        """معالجة أمر إيقاف إغلاق السيرفر"""
-        try:
-            if not Uts.server_close_active:
-                self.clientmessage("No server closure active", color=(1, 1, 0))
-                return
-            
-            # إيقاف إغلاق السيرفر
-            Uts.stop_server_closure()
-            
-            self.clientmessage("Server closure has been stopped", color=(0, 1, 0))
-            Uts.cm("✅ Server closure stopped. Everyone can join now.")
-            
-            # أيضًا، إرسال رسالة شاشة مؤقتة لإعلام اللاعبين
-            activity = bs.get_foreground_host_activity()
-            if activity:
-                try:
-                    with activity.context:
-                        # إرسال رسالة شاشة كبيرة مؤقتة
-                        bs.screenmessage("✅ SERVER REOPENED", 
-                                       color=(0, 1, 0), 
-                                       transient=True,
-                                       scale=1.5)
-                        
-                        # إزالة أي نصوص قديمة
-                        bs.apptimer(0.5, self.cleanup_server_closure_texts)
-                except:
-                    pass
-            
-        except Exception as e:
-            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1, 0, 0))
-    
-    def cleanup_server_closure_texts(self):
-        """تنظيف نصوص إغلاق السيرفر"""
-        try:
-            activity = bs.get_foreground_host_activity()
-            if not activity:
-                return
-            
-            with activity.context:
-                # طريقة بسيطة: إخفاء النص بدلاً من حذفه (أكثر أمانًا)
-                if hasattr(activity, '_server_closure_text'):
-                    try:
-                        activity._server_closure_text.node.opacity = 0.0
-                        activity._server_closure_text.node.text = ""
-                    except:
-                        pass
-                
-                # طريقة بديلة: البحث عن نصوص محددة وإخفاؤها
-                # يمكنك توسيع هذه القائمة حسب احتياجاتك
-                texts_to_hide = []
-                
-                # إذا كان لديك نظام لتخزين النصوص، استخدمه هنا
-                if hasattr(activity, '_closure_texts'):
-                    for text_item in activity._closure_texts:
-                        try:
-                            if text_item and text_item.exists():
-                                text_item.opacity = 0.0
-                                text_item.text = ""
-                        except:
-                            pass
-                    
-                    # مسح القائمة بعد الإخفاء
-                    activity._closure_texts = []
-                        
-        except Exception as e:
-            print(f"❌ Error cleaning up texts: {e}")
     
     @staticmethod
     def check_player_allowed_on_join(player: bs.Player):
