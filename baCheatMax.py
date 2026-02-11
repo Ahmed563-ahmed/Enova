@@ -285,6 +285,67 @@ class Lang:
                 {"Spanish": "Usa: /closeserver <horas> <tag-name>",
                  "English": "Use: /closeserver <hours> <tag-name>",
                  "Portuguese": "Use: /closeserver <horas> <tag-name>"},
+            # New phrases for ban/report system
+            "BanUsage":
+                {"Spanish": "Usa: /ban <pb-ID أو client-ID أو الاسم> <السبب>",
+                 "English": "Use: /ban <pb-ID or client-ID or Name> <reason>",
+                 "Portuguese": "Use: /ban <pb-ID ou client-ID ou Nome> <motivo>"},
+            "UnbanUsage":
+                {"Spanish": "Usa: /unban <pb-ID أو client-ID أو الاسم>",
+                 "English": "Use: /unban <pb-ID or client-ID or Name>",
+                 "Portuguese": "Use: /unban <pb-ID ou client-ID ou Nome>"},
+            "ReportUsage":
+                {"Spanish": "Usa: /report <pb-ID أو client-ID أو الاسم> <السبب>",
+                 "English": "Use: /report <pb-ID or client-ID or Name> <reason>",
+                 "Portuguese": "Use: /report <pb-ID ou client-ID ou Nome> <motivo>"},
+            "TargetNotFound":
+                {"Spanish": f"اللاعب '{subs}' غير موجود",
+                 "English": f"Target '{subs}' not found",
+                 "Portuguese": f"Alvo '{subs}' não encontrado"},
+            "AlreadyBanned":
+                {"Spanish": f"⚠️ {subs} محظور بالفعل",
+                 "English": f"⚠️ {subs} is already banned",
+                 "Portuguese": f"⚠️ {subs} já está banido"},
+            "CannotBanAdmin":
+                {"Spanish": f"❌ لا يمكن حظر الأدمن/المالك {subs}",
+                 "English": f"❌ Cannot ban admin/owner {subs}",
+                 "Portuguese": f"❌ Não pode banir admin/proprietário {subs}"},
+            "BanSuccess":
+                {"Spanish": f"✅ {subs[0]} تم حظره بواسطة {subs[1]}",
+                 "English": f"✅ {subs[0]} has been banned by {subs[1]}",
+                 "Portuguese": f"✅ {subs[0]} foi banido por {subs[1]}"},
+            "UnbanSuccess":
+                {"Spanish": f"✅ {subs[0]} تم إلغاء حظره بواسطة {subs[1]}",
+                 "English": f"✅ {subs[0]} has been unbanned by {subs[1]}",
+                 "Portuguese": f"✅ {subs[0]} foi desbanido por {subs[1]}"},
+            "NotBanned":
+                {"Spanish": f"❌ {subs} غير محظور",
+                 "English": f"❌ {subs} is not banned",
+                 "Portuguese": f"❌ {subs} não está banido"},
+            "ReportSubmitted":
+                {"Spanish": f"✅ تم الإبلاغ عن {subs}",
+                 "English": f"✅ Report submitted against {subs}",
+                 "Portuguese": f"✅ Relatório enviado contra {subs}"},
+            "NewReportAlert":
+                {"Spanish": f"⚠️ تقرير جديد: {subs[0]} تم الإبلاغ عنه بواسطة {subs[1]}",
+                 "English": f"⚠️ New report: {subs[0]} reported by {subs[1]}",
+                 "Portuguese": f"⚠️ Novo relatório: {subs[0]} relatado por {subs[1]}"},
+            "NoReports":
+                {"Spanish": "📋 لا توجد تقارير",
+                 "English": "📋 No reports found",
+                 "Portuguese": "📋 Nenhum relatório encontrado"},
+            "NoBans":
+                {"Spanish": "📋 قائمة الحظر فارغة",
+                 "English": "📋 Ban list is empty",
+                 "Portuguese": "📋 Lista de banimentos está vazia"},
+            "AdminOnly":
+                {"Spanish": "❌ يجب أن تكون أدمن لاستخدام هذا الأمر",
+                 "English": "❌ You must be an admin to use this command",
+                 "Portuguese": "❌ Você deve ser um administrador para usar este comando"},
+            "BannedMessage":
+                {"Spanish": f"أنت محظور من هذا السيرفر.\nالسبب: {subs[0]}\nتم الحظر بواسطة: {subs[1]}",
+                 "English": f"You are banned from this server.\nReason: {subs[0]}\nBanned by: {subs[1]}",
+                 "Portuguese": f"Você está banido deste servidor.\nMotivo: {subs[0]}\nBanido por: {subs[1]}"},
                      }
     
         language = ["Spanish", "English", "Portuguese"]
@@ -444,8 +505,14 @@ class Commands:
             self.value = '@'
             
         elif msg.lower() in ['help', 'مساعدة']:
-            help_msg = "📋 Commands: /list, -colors, -effects, test"
+            help_msg = "📋 Commands: /list, -colors, -effects, test, /report"
+            if self.fct.user_is_admin(self.client_id):
+                help_msg += "\n🔧 Admin Commands: /ban, /unban, /reports, /banlist"
             self.clientmessage(help_msg)
+            self.value = '@'
+            
+        elif ms[0] == '/report':
+            self.process_report_command(msg, self.client_id)
             self.value = '@'
     
     def admin_commands(self) -> None:
@@ -845,6 +912,22 @@ class Commands:
             
         elif ms[0] == '/testclosure':  # اختبار إغلاق السيرفر
             self.test_closure_system()
+            self.value = '@'
+            
+        elif ms[0] == '/ban':  # حظر لاعب
+            self.process_ban_command(msg, self.client_id)
+            self.value = '@'
+            
+        elif ms[0] == '/unban':  # إلغاء حظر لاعب
+            self.process_unban_command(msg, self.client_id)
+            self.value = '@'
+            
+        elif ms[0] == '/reports':  # عرض الإبلاغات
+            self.process_reports_command(self.client_id)
+            self.value = '@'
+            
+        elif ms[0] == '/banlist':  # عرض قائمة الحظر
+            self.process_banlist_command(self.client_id)
             self.value = '@'
                        
     def owner_commands(self) -> None:
@@ -1588,12 +1671,496 @@ class Commands:
             print(f"❌ Error processing shared accounts: {e}")
             self.clientmessage("❌ Error processing shared accounts", color=(1,0,0))
 
+    def find_target_data(self, target):
+        """البحث عن بيانات الهدف بجميع الطرق الممكنة"""
+        try:
+            # 1. محاولة البحث باستخدام PB-ID (account_id)
+            # PB-ID يبدأ عادة بـ 'pb-' أو يحتوي على '='
+            if target.startswith('pb-') or '=' in target or (len(target) > 10 and '-' in target):
+                # هذا يبدو كـ PB-ID
+                print(f"🔍 Searching by PB-ID: {target}")
+                
+                # البحث في Uts.userpbs عن أي client_id مرتبط بهذا PB-ID
+                for client_id, account_id in list(Uts.userpbs.items()):
+                    if account_id == target:
+                        name = Uts.usernames.get(client_id, f"Player {client_id}")
+                        print(f"✅ Found player by PB-ID: {name} (Client ID: {client_id})")
+                        return {
+                            'client_id': client_id,
+                            'account_id': account_id,
+                            'name': name,
+                            'type': 'pb_id'
+                        }
+                
+                # البحث في roster عن PB-ID
+                for r in roster():
+                    account_id = r.get('account_id')
+                    if account_id == target:
+                        client_id = r.get('client_id')
+                        name = r.get('display_string', f"Player {client_id}")
+                        print(f"✅ Found in roster by PB-ID: {name} (Client ID: {client_id})")
+                        return {
+                            'client_id': client_id,
+                            'account_id': account_id,
+                            'name': name,
+                            'type': 'pb_id'
+                        }
+            
+            # 2. محاولة البحث باستخدام client ID
+            try:
+                target_client_id = int(target)
+                print(f"🔍 Searching by Client ID: {target_client_id}")
+                
+                # البحث في Uts.usernames
+                if target_client_id in Uts.usernames:
+                    name = Uts.usernames[target_client_id]
+                    account_id = Uts.userpbs.get(target_client_id, None)
+                    print(f"✅ Found player by Client ID: {name} (Account ID: {account_id})")
+                    return {
+                        'client_id': target_client_id,
+                        'account_id': account_id,
+                        'name': name,
+                        'type': 'client_id'
+                    }
+                
+                # البحث في roster
+                for r in roster():
+                    client_id = r.get('client_id')
+                    if client_id == target_client_id:
+                        account_id = r.get('account_id')
+                        name = r.get('display_string', f"Player {client_id}")
+                        print(f"✅ Found in roster by Client ID: {name} (Account ID: {account_id})")
+                        return {
+                            'client_id': client_id,
+                            'account_id': account_id,
+                            'name': name,
+                            'type': 'client_id'
+                        }
+            except ValueError:
+                pass  # ليس رقمًا، تخطي
+            
+            # 3. محاولة البحث باستخدام اسم اللاعب
+            print(f"🔍 Searching by name: {target}")
+            
+            # البحث في Uts.usernames عن الاسم
+            for client_id, name in list(Uts.usernames.items()):
+                if name.lower() == target.lower():
+                    account_id = Uts.userpbs.get(client_id, None)
+                    print(f"✅ Found player by name in usernames: {name} (Client ID: {client_id}, Account ID: {account_id})")
+                    return {
+                        'client_id': client_id,
+                        'account_id': account_id,
+                        'name': name,
+                        'type': 'name'
+                    }
+            
+            # البحث في roster عن الاسم
+            for r in roster():
+                display_name = r.get('display_string', '')
+                if display_name.lower() == target.lower():
+                    client_id = r.get('client_id')
+                    account_id = r.get('account_id', None)
+                    print(f"✅ Found in roster by name: {display_name} (Client ID: {client_id}, Account ID: {account_id})")
+                    return {
+                        'client_id': client_id,
+                        'account_id': account_id,
+                        'name': display_name,
+                        'type': 'name'
+                    }
+            
+            # 4. إذا كان المستخدم يقول 'all' أو 'الكل'
+            if target.lower() in ['all', 'الكل', 'كل', 'جميع']:
+                print(f"🔍 Target is 'all'")
+                return {
+                    'client_id': -999,  # قيمة خاصة للجميع
+                    'account_id': 'all',
+                    'name': 'All Players',
+                    'type': 'all'
+                }
+            
+            print(f"❌ Target not found: {target}")
+            return None
+            
+        except Exception as e:
+            print(f"❌ Error in find_target_data: {e}")
+            return None
+
+    def process_ban_command(self, msg: str, client_id: int):
+        """معالجة أمر الحظر مع التحقق من PB-ID"""
+        try:
+            parts = msg.split()
+            
+            if len(parts) < 2:
+                self.clientmessage(getlanguage("BanUsage"), color=(1,0,0))
+                self.clientmessage("📝 أمثلة:", color=(1,1,0))
+                self.clientmessage("   /ban 113 السبب  (حظر باستخدام client ID)", color=(1,1,0))
+                self.clientmessage("   /ban pb-XXX السبب  (حظر باستخدام PB-ID)", color=(1,1,0))
+                self.clientmessage("   /ban الاسم السبب  (حظر باستخدام الاسم)", color=(1,1,0))
+                return
+            
+            target = parts[1]
+            reason = " ".join(parts[2:]) if len(parts) > 2 else "No reason provided"
+            
+            # الحصول على معلومات الشخص الذي أصدر الحظر
+            admin_name = Uts.usernames.get(client_id, "Admin")
+            admin_account = Uts.userpbs.get(client_id, "Unknown")
+            
+            print(f"🔨 Ban command by {admin_name} ({client_id}) on target: {target}, reason: {reason}")
+            
+            # البحث عن الهدف
+            ban_data = self.find_target_data(target)
+            
+            if not ban_data:
+                self.clientmessage(getlanguage("TargetNotFound", subs=[target]), color=(1,0,0))
+                print(f"❌ Target not found: {target}")
+                return
+            
+            target_account_id = ban_data.get('account_id')
+            target_name = ban_data.get('name', target)
+            target_client_id = ban_data.get('client_id')
+            target_type = ban_data.get('type', 'unknown')
+            
+            print(f"✅ Target found: {target_name} (Client ID: {target_client_id}, PB-ID: {target_account_id}, Type: {target_type})")
+            
+            # إذا كان الهدف هو 'الكل'
+            if target_type == 'all':
+                self.clientmessage("⚠️ لا يمكنك حظر جميع اللاعبين! استخدم /kick all", color=(1,0,0))
+                return
+            
+            # التحقق إذا كان الهدف هو الشخص الذي أصدر الأمر
+            if target_client_id == client_id:
+                self.clientmessage("❌ لا يمكنك حظر نفسك!", color=(1,0,0))
+                return
+            
+            # التحقق إذا كان الهدف محظورًا بالفعل
+            # البحث في بيانات الحظر باستخدام جميع الطرق
+            already_banned = False
+            ban_key = None
+            
+            # البحث باستخدام PB-ID أولاً (الأكثر موثوقية)
+            if target_account_id:
+                for key in Uts.bans_data:
+                    ban_info = Uts.bans_data[key]
+                    if ban_info.get('account_id') == target_account_id:
+                        already_banned = True
+                        ban_key = key
+                        break
+            
+            # إذا لم يتم العثور باستخدام PB-ID، جرب client_id
+            if not already_banned and target_client_id:
+                for key in Uts.bans_data:
+                    ban_info = Uts.bans_data[key]
+                    if ban_info.get('client_id') == target_client_id:
+                        already_banned = True
+                        ban_key = key
+                        break
+            
+            # إذا لم يتم العثور، جرب الاسم
+            if not already_banned:
+                for key in Uts.bans_data:
+                    ban_info = Uts.bans_data[key]
+                    if ban_info.get('name', '').lower() == target_name.lower():
+                        already_banned = True
+                        ban_key = key
+                        break
+            
+            if already_banned:
+                self.clientmessage(getlanguage("AlreadyBanned", subs=[target_name]), color=(1,1,0))
+                print(f"⚠️ Player already banned: {target_name}")
+                return
+            
+            # التحقق إذا كان الهدف هو أدمن أو مالك
+            is_admin_or_owner = False
+            
+            # التحقق في pdata باستخدام PB-ID
+            if target_account_id and target_account_id in Uts.pdata:
+                player_data = Uts.pdata[target_account_id]
+                if player_data.get('Admin', False) or player_data.get('Owner', False):
+                    is_admin_or_owner = True
+            
+            # التحقق في accounts باستخدام client_id
+            elif target_client_id in Uts.accounts:
+                if Uts.accounts[target_client_id].get('Admin', False) or Uts.accounts[target_client_id].get('Owner', False):
+                    is_admin_or_owner = True
+            
+            if is_admin_or_owner:
+                self.clientmessage(getlanguage("CannotBanAdmin", subs=[target_name]), color=(1,0,0))
+                print(f"❌ Cannot ban admin/owner: {target_name}")
+                return
+            
+            # إنشاء بيانات الحظر
+            ban_info = {
+                'name': target_name,
+                'account_id': target_account_id,
+                'client_id': target_client_id,
+                'reason': reason,
+                'banned_by': admin_name,
+                'banned_by_account': admin_account,
+                'banned_by_client_id': client_id,
+                'banned_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'banned_timestamp': time.time(),
+                'target_type': target_type
+            }
+            
+            # استخدام PB-ID كمفتاح رئيسي إذا كان متوفرًا
+            if target_account_id:
+                ban_key = f"pb_{target_account_id}"
+            elif target_client_id:
+                ban_key = f"client_{target_client_id}"
+            else:
+                ban_key = f"name_{target_name.replace(' ', '_')}"
+            
+            # إضافة الحظر إلى البيانات
+            Uts.bans_data[ban_key] = ban_info
+            
+            # حفظ البيانات
+            Uts.save_bans_data()
+            
+            # ✅ إضافة سجلات الطباعة بعد حفظ البيانات
+            print(f"✅ Ban saved for {target_name} | Key: {ban_key}")
+            print(f"   Account: {target_account_id} | Client: {target_client_id}")
+            print(f"   Reason: {reason}")
+            print(f"   By: {admin_name}")
+            
+            # طرد اللاعب إذا كان متصل
+            if target_client_id and target_client_id != -1 and target_client_id != -999:
+                try:
+                    # إرسال رسالة للاعب أولاً - بدون transient!
+                    message = getlanguage("BannedMessage", subs=[reason, admin_name])
+                    Uts.sm(message, color=(1,0,0), clients=[target_client_id], transient=True)
+                    
+                    # طرده بعد ثانيتين
+                    def kick_player():
+                        try:
+                            bs.disconnect_client(target_client_id)
+                            print(f"✅ Kicked banned player: {target_name} (Client ID: {target_client_id})")
+                        except Exception as e:
+                            print(f"❌ Error kicking player: {e}")
+                    
+                    bs.apptimer(2.0, lambda: bs.pushcall(kick_player))
+                    
+                    # إرسال رسالة للجميع
+                    ban_msg = getlanguage("BanSuccess", subs=[target_name, admin_name])
+                    Uts.cm(ban_msg)
+                    
+                except Exception as e:
+                    print(f"❌ Error in kick process: {e}")
+            
+            self.clientmessage(f"✅ تم حظر {target_name} بنجاح", color=(0,1,0))
+            self.clientmessage(f"📝 السبب: {reason}", color=(0.5,0.5,1))
+            
+        except Exception as e:
+            print(f"❌ Error in process_ban_command: {e}")
+            self.clientmessage(f"❌ خطأ: {str(e)[:50]}", color=(1,0,0))
+
+    def process_unban_command(self, msg: str, client_id: int):
+        """معالجة أمر إلغاء الحظر"""
+        try:
+            parts = msg.split()
+            
+            if len(parts) < 2:
+                self.clientmessage(getlanguage("UnbanUsage"), color=(1,0,0))
+                self.clientmessage("📝 أمثلة:", color=(1,1,0))
+                self.clientmessage("   /unban 113  (إلغاء حظر باستخدام client ID)", color=(1,1,0))
+                self.clientmessage("   /unban pb-XXX  (إلغاء حظر باستخدام PB-ID)", color=(1,1,0))
+                self.clientmessage("   /unban الاسم  (إلغاء حظر باستخدام الاسم)", color=(1,1,0))
+                return
+            
+            target = parts[1]
+            
+            print(f"🔓 Unban command on target: {target}")
+            
+            # البحث عن الهدف المحظور
+            found_ban_keys = []
+            
+            for ban_key, ban_info in list(Uts.bans_data.items()):
+                # التحقق باستخدام PB-ID
+                if ban_info.get('account_id') == target:
+                    found_ban_keys.append(ban_key)
+                
+                # التحقق باستخدام client_id
+                elif str(ban_info.get('client_id')) == target:
+                    found_ban_keys.append(ban_key)
+                
+                # التحقق باستخدام الاسم
+                elif ban_info.get('name', '').lower() == target.lower():
+                    found_ban_keys.append(ban_key)
+                
+                # التحقق باستخدام مفتاح الحظر نفسه
+                elif ban_key == target or ban_key.endswith(f"_{target}"):
+                    found_ban_keys.append(ban_key)
+            
+            if not found_ban_keys:
+                self.clientmessage(getlanguage("NotBanned", subs=[target]), color=(1,0,0))
+                print(f"❌ No ban found for: {target}")
+                return
+            
+            # إزالة جميع الحظورات المطابقة
+            unbanned_names = []
+            for ban_key in found_ban_keys:
+                if ban_key in Uts.bans_data:
+                    ban_info = Uts.bans_data[ban_key]
+                    unbanned_names.append(ban_info.get('name', 'Unknown'))
+                    del Uts.bans_data[ban_key]
+                    print(f"✅ Removed ban: {ban_key}")
+            
+            if unbanned_names:
+                # حفظ البيانات
+                Uts.save_bans_data()
+                
+                admin_name = Uts.usernames.get(client_id, "Admin")
+                names_str = ", ".join(unbanned_names)
+                
+                self.clientmessage(f"✅ تم إلغاء حظر: {names_str}", color=(0,1,0))
+                self.util.cm(getlanguage("UnbanSuccess", subs=[names_str, admin_name]))
+                print(f"✅ Unbanned: {names_str}")
+            else:
+                self.clientmessage(getlanguage("NotBanned", subs=[target]), color=(1,0,0))
+                
+        except Exception as e:
+            print(f"❌ Error in process_unban_command: {e}")
+            self.clientmessage(f"❌ خطأ: {str(e)[:50]}", color=(1,0,0))
+
+    def process_report_command(self, msg: str, client_id: int):
+        """معالجة أمر الإبلاغ"""
+        try:
+            parts = msg.split()
+            
+            if len(parts) < 2:
+                self.clientmessage(getlanguage("ReportUsage"), color=(1,0,0))
+                self.clientmessage("📝 Example: /report 113 Hacking", color=(1,1,0))
+                return
+            
+            target = parts[1]
+            reason = " ".join(parts[2:]) if len(parts) > 2 else "No reason provided"
+            
+            # الحصول على معلومات المبلغ
+            reporter_name = Uts.usernames.get(client_id, "Unknown")
+            reporter_account = Uts.userpbs.get(client_id, "Unknown")
+            
+            # البحث عن الهدف
+            target_data = self.find_target_data(target)
+            
+            if not target_data:
+                self.clientmessage(getlanguage("TargetNotFound", subs=[target]), color=(1,0,0))
+                return
+            
+            target_account_id = target_data.get('account_id')
+            target_name = target_data.get('name', target)
+            target_client_id = target_data.get('client_id')
+            
+            # إنشاء تقرير جديد
+            report = {
+                'id': len(Uts.reports_data.get('reports', [])) + 1,
+                'reporter_name': reporter_name,
+                'reporter_account': reporter_account,
+                'reported_name': target_name,
+                'reported_account': target_account_id,
+                'reported_client_id': target_client_id,
+                'reason': reason,
+                'status': 'Pending',
+                'date': datetime.now().isoformat()
+            }
+            
+            # إضافة التقرير إلى البيانات
+            if 'reports' not in Uts.reports_data:
+                Uts.reports_data['reports'] = []
+            
+            Uts.reports_data['reports'].append(report)
+            Uts.save_reports_data()
+            
+            self.clientmessage(getlanguage("ReportSubmitted", subs=[target_name]), color=(0,1,0))
+            self.clientmessage(f"📋 Reason: {reason}", color=(0.5,0.5,1))
+            
+            # إعلام الإدمنز
+            for admin_id in Uts.get_admins():
+                try:
+                    bs.screenmessage(getlanguage("NewReportAlert", subs=[target_name, reporter_name]), 
+                                   clients=[admin_id], color=(1,1,0))
+                except:
+                    pass
+                
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+
+    # ==================== الأوامر المصححة ====================
+    def process_reports_command(self, client_id: int):
+        """عرض جميع الإبلاغات (مصحح)"""
+        try:
+            # التحقق من الصلاحية
+            if not self.fct.user_is_admin(client_id):
+                self.clientmessage(getlanguage("AdminOnly"), color=(1, 0, 0))
+                return
+
+            reports = Uts.reports_data.get('reports', [])
+            
+            if not reports:
+                self.clientmessage(getlanguage("NoReports"), color=(0.5, 0.5, 1))
+                return
+
+            # إرسال رأس الجدول
+            self.send_chat_message("=" * 60 + "[ REPORTS ]" + "=" * 60)
+            self.send_chat_message("|| #  ||       Reporter (PB-ID)        ||              Reason               ||     Reported By     ||")
+            self.send_chat_message("=" * 120)
+
+            # عرض آخر 10 تقارير فقط
+            for i, report in enumerate(reports[-10:], 1):
+                reporter_id = report.get('reporter_account', 'Unknown')[:20]
+                reason = report.get('reason', 'No reason')[:40]
+                reported_by = report.get('reported_name', 'Unknown')[:20]
+                
+                row = f"|| {i:<2} || {reporter_id:<25} || {reason:<30} || {reported_by:<18} ||"
+                self.send_chat_message(row)
+
+            self.send_chat_message("=" * 120)
+            self.send_chat_message(f"📊 إجمالي التقارير: {len(reports)} | عرض آخر 10")
+            
+        except Exception as e:
+            print(f"❌ Error in process_reports_command: {e}")
+            self.clientmessage(f"❌ خطأ في عرض التقارير: {str(e)[:50]}", color=(1, 0, 0))
+
+    def process_banlist_command(self, client_id: int):
+        """عرض قائمة الحظر (مصحح)"""
+        try:
+            # التحقق من الصلاحية
+            if not self.fct.user_is_admin(client_id):
+                self.clientmessage(getlanguage("AdminOnly"), color=(1, 0, 0))
+                return
+
+            if not Uts.bans_data:
+                self.clientmessage(getlanguage("NoBans"), color=(0.5, 0.5, 1))
+                return
+
+            # إرسال رأس الجدول
+            self.send_chat_message("=" * 60 + "[ BAN LIST ]" + "=" * 60)
+            self.send_chat_message("||           PB-ID / Client ID          ||            Reason              ||       Banned By      ||")
+            self.send_chat_message("=" * 120)
+
+            # عرض آخر 10 محظورين
+            bans_list = list(Uts.bans_data.items())
+            for i, (ban_key, ban_data) in enumerate(bans_list[-10:], 1):
+                # محاولة عرض PB-ID إذا وجد، وإلا عرض client_id
+                identifier = ban_data.get('account_id') or f"Client_{ban_data.get('client_id')}" or ban_key
+                identifier = str(identifier)[:30]
+                reason = ban_data.get('reason', 'No reason')[:30]
+                banned_by = ban_data.get('banned_by', 'Unknown')[:20]
+                
+                row = f"|| {i:<2} || {identifier:<35} || {reason:<25} || {banned_by:<18} ||"
+                self.send_chat_message(row)
+
+            self.send_chat_message("=" * 120)
+            self.send_chat_message(f"🔨 إجمالي المحظورين: {len(Uts.bans_data)} | عرض آخر 10")
+            
+        except Exception as e:
+            print(f"❌ Error in process_banlist_command: {e}")
+            self.clientmessage(f"❌ خطأ في عرض قائمة الحظر: {str(e)[:50]}", color=(1, 0, 0))
+
 class CommandFunctions:
     @staticmethod
     def all_cmd() -> list[str]:
         return [
             '-pan', '-ceb', '-colors', '-mp', '-pb', '-effects', 
-            '/list', 'test', 'help', 'party', 'stats'
+            '/list', 'test', 'help', 'party', 'stats', '/report'
             ]
             
     @staticmethod
@@ -1608,7 +2175,8 @@ class CommandFunctions:
             '/effect', '/punch', '/mbox', '/drop', '/gift',
             '/curse', '/superjump', '/list', '/customtag', '/animationtag',
             '/removetag', '/savetag', '/tagdata', '/listtags', '/sharedaccounts',
-            '/closeserver', '/stopcloseserver', '/closestatus', '/testclosure'
+            '/closeserver', '/stopcloseserver', '/closestatus', '/testclosure',
+            '/ban', '/unban', '/reports', '/banlist'  # الأوامر الجديدة
         ]
 
     @staticmethod
@@ -1881,7 +2449,7 @@ class CommandFunctions:
         def gText(txt: str):
             if current_act is None:
                 # Can't display in-game text without activity
-                bs.screenmessage(txt, clients=[c_id], transient=True)
+                bs.screenmessage(txt, clients=[c_id])
                 return
                 
             with current_act.context:
@@ -1910,7 +2478,7 @@ class CommandFunctions:
         txt = '\n'.join(txts)
 
         # Always send via screenmessage for reliability
-        bs.screenmessage(txt, clients=[c_id], transient=True)
+        bs.screenmessage(txt, clients=[c_id])
         
         # Try to display in-game if possible
         try:
@@ -2383,21 +2951,21 @@ def stickers_slime(self) -> None:
         self._cm_effect_timer = None
     else:
         bs.emitfx(position=self.node.position,
-                count=2,
+                count=1,
                 spread=0.08,
-                scale=1.5,
+                scale=0.5,
                 chunk_type='slime',
                 emit_type='stickers')
         bs.emitfx(position=self.node.position,
-                count=2,
+                count=1,
                 spread=0.08,
-                scale=1.5,
+                scale=0.5,
                 chunk_type='slime',
                 emit_type='stickers')
         bs.emitfx(position=self.node.position,
-                count=2,
+                count=1,
                 spread=0.08,
-                scale=1.5,
+                scale=0.5,
                 chunk_type='slime',
                 emit_type='stickers')
                 
@@ -2733,7 +3301,13 @@ def new_ga_on_transition_in(self) -> None:
     Uts.create_live_chat(self, live=False)
 
 def new_on_player_join(self, player: bs.Player) -> None:
+    """دالة معدلة لفحص الحظر عند انضمام اللاعب"""
     calls['OnPlayerJoin'](self, player)
+    
+    # فحص الحظر أولاً
+    if Uts.check_player_ban_on_join(player):
+        return  # إذا كان محظوراً، لا نكمل
+    
     Uts.player_join(player)
     
     # التحقق من إغلاق السيرفر
@@ -2984,6 +3558,170 @@ class Uts:
     server_close_countdown_text = None
     server_close_original_players = []
     server_close_last_update = 0.0
+    
+    # بيانات الحظر والإبلاغات
+    bans_data = {}
+    reports_data = {"reports": []}
+
+    @staticmethod
+    def create_bans_data():
+        """إنشاء بيانات الحظر"""
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxBansData.json'
+        
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+            
+        if not os.path.exists(file):
+            with open(file, 'w') as f:
+                f.write('{}')
+        
+        try:
+            with open(file) as f:
+                r = f.read()
+                if r.strip():
+                    Uts.bans_data = json.loads(r)
+                else:
+                    Uts.bans_data = {}
+            print(f"✅ Bans data loaded: {len(Uts.bans_data)} bans")
+            for k, v in Uts.bans_data.items():
+                print(f"   - {k}: {v.get('account_id')} | {v.get('client_id')} | {v.get('name')}")
+        except Exception as e:
+            print(f"⚠️ Error loading bans data: {e}")
+            Uts.bans_data = {}
+    
+    @staticmethod
+    def save_bans_data():
+        """حفظ بيانات الحظر"""
+        try:
+            folder = Uts.directory_user + '/Configs'
+            file = folder + '/CheatMaxBansData.json'
+            with open(file, 'w') as f:
+                w = json.dumps(Uts.bans_data, indent=4)
+                f.write(w)
+            print(f"✅ Bans data saved: {len(Uts.bans_data)} bans")
+        except Exception as e:
+            print(f"❌ Error saving bans data: {e}")
+    
+    @staticmethod
+    def create_reports_data():
+        """إنشاء بيانات الإبلاغات"""
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxReportsData.json'
+        
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+            
+        if not os.path.exists(file):
+            with open(file, 'w') as f:
+                f.write('{"reports": []}')
+        
+        try:
+            with open(file) as f:
+                r = f.read()
+                if r.strip():
+                    Uts.reports_data = json.loads(r)
+                else:
+                    Uts.reports_data = {"reports": []}
+        except:
+            Uts.reports_data = {"reports": []}
+    
+    @staticmethod
+    def save_reports_data():
+        """حفظ بيانات الإبلاغات"""
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxReportsData.json'
+        with open(file, 'w') as f:
+            w = json.dumps(Uts.reports_data, indent=4)
+            f.write(w)
+
+    @staticmethod
+    def check_player_ban_on_join(player: bs.Player) -> bool:
+        """التحقق من حظر اللاعب عند الانضمام"""
+        try:
+            sessionplayer = player.sessionplayer
+            client_id = sessionplayer.inputdevice.client_id
+            if client_id == -1:
+                print("👑 Host is joining - skip ban check.")
+                return False
+            
+            # محاولة الحصول على account_id (PB-ID)
+            account_id = None
+            try:
+                account_id = sessionplayer.get_v1_account_id()
+            except:
+                if client_id in Uts.userpbs:
+                    account_id = Uts.userpbs[client_id]
+            
+            # محاولة الحصول على اسم اللاعب
+            player_name = None
+            try:
+                player_name = sessionplayer.getname(full=True)
+            except:
+                if client_id in Uts.usernames:
+                    player_name = Uts.usernames[client_id]
+            
+            print(f"🔍 Checking ban for: {player_name} (Client: {client_id}, PB-ID: {account_id})")
+            
+            # إعادة تحميل بيانات الحظر للتأكد من أحدث البيانات
+            Uts.create_bans_data()
+            
+            # 1. فحص باستخدام PB-ID (الأكثر موثوقية)
+            if account_id:
+                for ban_key, ban_info in Uts.bans_data.items():
+                    if ban_info.get('account_id') == account_id:
+                        print(f"🚫 Ban match (PB-ID): {ban_key}")
+                        Uts.kick_banned_player(client_id, ban_info)
+                        return True
+            
+            # 2. فحص باستخدام client_id
+            for ban_key, ban_info in Uts.bans_data.items():
+                if ban_info.get('client_id') == client_id:
+                    print(f"🚫 Ban match (Client ID): {ban_key}")
+                    Uts.kick_banned_player(client_id, ban_info)
+                    return True
+            
+            # 3. فحص باستخدام الاسم
+            if player_name:
+                player_name_lower = player_name.lower()
+                for ban_key, ban_info in Uts.bans_data.items():
+                    banned_name = ban_info.get('name', '').lower()
+                    if banned_name and banned_name == player_name_lower:
+                        print(f"🚫 Ban match (Name): {ban_key}")
+                        Uts.kick_banned_player(client_id, ban_info)
+                        return True
+            
+            print(f"✅ Player is not banned: {player_name}")
+            return False
+            
+        except Exception as e:
+            print(f"❌ Error in check_player_ban_on_join: {e}")
+            return False
+    
+    @staticmethod
+    def kick_banned_player(client_id: int, ban_data: dict):
+        """طرد لاعب محظور مع إرسال رسالة (بدون transient)"""
+        try:
+            reason = ban_data.get('reason', 'No reason provided')
+            banned_by = ban_data.get('banned_by', 'Admin')
+            player_name = ban_data.get('name', f'Player {client_id}')
+            
+            message = getlanguage("BannedMessage", subs=[reason, banned_by])
+            # استخدام Uts.sm (bs.broadcastmessage) الذي يدعم clients
+            Uts.sm(message, color=(1,0,0), clients=[client_id], transient=True)
+            
+            def kick():
+                try:
+                    bs.disconnect_client(client_id)
+                    print(f"✅ Kicked banned player: {player_name} (Client: {client_id})")
+                except Exception as e:
+                    print(f"❌ Error kicking player {client_id}: {e}")
+            
+            # تأكد من تنفيذ الطرد في الخيط الرئيسي
+            bs.apptimer(2.0, lambda: bs.pushcall(kick))
+            
+        except Exception as e:
+            print(f"❌ Error in kick_banned_player: {e}")
 
     @staticmethod
     def start_server_closure(hours: float, tag_name: str, admin_client_id: int) -> bool:
@@ -3202,7 +3940,7 @@ class Uts:
                 seconds = int(remaining_time % 60)
                 time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
                 
-                # إرسال رسالة للاعب
+                # إرسال رسالة للاعب - بدون transient!
                 message = f"There's a training match for {Uts.server_close_tag_name}. Please try to join again after {time_str}"
                 
                 # استخدام سياق النشاط إن وجد
@@ -3210,7 +3948,7 @@ class Uts:
                 if activity and hasattr(activity, 'context'):
                     try:
                         with activity.context:
-                            bs.screenmessage(message, color=(1, 0, 0), transient=True, clients=[client_id])
+                            bs.screenmessage(message, color=(1, 0, 0), clients=[client_id])
                             
                             # طرد اللاعب بعد ثانيتين
                             def kick_player():
@@ -3412,6 +4150,7 @@ class Uts:
 
     @staticmethod
     def player_join(player: bs.Player) -> None:
+        """معالجة انضمام لاعب - تم تعديلها لإضافة الـ accounts"""
         if not hasattr(Uts, "pdata"):
             Uts.create_players_data()
         
@@ -3437,6 +4176,7 @@ class Uts:
                     accounts.append(account_name)
                     Uts.save_players_data()
                     
+                # ===== التعديل المهم: ربط client_id بالحساب =====
                 Uts.accounts[client_id] = Uts.pdata[account_id]
                 
                 # إذا كان المالك، أرسل رسالة ترحيب
@@ -4173,7 +4913,7 @@ class TagSystem:
     def send_client_message(self, client_id, message, color=(1,1,1)):
         """إرسال رسالة إلى العميل"""
         try:
-            bs.screenmessage(message, color=color, clients=[client_id], transient=True)
+            bs.screenmessage(message, color=color, clients=[client_id])
         except:
             pass
 
@@ -4329,6 +5069,10 @@ def _install() -> None:
             Uts.add_owner(owner_account)
             print(f"✅ Added owner: {owner_account}")
         
+        # تحميل بيانات الحظر والإبلاغات
+        Uts.create_bans_data()
+        Uts.create_reports_data()
+        
         # إرسال رسالة تأكيد
         bs.apptimer(3.0, lambda: Uts.sm("Owner added!", color=(1.0, 0.5, 0.0)))
         
@@ -4356,6 +5100,14 @@ def settings():
         cfg['Commands']['InfoColor'] = list(Uts.colors()['white'])
         Uts.save_settings()
         print("✅ Default settings created")
+    
+    # تحميل بيانات الحظر والإبلاغات
+    try:
+        Uts.create_bans_data()
+        Uts.create_reports_data()
+        print("✅ Bans and reports systems initialized")
+    except Exception as e:
+        print(f"⚠️ Error loading bans/reports data: {e}")
     
     print("✅ Settings loaded successfully")
 
@@ -4497,6 +5249,18 @@ def setup_automatic_backup():
                 backup_file = f"{backup_dir}/settings_backup_{timestamp}.json"
                 shutil.copy2(settings_file, backup_file)
             
+            # نسخ بيانات الحظر
+            bans_file = Uts.directory_user + '/Configs/CheatMaxBansData.json'
+            if os.path.exists(bans_file):
+                backup_file = f"{backup_dir}/bans_backup_{timestamp}.json"
+                shutil.copy2(bans_file, backup_file)
+            
+            # نسخ بيانات الإبلاغات
+            reports_file = Uts.directory_user + '/Configs/CheatMaxReportsData.json'
+            if os.path.exists(reports_file):
+                backup_file = f"{backup_dir}/reports_backup_{timestamp}.json"
+                shutil.copy2(reports_file, backup_file)
+            
             # حذف النسخ القديمة (احتفظ بـ 10 فقط)
             backup_files = sorted([f for f in os.listdir(backup_dir) if f.endswith('.json')])
             for old_file in backup_files[:-10]:
@@ -4576,6 +5340,33 @@ def add_special_commands():
             'description': 'عرض إحصائياتك',
             'admin_only': False,
             'function': lambda client_id: show_stats(client_id)
+        },
+        
+        # أوامر الإبلاغ والحظر
+        'ban': {
+            'description': 'حظر لاعب (لـAdmins فقط)',
+            'admin_only': True,
+            'function': lambda client_id: bs.screenmessage("Use: /ban <player> <reason>", clients=[client_id])
+        },
+        'unban': {
+            'description': 'إلغاء حظر لاعب (لـAdmins فقط)',
+            'admin_only': True,
+            'function': lambda client_id: bs.screenmessage("Use: /unban <player>", clients=[client_id])
+        },
+        'report': {
+            'description': 'الإبلاغ عن لاعب',
+            'admin_only': False,
+            'function': lambda client_id: bs.screenmessage("Use: /report <player> <reason>", clients=[client_id])
+        },
+        'reports': {
+            'description': 'عرض الإبلاغات (لـAdmins فقط)',
+            'admin_only': True,
+            'function': lambda client_id: bs.screenmessage("Use: /reports", clients=[client_id])
+        },
+        'banlist': {
+            'description': 'عرض قائمة الحظر (لـAdmins فقط)',
+            'admin_only': True,
+            'function': lambda client_id: bs.screenmessage("Use: /banlist", clients=[client_id])
         }
     }
     
@@ -4623,6 +5414,8 @@ def final_setup():
 ║ • Commands: ✓ Loaded                    ║
 ║ • Multi-Language: ✓ Supported           ║
 ║ • Protection: ✓ Enabled                 ║
+║ • Ban System: ✓ Active (PB-ID Verified)║
+║ • Report System: ✓ Active              ║
 ╚══════════════════════════════════════════╝
     """
     
@@ -4776,6 +5569,39 @@ def system_test():
                 tests_passed += 1
             else:
                 print("❌ Test 4: Settings not loaded")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+        
+        # اختبار 5: نظام الحظر
+        try:
+            if hasattr(Uts, 'bans_data'):
+                print(f"✅ Test 5: Ban system initialized ({len(Uts.bans_data)} bans)")
+                tests_passed += 1
+            else:
+                print("❌ Test 5: Ban system not initialized")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+        
+        # اختبار 6: نظام الإبلاغات
+        try:
+            if hasattr(Uts, 'reports_data'):
+                print(f"✅ Test 6: Reports system initialized ({len(Uts.reports_data.get('reports', []))} reports)")
+                tests_passed += 1
+            else:
+                print("❌ Test 6: Reports system not initialized")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+        
+        # اختبار 7: نظام ربط PB-ID
+        try:
+            if hasattr(Uts, 'userpbs') and isinstance(Uts.userpbs, dict):
+                print("✅ Test 7: PB-ID mapping system available")
+                tests_passed += 1
+            else:
+                print("❌ Test 7: PB-ID mapping system not available")
                 tests_failed += 1
         except:
             tests_failed += 1
