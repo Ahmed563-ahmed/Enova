@@ -11,7 +11,7 @@ import bascenev1 as bs
 import bauiv1 as bui
 import babase as ba
 import _babase
-import time 
+import time
 from bascenev1._activity import Activity
 from bascenev1lib.actor.bomb import Bomb
 from bascenev1lib.gameutils import SharedObjects
@@ -29,12 +29,9 @@ if TYPE_CHECKING:
 def act():
     """الحصول على النشاط الحالي مع تحسينات"""
     try:
-        # الطريقة الأساسية
         activity = bs.get_foreground_host_activity()
         if activity is not None:
             return activity
-        
-        # الطريقة البديلة 1
         try:
             from bascenev1._session import Session
             session = bs.getsession()
@@ -44,8 +41,6 @@ def act():
                     return activity
         except:
             pass
-        
-        # الطريقة البديلة 2
         try:
             import _babase
             activity = _babase.get_foreground_host_activity()
@@ -53,8 +48,6 @@ def act():
                 return activity
         except:
             pass
-        
-        # الطريقة البديلة 3 - البحث في المكدس
         try:
             import babase._app
             app = babase._app
@@ -64,10 +57,8 @@ def act():
                     return session.activity
         except:
             pass
-        
     except Exception as e:
         print(f"⚠️ Error in act(): {e}")
-    
     return None
 
 class Lang:
@@ -75,11 +66,9 @@ class Lang:
                  text: str,
                  subs: list[str] = 'none'):
 
-        
         icons = [bui.charstr(bui.SpecialChar.CROWN),
                  bui.charstr(bui.SpecialChar.LOGO)]
 
- 
         lang = bs.app.lang.language
         setphrases = {
             "Installing":
@@ -418,23 +407,15 @@ class Commands:
         self.util = Uts
         self.fct = CommandFunctions
 
-        # معالجة الأوامر
         self.process_commands()
         
     def process_commands(self):
-        """معالجة جميع الأوامر"""
         try:
-            # معالجة أوامر عامة للجميع
             self.command_all()
-            
-            # معالجة أوامر الأدمنز
             if self.fct.user_is_admin(self.client_id):
                 self.admin_commands()
-                
-            # معالجة أوامر المالك
             if self.fct.user_is_owner(self.client_id):
                 self.owner_commands()
-                
         except Exception as e:
             print(f"❌ Error in process_commands: {e}")
             self.value = None
@@ -480,7 +461,7 @@ class Commands:
             ClientMessage(cols)
             self.value = '@'
             
-        elif msg.lower() == cmd[3]: # -mp (max players)
+        elif msg.lower() == cmd[3]: # -mp
             mp = bs.get_public_party_max_size()
             ClientMessage(f"Max Players: {mp}")
             self.value = '@'
@@ -496,7 +477,7 @@ class Commands:
             ClientMessage(cols)
             self.value = '@'
             
-        elif msg.lower() == '/list':  # الأمر لعرض قائمة اللاعبين
+        elif msg.lower() == '/list':
             self.process_list_players()
             self.value = '@'
             
@@ -505,14 +486,15 @@ class Commands:
             self.value = '@'
             
         elif msg.lower() in ['help', 'مساعدة']:
-            help_msg = "📋 Commands: /list, -colors, -effects, test, /report"
-            if self.fct.user_is_admin(self.client_id):
-                help_msg += "\n🔧 Admin Commands: /ban, /unban, /reports, /banlist"
-            self.clientmessage(help_msg)
+            self.process_help_command(msg, self.client_id)
             self.value = '@'
             
         elif ms[0] == '/report':
             self.process_report_command(msg, self.client_id)
+            self.value = '@'
+            
+        elif ms[0] in ['/help']:
+            self.process_help_command(msg, self.client_id)
             self.value = '@'
     
     def admin_commands(self) -> None:
@@ -524,7 +506,7 @@ class Commands:
         ms[0] = ms[0].lower()
         cmd = [cd.lower() for cd in self.fct.admins_cmd()]
     
-        if ms[0] == cmd[0]: # /name 0 La Pulga
+        if ms[0] == cmd[0]: # /name
             try: 
                 name = ms[2]
             except:
@@ -552,7 +534,7 @@ class Commands:
                        'ClientMessage': ClientMessage})
             self.value = '@'
                        
-        elif ms[0] == cmd[3] or ms[0] == cmd[4]: # /addAdmin
+        elif ms[0] == cmd[3] or ms[0] == cmd[4]: # /addAdmin /delAdmin
             if len(ms) == 1:
                 ClientMessage("Add the client ID. \n use the '/list' command for more information.")
                 self.value = '@'
@@ -870,64 +852,69 @@ class Commands:
                        'ClientMessage': ClientMessage})
             self.value = '@'
         
-        elif ms[0] == '/customtag':  # الأمر المتطور للتاجات المخصصة
+        elif ms[0] == '/customtag':
             self.process_advanced_customtag(msg, self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/animationtag':  # الأمر للتاجات المتحركة
+        elif ms[0] == '/animationtag':
             self.process_animationtag(msg, self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/removetag':  # إزالة التاج
+        elif ms[0] == '/removetag':
             self.process_removetag(msg, self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/savetag':  # حفظ التاج كقالب
+        elif ms[0] == '/savetag':
             self.process_savetag(msg, self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/tagdata':  # تطبيق تاج من قالب
+        elif ms[0] == '/tagdata':
             self.process_tagdata(msg, self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/listtags':  # عرض قوالب التاجات
+        elif ms[0] == '/listtags':
             self.process_listtags(self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/sharedaccounts':  # عرض اللاعبين الذين يشاركون نفس الحساب
+        elif ms[0] == '/sharedaccounts':
             self.process_shared_accounts(self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/closeserver':  # إغلاق السيرفر للتدريب
+        elif ms[0] == '/closeserver':
             self.process_close_server(msg, self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/stopcloseserver':  # إيقاف إغلاق السيرفر
+        elif ms[0] == '/stopcloseserver':
             self.process_stop_close_server(self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/closestatus':  # حالة إغلاق السيرفر
+        elif ms[0] == '/closestatus':
             self.process_close_status(self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/testclosure':  # اختبار إغلاق السيرفر
+        elif ms[0] == '/testclosure':
             self.test_closure_system()
             self.value = '@'
             
-        elif ms[0] == '/ban':  # حظر لاعب
+        # ========== أوامر الحظر والإبلاغ ==========
+        elif ms[0] == '/ban':
             self.process_ban_command(msg, self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/unban':  # إلغاء حظر لاعب
+        elif ms[0] == '/unban':
             self.process_unban_command(msg, self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/reports':  # عرض الإبلاغات
+        elif ms[0] == '/reports':
             self.process_reports_command(self.client_id)
             self.value = '@'
             
-        elif ms[0] == '/banlist':  # عرض قائمة الحظر
+        elif ms[0] == '/banlist':
             self.process_banlist_command(self.client_id)
+            self.value = '@'
+            
+        elif ms[0] == '/reportdone':
+            self.process_report_done_command(msg, self.client_id)
             self.value = '@'
                        
     def owner_commands(self) -> None:
@@ -943,12 +930,10 @@ class Commands:
             self.value = '@'
             
         elif ms[0] == "/fullpower":
-            # إعطاء قوة كاملة للاعب
             if cls_node is not None:
                 current_act = bs.get_foreground_host_activity()
                 if current_act is not None:
                     with current_act.context:
-                        # إعطاء جميع الـ powerups
                         powerups = ['triple_bombs', 'punch', 'ice_bombs', 'impact_bombs', 
                                    'land_mines', 'sticky_bombs', 'shield', 'health', 'curse']
                         for powerup in powerups:
@@ -957,7 +942,6 @@ class Commands:
             self.value = '@'
     
     def test_closure_system(self):
-        """اختبار نظام إغلاق السيرفر"""
         self.clientmessage("🔍 **اختبار نظام إغلاق السيرفر**", color=(0, 1, 1))
         self.clientmessage(f"🔸 Active: {Uts.server_close_active}", color=(1, 1, 0))
         self.clientmessage(f"🔸 End Time: {Uts.server_close_end_time}", color=(1, 1, 0))
@@ -973,7 +957,6 @@ class Commands:
                 seconds = int(remaining % 60)
                 self.clientmessage(f"🔸 Time Remaining: {hours}:{minutes:02d}:{seconds:02d}", color=(0, 1, 0))
                 
-                # اختبار لمعرفة من سيطرد
                 activity = bs.get_foreground_host_activity()
                 if activity:
                     for player in activity.players:
@@ -987,15 +970,12 @@ class Commands:
                             pass
     
     def process_close_server(self, msg: str, client_id: int):
-        """معالجة أمر إغلاق السيرفر للتدريب"""
         try:
             parts = msg.split()
-            
             if len(parts) < 3:
                 self.clientmessage("Use: /closeserver <hours> <tag-name>", color=(1, 0, 0))
                 self.clientmessage("📝 Example: /closeserver 1 GOF", color=(1, 1, 0))
                 return
-            
             try:
                 hours = float(parts[1])
                 if hours <= 0:
@@ -1004,81 +984,52 @@ class Commands:
             except ValueError:
                 self.clientmessage("Hours must be a positive number", color=(1, 0, 0))
                 return
-            
             tag_name = parts[2]
-            
-            # التحقق من أن السيرفر ليس مغلقًا بالفعل
             if Uts.server_close_active:
                 self.clientmessage("Server is already closed", color=(1, 1, 0))
                 return
-            
-            # بدء إغلاق السيرفر
             if Uts.start_server_closure(hours, tag_name, client_id):
                 self.clientmessage(f"✅ Server closed for {hours} hours for tag '{tag_name}'", color=(0, 1, 0))
-                
-                # إرسال إشعار للجميع
                 Uts.cm(f"Server closed for {hours} hours for '{tag_name}' tag training")
-                
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1, 0, 0))
     
     def process_stop_close_server(self, client_id: int):
-        """معالجة أمر إيقاف إغلاق السيرفر"""
         try:
             if not Uts.server_close_active:
                 self.clientmessage("No server closure active", color=(1, 1, 0))
                 return
-            
-            # إيقاف إغلاق السيرفر
             Uts.stop_server_closure()
-            
             self.clientmessage("Server closure has been stopped", color=(0, 1, 0))
             Uts.cm("✅ Server closure stopped. Everyone can join now.")
-            
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1, 0, 0))
     
     def process_close_status(self, client_id: int):
-        """عرض حالة إغلاق السيرفر"""
         try:
             if not Uts.server_close_active:
                 self.clientmessage("📊 Server Status: Open (No closure active)", color=(0, 1, 0))
                 return
-            
             remaining_time = Uts.server_close_end_time - time.time()
             if remaining_time <= 0:
                 self.clientmessage("📊 Server Status: Open (Closure expired)", color=(0, 1, 0))
                 return
-            
             hours = int(remaining_time // 3600)
             minutes = int((remaining_time % 3600) // 60)
             seconds = int(remaining_time % 60)
-            
-            status_msg = f"📊 Server Status: Closed\n"
-            status_msg += f"⏰ Remaining: {hours}:{minutes:02d}:{seconds:02d}\n"
-            status_msg += f"🏷️ Allowed Tag: {Uts.server_close_tag_name}\n"
-            status_msg += f"👑 Allowed: Admins, Owners, Players with tag"
-            
+            status_msg = f"📊 Server Status: Closed\n⏰ Remaining: {hours}:{minutes:02d}:{seconds:02d}\n🏷️ Allowed Tag: {Uts.server_close_tag_name}\n👑 Allowed: Admins, Owners, Players with tag"
             self.clientmessage(status_msg, color=(1, 1, 0))
-            
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1, 0, 0))
             
     def process_list_players(self):
-        """معالجة أمر /list لعرض قائمة اللاعبين"""
         try:
             activity = bs.get_foreground_host_activity()
             if not activity:
                 self.clientmessage("❌ No active game found", color=(1,0,0))
                 return
-            
-            # تحديث بيانات المستخدمين
             self.util.update_usernames()
-            
-            # جمع بيانات اللاعبين
             players_data = []
-            
-            # أولاً: اللاعبون في roster
             roster_data = roster()
             if roster_data:
                 for r in roster_data:
@@ -1086,31 +1037,23 @@ class Commands:
                         client_id = r.get('client_id')
                         if client_id is None:
                             continue
-                            
                         account_id = r.get('account_id', 'Unknown')
                         account_name = r.get('display_string', 'Unknown')
                         player_name = account_name
-                        
-                        # إذا كان هناك لاعبون في القائمة
                         players_list = r.get('players', [])
                         if players_list:
                             player_name = players_list[0].get('name_full', player_name)
-                        
-                        # تحديد الدور
                         role = "Player"
                         if client_id == -1:
                             role = "Owner"
                         elif account_id in self.util.pdata:
                             if self.util.pdata[account_id].get('Admin', False):
                                 role = "Admin"
-                        
-                        # التاج
                         tag_text = "None"
                         if account_id in self.util.pdata:
                             if 'Tag' in self.util.pdata[account_id]:
                                 tag_data = self.util.pdata[account_id]['Tag']
                                 tag_text = tag_data.get('text', 'None')
-                        
                         players_data.append({
                             'pb_id': account_id,
                             'role': role,
@@ -1121,26 +1064,18 @@ class Commands:
                         })
                     except:
                         continue
-            
             if not players_data:
                 self.clientmessage("❌ No players found", color=(1,0,0))  
                 return
-            
-            # ترتيب حسب Client ID
             players_data.sort(key=lambda x: x['client_id'])
-            
-            # إرسال الجدول
             self.send_chat_message("=============================================[Players_list]==================================================")
             self.send_chat_message("||        PB-ID        ||    Role    ||  Account_name   ||        Name         || Client ID ||   Name Tag  ||")
             self.send_chat_message("=============================================================================================================")
-            
             for data in players_data:
-                # إعداد النصوص
                 pb_id = str(data['pb_id'])
                 if len(pb_id) > 20:
                     pb_id = pb_id[:18] + ".."
                 pb_id = pb_id.ljust(20)
-                
                 role = data['role']
                 if role == "Owner":
                     role = "👑 Owner"
@@ -1149,188 +1084,146 @@ class Commands:
                 else:
                     role = "👤 Player"
                 role = role.ljust(12)
-                
                 account_name = str(data['account_name'])
                 if len(account_name) > 15:
                     account_name = account_name[:13] + ".."
                 account_name = account_name.ljust(15)
-                
                 player_name = str(data['player_name'])
                 if len(player_name) > 18:
                     player_name = player_name[:16] + ".."
                 player_name = player_name.ljust(18)
-                
                 client_id = str(data['client_id'])
                 if data['client_id'] == -1:
                     client_id = "👑 Host"
                 client_id = client_id.center(10)
-                
                 tag = str(data['tag'])
                 if len(tag) > 10:
                     tag = tag[:8] + ".."
                 tag = tag.ljust(10)
-                
-                # إنشاء السطر
                 row = f"|| {pb_id} || {role} || {account_name} || {player_name} || {client_id} || {tag} ||"
                 self.send_chat_message(row)
-            
             self.send_chat_message("==========================[Players_list]=============================")
             self.send_chat_message(f"👥 Total Players: {len(players_data)}")
             self.send_chat_message("👑 = Owner/Host | ⭐ = Admin | 👤 = Player")
-            
         except Exception as e:
             print(f"❌ Error in process_list_players: {e}")
             self.clientmessage("❌ Error showing players list", color=(1,0,0))
     
     def process_advanced_customtag(self, msg: str, client_id: int):
-        """معالجة أمر التاج المخصص المتطور"""
         try:
             parts = msg[11:].strip().split()
             if len(parts) < 4:
                 self.clientmessage("❌ Use: /customtag <text> <color> <scale> <client_id>", color=(1,0,0))
                 self.clientmessage("📝 Example: /customtag VIP gold 0.03 -1", color=(1,1,0))
                 return
-            
             text = parts[0]
             color_str = parts[1]
-            
             try:
                 scale = float(parts[2])
                 scale = max(0.01, min(0.1, scale))
             except:
                 self.clientmessage("❌ Scale must be a number", color=(1,0,0))
                 return
-            
             target_str = parts[3]
-            
-            # تحويل اللون
             color = Uts.tag_system.parse_color(color_str)
             if color == 'rainbow':
                 self.clientmessage("⚠️ 'rainbow' is for animated tags only. Using yellow instead.", color=(1,1,0))
                 color = (1.0, 1.0, 0.0)
-            
             activity = bs.get_foreground_host_activity()
             if not activity:
                 self.clientmessage("❌ No active game found", color=(1,0,0))
                 return
-            
             if target_str.lower() == 'all':
                 self.clientmessage("⚠️ This will affect ALL players!", color=(1,1,0))
-                
                 success = 0
                 for player in activity.players:
                     if player.is_alive():
                         try:
                             target_client_id = player.sessionplayer.inputdevice.client_id
                             account_id = None
-                            
-                            # البحث عن account_id الخاص باللاعب
                             for acc_id, acc_data in Uts.pdata.items():
                                 if target_client_id in Uts.userpbs and Uts.userpbs[target_client_id] == acc_id:
                                     account_id = acc_id
                                     break
-                            
                             if account_id:
                                 Uts.tag_system.remove_tag_visual(target_client_id)
                                 Uts.tag_system.stop_char_animation(target_client_id)
                                 Uts.tag_system.stop_animation(target_client_id)
-                                
-                                # حفظ البيانات في نفس بيانات اللاعب
                                 Uts.pdata[account_id]['Tag'] = {
                                     'text': text,
                                     'color': list(color) if isinstance(color, tuple) else color,
                                     'scale': scale,
                                     'type': 'normal'
                                 }
-                                
                                 if player.is_alive() and player.actor and player.actor.node:
                                     if Uts.tag_system.create_tag_with_char_animation(player, target_client_id, text, color, scale, activity):
                                         success += 1
                         except:
                             continue
-                
                 Uts.save_players_data()
                 self.clientmessage(f"✅ Applied custom tag to {success} players", color=(0,0,1))
                 return
-            
             try:
                 target_client_id = int(target_str)
                 target_player = None
                 account_id = None
-                
                 for player in activity.players:
                     if player.sessionplayer.inputdevice.client_id == target_client_id:
                         target_player = player
-                        # البحث عن account_id الخاص باللاعب
                         for acc_id, acc_data in Uts.pdata.items():
                             if target_client_id in Uts.userpbs and Uts.userpbs[target_client_id] == acc_id:
                                 account_id = acc_id
                                 break
                         break
-                
                 if target_player and account_id:
                     player_name = target_player.getname()
                     Uts.tag_system.remove_tag_visual(target_client_id)
                     Uts.tag_system.stop_char_animation(target_client_id)
                     Uts.tag_system.stop_animation(target_client_id)
-                    
-                    # حفظ البيانات في نفس بيانات اللاعب
                     Uts.pdata[account_id]['Tag'] = {
                         'text': text,
                         'color': list(color) if isinstance(color, tuple) else color,
                         'scale': scale,
                         'type': 'normal'
                     }
-                    
                     if target_player.is_alive() and target_player.actor and target_player.actor.node:
                         if Uts.tag_system.create_tag_with_char_animation(target_player, target_client_id, text, color, scale, activity):
                             Uts.save_players_data()
                             self.clientmessage(f"✅ Created custom tag '{text}' for {player_name} (Client ID: {target_client_id})", color=(0,0,1))
                 else:
                     self.clientmessage(f"❌ Player with Client ID {target_client_id} not found or no account data", color=(1,0,0))
-                    
             except ValueError:
                 self.clientmessage("❌ Client ID must be a number", color=(1,0,0))
-                
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
 
     def process_animationtag(self, msg: str, client_id: int):
-        """معالجة أمر التاج المتحرك"""
         try:
             parts = msg[14:].strip().split()
-            
             if len(parts) < 6:
                 self.clientmessage("❌ Use: /animationtag <text> <scale> <speed> <client_id> <color1> <color2> ...", color=(1,0,0))
                 self.clientmessage("💡 Minimum: 2 colors, Example: /animationtag VIP 0.03 0.5 -1 red blue green", color=(1,1,0))
                 return
-            
             text = parts[0]
-            
             try:
                 scale = float(parts[1])
                 scale = max(0.01, min(0.2, scale))
             except:
                 self.clientmessage("❌ Scale must be a number", color=(1,0,0))
                 return
-            
             try:
                 speed = float(parts[2])
                 speed = max(0.5, min(5.0, speed))
             except:
                 self.clientmessage("❌ Speed must be a number (0.5-5.0)", color=(1,0,0))
                 return
-            
             target_str = parts[3]
-            
             color_parts = parts[4:]
             if len(color_parts) < 2:
                 self.clientmessage("❌ Need at least 2 colors for animation", color=(1,0,0))
                 return
-            
             colors = []
             rainbow_mode = False
-            
             if 'rainbow' in color_parts:
                 rainbow_mode = True
                 colors = Uts.tag_system.generate_rainbow_colors(8)
@@ -1342,33 +1235,25 @@ class Commands:
                         colors = Uts.tag_system.generate_rainbow_colors(8)
                         break
                     colors.append(color)
-            
             activity = bs.get_foreground_host_activity()
             if not activity:
                 return
-            
             if target_str.lower() == 'all':
                 self.clientmessage("⚠️ This will affect ALL players!", color=(1,1,0))
-                
                 success = 0
                 for player in activity.players:
                     if player.is_alive():
                         try:
                             target_client_id = player.sessionplayer.inputdevice.client_id
                             account_id = None
-                            
-                            # البحث عن account_id الخاص باللاعب
                             for acc_id, acc_data in Uts.pdata.items():
                                 if target_client_id in Uts.userpbs and Uts.userpbs[target_client_id] == acc_id:
                                     account_id = acc_id
                                     break
-                            
                             if account_id:
                                 Uts.tag_system.remove_tag_visual(target_client_id)
                                 Uts.tag_system.stop_char_animation(target_client_id)
                                 Uts.tag_system.stop_animation(target_client_id)
-                                
-                                # حفظ البيانات في نفس بيانات اللاعب
                                 Uts.pdata[account_id]['Tag'] = {
                                     'text': text,
                                     'scale': scale,
@@ -1377,39 +1262,31 @@ class Commands:
                                     'type': 'animated',
                                     'rainbow': rainbow_mode
                                 }
-                                
                                 if player.is_alive() and player.actor and player.actor.node:
                                     if Uts.tag_system.create_animated_tag_gradual(player, target_client_id, Uts.pdata[account_id]['Tag'], activity):
                                         success += 1
                         except:
                             continue
-                
                 Uts.save_players_data()
                 self.clientmessage(f"🌈 Applied animated '{text}' to {success} players", color=(0,0,1))
                 return
-            
             try:
                 target_client_id = int(target_str)
                 target_player = None
                 account_id = None
-                
                 for player in activity.players:
                     if player.sessionplayer.inputdevice.client_id == target_client_id:
                         target_player = player
-                        # البحث عن account_id الخاص باللاعب
                         for acc_id, acc_data in Uts.pdata.items():
                             if target_client_id in Uts.userpbs and Uts.userpbs[target_client_id] == acc_id:
                                 account_id = acc_id
                                 break
                         break
-                
                 if target_player and account_id:
                     player_name = target_player.getname()
                     Uts.tag_system.remove_tag_visual(target_client_id)
                     Uts.tag_system.stop_char_animation(target_client_id)
                     Uts.tag_system.stop_animation(target_client_id)
-                    
-                    # حفظ البيانات في نفس بيانات اللاعب
                     Uts.pdata[account_id]['Tag'] = {
                         'text': text,
                         'scale': scale,
@@ -1418,185 +1295,144 @@ class Commands:
                         'type': 'animated',
                         'rainbow': rainbow_mode
                     }
-                    
                     if target_player.is_alive() and target_player.actor and target_player.actor.node:
                         if Uts.tag_system.create_animated_tag_gradual(target_player, target_client_id, Uts.pdata[account_id]['Tag'], activity):
                             Uts.save_players_data()
                             self.clientmessage(f"🌈 Created animated '{text}' for {player_name} (Speed: {speed}s, Client ID: {target_client_id})", color=(0,0,1))
                 else:
                     self.clientmessage(f"❌ Player with Client ID {target_client_id} not found or no account data", color=(1,0,0))
-                    
             except ValueError:
                 self.clientmessage("❌ Client ID must be a number", color=(1,0,0))
-                
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
 
     def process_removetag(self, msg: str, client_id: int):
-        """معالجة أمر إزالة التاج"""
         try:
             target_str = msg[11:].strip()
-            
             if not target_str:
                 self.clientmessage("❌ Use: /removetag <client_id> or all", color=(1,0,0))
                 return
-            
             activity = bs.get_foreground_host_activity()
             if not activity:
                 return
-            
             if target_str.lower() == 'all':
                 self.clientmessage("⚠️ This will remove ALL tags!", color=(1,1,0))
-                
                 for player_id_str in list(Uts.tag_system.current_tags.keys()):
                     try:
                         player_id = int(player_id_str)
                         Uts.tag_system.remove_tag_visual(player_id)
                     except:
                         pass
-                
-                # إزالة التيجان من جميع بيانات اللاعبين
                 for account_id, player_data in list(Uts.pdata.items()):
                     if 'Tag' in player_data:
                         del player_data['Tag']
-                
                 Uts.tag_system.current_tags.clear()
                 Uts.tag_system.animated_tags.clear()
                 Uts.tag_system.char_animations.clear()
                 Uts.tag_system.animation_states.clear()
                 Uts.save_players_data()
-                
                 self.clientmessage("🗑️ All tags cleared", color=(1,1,0))
                 return
-            
             try:
                 target_client_id = int(target_str)
                 target_player = None
                 account_id = None
-                
                 for player in activity.players:
                     if player.sessionplayer.inputdevice.client_id == target_client_id:
                         target_player = player
-                        # البحث عن account_id الخاص باللاعب
                         for acc_id, acc_data in Uts.pdata.items():
                             if target_client_id in Uts.userpbs and Uts.userpbs[target_client_id] == acc_id:
                                 account_id = acc_id
                                 break
                         break
-                
                 if target_player and account_id:
                     if str(target_client_id) in Uts.tag_system.current_tags:
                         Uts.tag_system.remove_tag_visual(target_client_id)
-                    
-                    # إزالة التاج من بيانات اللاعب
                     if 'Tag' in Uts.pdata[account_id]:
                         del Uts.pdata[account_id]['Tag']
                         Uts.save_players_data()
-                    
                     self.clientmessage(f"🗑️ Removed tag from {target_player.getname()} (Client ID: {target_client_id})", color=(1,1,0))
                 else:
                     self.clientmessage(f"❌ Player with Client ID {target_client_id} not found or no account data", color=(1,0,0))
-                    
             except ValueError:
                 self.clientmessage("❌ Client ID must be a number", color=(1,0,0))
-                
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
 
     def process_savetag(self, msg: str, client_id: int):
-        """معالجة أمر حفظ تاج كقالب"""
         try:
             parts = msg[9:].strip().split()
-            
             if len(parts) < 4:
                 self.clientmessage("❌ Use: /savetag <tag_data_name> <text> <color> <scale>", color=(1,0,0))
                 self.clientmessage("📝 Example: /savetag crown_tag 👑 gold 0.03", color=(1,1,0))
                 return
-            
             tag_name = parts[0]
             text = parts[1]
             color_str = parts[2]
-            
             try:
                 scale = float(parts[3])
                 scale = max(0.01, min(0.1, scale))
             except:
                 self.clientmessage("❌ Scale must be a number", color=(1, 0, 0))
                 return
-            
             color = Uts.tag_system.parse_color(color_str)
             if color == 'rainbow':
                 self.clientmessage("⚠️ 'rainbow' is for animated tags only. Using yellow instead.", color=(1,1,0))
                 color = (1.0, 1.0, 0.0)
-            
             Uts.tag_system.saved_tag_templates[tag_name] = {
                 'text': text,
                 'color': list(color) if isinstance(color, tuple) else color,
                 'scale': scale,
                 'type': 'normal'
             }
-            
             Uts.tag_system.save_templates()
             self.clientmessage(f"💾 Saved tag template '{tag_name}' with text '{text}'", color=(0,0,1))
-            
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1, 0, 0))
 
     def process_tagdata(self, msg: str, client_id: int):
-        """معالجة أمر تطبيق تاج محفوظ"""
         try:
             parts = msg[9:].strip().split()
             if len(parts) < 2:
                 self.clientmessage("❌ Use: /tagdata <tag_data_name> <client_id>", color=(1,0,0))
                 self.clientmessage("📝 Example: /tagdata crown_tag -1  (for host)", color=(1,1,0))
                 return
-            
             tag_name = parts[0]
             target_str = parts[1]
-            
             if tag_name not in Uts.tag_system.saved_tag_templates:
                 self.clientmessage(f"❌ Tag template '{tag_name}' not found", color=(1,0,0))
                 self.clientmessage("💡 Use /listtags to see available templates", color=(1,1,0))
                 return
-            
             template = Uts.tag_system.saved_tag_templates[tag_name]
             text = template['text']
             color = tuple(template['color']) if isinstance(template['color'], list) else template['color']
             scale = template['scale']
-            
             activity = bs.get_foreground_host_activity()
             if not activity:
                 return
-            
             try:
                 target_client_id = int(target_str)
                 target_player = None
                 account_id = None
-                
                 for player in activity.players:
                     if player.sessionplayer.inputdevice.client_id == target_client_id:
                         target_player = player
-                        # البحث عن account_id الخاص باللاعب
                         for acc_id, acc_data in Uts.pdata.items():
                             if target_client_id in Uts.userpbs and Uts.userpbs[target_client_id] == acc_id:
                                 account_id = acc_id
                                 break
                         break
-                
                 if target_player and account_id:
                     if target_player.is_alive():
                         Uts.tag_system.remove_tag_visual(target_client_id)
                         Uts.tag_system.stop_char_animation(target_client_id)
                         Uts.tag_system.stop_animation(target_client_id)
-                        
-                        # حفظ البيانات في نفس بيانات اللاعب
                         Uts.pdata[account_id]['Tag'] = {
                             'text': text,
                             'color': list(color) if isinstance(color, tuple) else color,
                             'scale': scale,
                             'type': 'normal'
                         }
-                        
                         if Uts.tag_system.create_tag_with_char_animation(target_player, target_client_id, text, color, scale, activity):
                             name = target_player.getname()
                             Uts.save_players_data()
@@ -1605,82 +1441,58 @@ class Commands:
                         self.clientmessage(f"❌ Player {target_player.getname()} is not alive", color=(1,0,0))
                 else:
                     self.clientmessage(f"❌ Player with Client ID {target_client_id} not found or no account data", color=(1,0,0))
-                    
             except ValueError:
                 self.clientmessage("❌ Client ID must be a number", color=(1,0,0))
-                
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
     
     def process_listtags(self, client_id: int):
-        """عرض قائمة قوالب التيجان المحفوظة"""
         try:
             if not Uts.tag_system.saved_tag_templates:
                 self.clientmessage("📂 No saved tag templates found", color=(0,0,1))
                 self.clientmessage("💡 Use /savetag to create templates", color=(0,0,1))
                 return
-            
             self.clientmessage("📋 **Saved Tag Templates:**", color=(0,0,1))
-            
             for name, data in Uts.tag_system.saved_tag_templates.items():
                 text = data.get('text', 'Unknown')
                 scale = data.get('scale', 0.03)
                 color_info = data.get('color', '(1,1,1)')
-                
                 if isinstance(color_info, list):
                     color_str = f"RGB({color_info[0]:.1f},{color_info[1]:.1f},{color_info[2]:.1f})"
                 else:
                     color_str = str(color_info)
-                
                 info = f"📝 {name}: '{text}' | Scale: {scale} | Color: {color_str}"
                 self.clientmessage(info)
-            
         except Exception as e:
             self.clientmessage("❌ Error showing tag templates", color=(1,0,0))
 
     def process_shared_accounts(self, client_id: int):
-        """معالجة اللاعبين الذين يشاركون نفس الحساب"""
         try:
             if client_id not in Uts.userpbs:
                 self.clientmessage("❌ You are not in the userpbs list", color=(1,0,0))
                 return
-            
             account_id = Uts.userpbs[client_id]
             shared_players = []
-            
-            # البحث عن جميع اللاعبين بنفس الحساب
             for cid, acc_id in list(Uts.userpbs.items()):
                 if acc_id == account_id and cid != client_id:
                     shared_players.append(cid)
-            
             if shared_players:
                 self.clientmessage(f"👥 You share account with {len(shared_players)} other player(s)", color=(0,0,1))
-                
-                # عرض أسماء اللاعبين الآخرين
                 for cid in shared_players:
                     name = Uts.usernames.get(cid, f"Player {cid}")
                     self.clientmessage(f"   ↳ {name} (Client ID: {cid})", color=(0.5,0.5,1))
-                
-                # تطبيق نفس التاج على الجميع إذا كان موجود
                 if account_id in Uts.pdata and 'Tag' in Uts.pdata[account_id]:
                     self.clientmessage("🎯 Applying same tag to all shared account players", color=(1,1,0))
             else:
                 self.clientmessage("👤 You are the only player with this account", color=(0,0,1))
-                
         except Exception as e:
             print(f"❌ Error processing shared accounts: {e}")
             self.clientmessage("❌ Error processing shared accounts", color=(1,0,0))
 
     def find_target_data(self, target):
-        """البحث عن بيانات الهدف بجميع الطرق الممكنة"""
         try:
-            # 1. محاولة البحث باستخدام PB-ID (account_id)
-            # PB-ID يبدأ عادة بـ 'pb-' أو يحتوي على '='
             if target.startswith('pb-') or '=' in target or (len(target) > 10 and '-' in target):
-                # هذا يبدو كـ PB-ID
                 print(f"🔍 Searching by PB-ID: {target}")
-                
-                # البحث في Uts.userpbs عن أي client_id مرتبط بهذا PB-ID
                 for client_id, account_id in list(Uts.userpbs.items()):
                     if account_id == target:
                         name = Uts.usernames.get(client_id, f"Player {client_id}")
@@ -1691,8 +1503,6 @@ class Commands:
                             'name': name,
                             'type': 'pb_id'
                         }
-                
-                # البحث في roster عن PB-ID
                 for r in roster():
                     account_id = r.get('account_id')
                     if account_id == target:
@@ -1705,13 +1515,9 @@ class Commands:
                             'name': name,
                             'type': 'pb_id'
                         }
-            
-            # 2. محاولة البحث باستخدام client ID
             try:
                 target_client_id = int(target)
                 print(f"🔍 Searching by Client ID: {target_client_id}")
-                
-                # البحث في Uts.usernames
                 if target_client_id in Uts.usernames:
                     name = Uts.usernames[target_client_id]
                     account_id = Uts.userpbs.get(target_client_id, None)
@@ -1722,8 +1528,6 @@ class Commands:
                         'name': name,
                         'type': 'client_id'
                     }
-                
-                # البحث في roster
                 for r in roster():
                     client_id = r.get('client_id')
                     if client_id == target_client_id:
@@ -1737,12 +1541,8 @@ class Commands:
                             'type': 'client_id'
                         }
             except ValueError:
-                pass  # ليس رقمًا، تخطي
-            
-            # 3. محاولة البحث باستخدام اسم اللاعب
+                pass
             print(f"🔍 Searching by name: {target}")
-            
-            # البحث في Uts.usernames عن الاسم
             for client_id, name in list(Uts.usernames.items()):
                 if name.lower() == target.lower():
                     account_id = Uts.userpbs.get(client_id, None)
@@ -1753,8 +1553,6 @@ class Commands:
                         'name': name,
                         'type': 'name'
                     }
-            
-            # البحث في roster عن الاسم
             for r in roster():
                 display_name = r.get('display_string', '')
                 if display_name.lower() == target.lower():
@@ -1767,29 +1565,23 @@ class Commands:
                         'name': display_name,
                         'type': 'name'
                     }
-            
-            # 4. إذا كان المستخدم يقول 'all' أو 'الكل'
             if target.lower() in ['all', 'الكل', 'كل', 'جميع']:
                 print(f"🔍 Target is 'all'")
                 return {
-                    'client_id': -999,  # قيمة خاصة للجميع
+                    'client_id': -999,
                     'account_id': 'all',
                     'name': 'All Players',
                     'type': 'all'
                 }
-            
             print(f"❌ Target not found: {target}")
             return None
-            
         except Exception as e:
             print(f"❌ Error in find_target_data: {e}")
             return None
 
     def process_ban_command(self, msg: str, client_id: int):
-        """معالجة أمر الحظر مع التحقق من PB-ID"""
         try:
             parts = msg.split()
-            
             if len(parts) < 2:
                 self.clientmessage(getlanguage("BanUsage"), color=(1,0,0))
                 self.clientmessage("📝 أمثلة:", color=(1,1,0))
@@ -1797,47 +1589,29 @@ class Commands:
                 self.clientmessage("   /ban pb-XXX السبب  (حظر باستخدام PB-ID)", color=(1,1,0))
                 self.clientmessage("   /ban الاسم السبب  (حظر باستخدام الاسم)", color=(1,1,0))
                 return
-            
             target = parts[1]
             reason = " ".join(parts[2:]) if len(parts) > 2 else "No reason provided"
-            
-            # الحصول على معلومات الشخص الذي أصدر الحظر
             admin_name = Uts.usernames.get(client_id, "Admin")
             admin_account = Uts.userpbs.get(client_id, "Unknown")
-            
             print(f"🔨 Ban command by {admin_name} ({client_id}) on target: {target}, reason: {reason}")
-            
-            # البحث عن الهدف
             ban_data = self.find_target_data(target)
-            
             if not ban_data:
                 self.clientmessage(getlanguage("TargetNotFound", subs=[target]), color=(1,0,0))
                 print(f"❌ Target not found: {target}")
                 return
-            
             target_account_id = ban_data.get('account_id')
             target_name = ban_data.get('name', target)
             target_client_id = ban_data.get('client_id')
             target_type = ban_data.get('type', 'unknown')
-            
             print(f"✅ Target found: {target_name} (Client ID: {target_client_id}, PB-ID: {target_account_id}, Type: {target_type})")
-            
-            # إذا كان الهدف هو 'الكل'
             if target_type == 'all':
                 self.clientmessage("⚠️ لا يمكنك حظر جميع اللاعبين! استخدم /kick all", color=(1,0,0))
                 return
-            
-            # التحقق إذا كان الهدف هو الشخص الذي أصدر الأمر
             if target_client_id == client_id:
                 self.clientmessage("❌ لا يمكنك حظر نفسك!", color=(1,0,0))
                 return
-            
-            # التحقق إذا كان الهدف محظورًا بالفعل
-            # البحث في بيانات الحظر باستخدام جميع الطرق
             already_banned = False
             ban_key = None
-            
-            # البحث باستخدام PB-ID أولاً (الأكثر موثوقية)
             if target_account_id:
                 for key in Uts.bans_data:
                     ban_info = Uts.bans_data[key]
@@ -1845,8 +1619,6 @@ class Commands:
                         already_banned = True
                         ban_key = key
                         break
-            
-            # إذا لم يتم العثور باستخدام PB-ID، جرب client_id
             if not already_banned and target_client_id:
                 for key in Uts.bans_data:
                     ban_info = Uts.bans_data[key]
@@ -1854,8 +1626,6 @@ class Commands:
                         already_banned = True
                         ban_key = key
                         break
-            
-            # إذا لم يتم العثور، جرب الاسم
             if not already_banned:
                 for key in Uts.bans_data:
                     ban_info = Uts.bans_data[key]
@@ -1863,32 +1633,22 @@ class Commands:
                         already_banned = True
                         ban_key = key
                         break
-            
             if already_banned:
                 self.clientmessage(getlanguage("AlreadyBanned", subs=[target_name]), color=(1,1,0))
                 print(f"⚠️ Player already banned: {target_name}")
                 return
-            
-            # التحقق إذا كان الهدف هو أدمن أو مالك
             is_admin_or_owner = False
-            
-            # التحقق في pdata باستخدام PB-ID
             if target_account_id and target_account_id in Uts.pdata:
                 player_data = Uts.pdata[target_account_id]
                 if player_data.get('Admin', False) or player_data.get('Owner', False):
                     is_admin_or_owner = True
-            
-            # التحقق في accounts باستخدام client_id
             elif target_client_id in Uts.accounts:
                 if Uts.accounts[target_client_id].get('Admin', False) or Uts.accounts[target_client_id].get('Owner', False):
                     is_admin_or_owner = True
-            
             if is_admin_or_owner:
                 self.clientmessage(getlanguage("CannotBanAdmin", subs=[target_name]), color=(1,0,0))
                 print(f"❌ Cannot ban admin/owner: {target_name}")
                 return
-            
-            # إنشاء بيانات الحظر
             ban_info = {
                 'name': target_name,
                 'account_id': target_account_id,
@@ -1901,63 +1661,42 @@ class Commands:
                 'banned_timestamp': time.time(),
                 'target_type': target_type
             }
-            
-            # استخدام PB-ID كمفتاح رئيسي إذا كان متوفرًا
             if target_account_id:
                 ban_key = f"pb_{target_account_id}"
             elif target_client_id:
                 ban_key = f"client_{target_client_id}"
             else:
                 ban_key = f"name_{target_name.replace(' ', '_')}"
-            
-            # إضافة الحظر إلى البيانات
             Uts.bans_data[ban_key] = ban_info
-            
-            # حفظ البيانات
             Uts.save_bans_data()
-            
-            # ✅ إضافة سجلات الطباعة بعد حفظ البيانات
             print(f"✅ Ban saved for {target_name} | Key: {ban_key}")
             print(f"   Account: {target_account_id} | Client: {target_client_id}")
             print(f"   Reason: {reason}")
             print(f"   By: {admin_name}")
-            
-            # طرد اللاعب إذا كان متصل
             if target_client_id and target_client_id != -1 and target_client_id != -999:
                 try:
-                    # إرسال رسالة للاعب أولاً - بدون transient!
                     message = getlanguage("BannedMessage", subs=[reason, admin_name])
-                    Uts.sm(message, color=(1,0,0), clients=[target_client_id], transient=True)
-                    
-                    # طرده بعد ثانيتين
+                    Uts.sm(message, color=(1,0,0), clients=[target_client_id])
                     def kick_player():
                         try:
                             bs.disconnect_client(target_client_id)
                             print(f"✅ Kicked banned player: {target_name} (Client ID: {target_client_id})")
                         except Exception as e:
                             print(f"❌ Error kicking player: {e}")
-                    
-                    bs.apptimer(2.0, lambda: bs.pushcall(kick_player))
-                    
-                    # إرسال رسالة للجميع
+                    bs.apptimer(2.0, kick_player)
                     ban_msg = getlanguage("BanSuccess", subs=[target_name, admin_name])
                     Uts.cm(ban_msg)
-                    
                 except Exception as e:
                     print(f"❌ Error in kick process: {e}")
-            
             self.clientmessage(f"✅ تم حظر {target_name} بنجاح", color=(0,1,0))
             self.clientmessage(f"📝 السبب: {reason}", color=(0.5,0.5,1))
-            
         except Exception as e:
             print(f"❌ Error in process_ban_command: {e}")
             self.clientmessage(f"❌ خطأ: {str(e)[:50]}", color=(1,0,0))
 
     def process_unban_command(self, msg: str, client_id: int):
-        """معالجة أمر إلغاء الحظر"""
         try:
             parts = msg.split()
-            
             if len(parts) < 2:
                 self.clientmessage(getlanguage("UnbanUsage"), color=(1,0,0))
                 self.clientmessage("📝 أمثلة:", color=(1,1,0))
@@ -1965,37 +1704,22 @@ class Commands:
                 self.clientmessage("   /unban pb-XXX  (إلغاء حظر باستخدام PB-ID)", color=(1,1,0))
                 self.clientmessage("   /unban الاسم  (إلغاء حظر باستخدام الاسم)", color=(1,1,0))
                 return
-            
             target = parts[1]
-            
             print(f"🔓 Unban command on target: {target}")
-            
-            # البحث عن الهدف المحظور
             found_ban_keys = []
-            
             for ban_key, ban_info in list(Uts.bans_data.items()):
-                # التحقق باستخدام PB-ID
                 if ban_info.get('account_id') == target:
                     found_ban_keys.append(ban_key)
-                
-                # التحقق باستخدام client_id
                 elif str(ban_info.get('client_id')) == target:
                     found_ban_keys.append(ban_key)
-                
-                # التحقق باستخدام الاسم
                 elif ban_info.get('name', '').lower() == target.lower():
                     found_ban_keys.append(ban_key)
-                
-                # التحقق باستخدام مفتاح الحظر نفسه
                 elif ban_key == target or ban_key.endswith(f"_{target}"):
                     found_ban_keys.append(ban_key)
-            
             if not found_ban_keys:
                 self.clientmessage(getlanguage("NotBanned", subs=[target]), color=(1,0,0))
                 print(f"❌ No ban found for: {target}")
                 return
-            
-            # إزالة جميع الحظورات المطابقة
             unbanned_names = []
             for ban_key in found_ban_keys:
                 if ban_key in Uts.bans_data:
@@ -2003,53 +1727,52 @@ class Commands:
                     unbanned_names.append(ban_info.get('name', 'Unknown'))
                     del Uts.bans_data[ban_key]
                     print(f"✅ Removed ban: {ban_key}")
-            
             if unbanned_names:
-                # حفظ البيانات
                 Uts.save_bans_data()
-                
                 admin_name = Uts.usernames.get(client_id, "Admin")
                 names_str = ", ".join(unbanned_names)
-                
                 self.clientmessage(f"✅ تم إلغاء حظر: {names_str}", color=(0,1,0))
                 self.util.cm(getlanguage("UnbanSuccess", subs=[names_str, admin_name]))
                 print(f"✅ Unbanned: {names_str}")
             else:
                 self.clientmessage(getlanguage("NotBanned", subs=[target]), color=(1,0,0))
-                
         except Exception as e:
             print(f"❌ Error in process_unban_command: {e}")
             self.clientmessage(f"❌ خطأ: {str(e)[:50]}", color=(1,0,0))
 
+    # ==================== أوامر الإبلاغ المحسنة ====================
     def process_report_command(self, msg: str, client_id: int):
-        """معالجة أمر الإبلاغ"""
         try:
+            self.util.update_usernames()
             parts = msg.split()
-            
             if len(parts) < 2:
                 self.clientmessage(getlanguage("ReportUsage"), color=(1,0,0))
                 self.clientmessage("📝 Example: /report 113 Hacking", color=(1,1,0))
                 return
-            
             target = parts[1]
             reason = " ".join(parts[2:]) if len(parts) > 2 else "No reason provided"
-            
-            # الحصول على معلومات المبلغ
             reporter_name = Uts.usernames.get(client_id, "Unknown")
-            reporter_account = Uts.userpbs.get(client_id, "Unknown")
-            
-            # البحث عن الهدف
+            reporter_account = Uts.userpbs.get(client_id, None)
+            if reporter_account is None:
+                try:
+                    activity = bs.get_foreground_host_activity()
+                    if activity:
+                        for player in activity.players:
+                            if player.sessionplayer.inputdevice.client_id == client_id:
+                                reporter_account = player.sessionplayer.get_v1_account_id()
+                                break
+                except:
+                    pass
+            if reporter_account is None:
+                reporter_account = "Unknown"
+            server_name = cfg.get('Commands', {}).get('HostName', 'Unknown Server')
             target_data = self.find_target_data(target)
-            
             if not target_data:
                 self.clientmessage(getlanguage("TargetNotFound", subs=[target]), color=(1,0,0))
                 return
-            
             target_account_id = target_data.get('account_id')
             target_name = target_data.get('name', target)
             target_client_id = target_data.get('client_id')
-            
-            # إنشاء تقرير جديد
             report = {
                 'id': len(Uts.reports_data.get('reports', [])) + 1,
                 'reporter_name': reporter_name,
@@ -2059,101 +1782,223 @@ class Commands:
                 'reported_client_id': target_client_id,
                 'reason': reason,
                 'status': 'Pending',
-                'date': datetime.now().isoformat()
+                'date': datetime.now().isoformat(),
+                'time': datetime.now().strftime('%H:%M:%S'),
+                'server_name': server_name
             }
-            
-            # إضافة التقرير إلى البيانات
             if 'reports' not in Uts.reports_data:
                 Uts.reports_data['reports'] = []
-            
             Uts.reports_data['reports'].append(report)
             Uts.save_reports_data()
-            
             self.clientmessage(getlanguage("ReportSubmitted", subs=[target_name]), color=(0,1,0))
             self.clientmessage(f"📋 Reason: {reason}", color=(0.5,0.5,1))
-            
-            # إعلام الإدمنز
             for admin_id in Uts.get_admins():
                 try:
-                    bs.screenmessage(getlanguage("NewReportAlert", subs=[target_name, reporter_name]), 
+                    Uts.sm(getlanguage("NewReportAlert", subs=[target_name, reporter_name]),
                                    clients=[admin_id], color=(1,1,0))
                 except:
                     pass
-                
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
 
-    # ==================== الأوامر المصححة ====================
     def process_reports_command(self, client_id: int):
-        """عرض جميع الإبلاغات (مصحح)"""
         try:
-            # التحقق من الصلاحية
             if not self.fct.user_is_admin(client_id):
                 self.clientmessage(getlanguage("AdminOnly"), color=(1, 0, 0))
                 return
-
             reports = Uts.reports_data.get('reports', [])
-            
             if not reports:
                 self.clientmessage(getlanguage("NoReports"), color=(0.5, 0.5, 1))
                 return
-
-            # إرسال رأس الجدول
-            self.send_chat_message("=" * 60 + "[ REPORTS ]" + "=" * 60)
-            self.send_chat_message("|| #  ||       Reporter (PB-ID)        ||              Reason               ||     Reported By     ||")
             self.send_chat_message("=" * 120)
-
-            # عرض آخر 10 تقارير فقط
+            self.send_chat_message("|| #  ||     Reporter (PB-ID)      ||  Time  ||         Server         ||   Reported (PB-ID + Name)   ||             Reason             ||")
+            self.send_chat_message("=" * 120)
             for i, report in enumerate(reports[-10:], 1):
-                reporter_id = report.get('reporter_account', 'Unknown')[:20]
-                reason = report.get('reason', 'No reason')[:40]
-                reported_by = report.get('reported_name', 'Unknown')[:20]
-                
-                row = f"|| {i:<2} || {reporter_id:<25} || {reason:<30} || {reported_by:<18} ||"
+                reporter_id = str(report.get('reporter_account', 'Unknown'))[:25].ljust(25)
+                report_time = report.get('time', '--:--:--')
+                server = str(report.get('server_name', 'Unknown'))[:20].ljust(20)
+                reported_id = str(report.get('reported_account', 'Unknown'))[:20]
+                reported_name = report.get('reported_name', 'Unknown')[:20]
+                reported = f"{reported_id} ({reported_name})"[:35].ljust(35)
+                reason = report.get('reason', 'No reason')[:30].ljust(30)
+                row = f"|| {i:<2} || {reporter_id} || {report_time} || {server} || {reported} || {reason} ||"
                 self.send_chat_message(row)
-
             self.send_chat_message("=" * 120)
-            self.send_chat_message(f"📊 إجمالي التقارير: {len(reports)} | عرض آخر 10")
-            
+            self.send_chat_message(f"📊 إجمالي التقارير: {len(reports)} | عرض آخر 10 | استخدم /reportdone <رقم> لحذف تقرير")
         except Exception as e:
             print(f"❌ Error in process_reports_command: {e}")
             self.clientmessage(f"❌ خطأ في عرض التقارير: {str(e)[:50]}", color=(1, 0, 0))
 
-    def process_banlist_command(self, client_id: int):
-        """عرض قائمة الحظر (مصحح)"""
+    def process_report_done_command(self, msg: str, client_id: int):
         try:
-            # التحقق من الصلاحية
             if not self.fct.user_is_admin(client_id):
                 self.clientmessage(getlanguage("AdminOnly"), color=(1, 0, 0))
                 return
+            parts = msg.split()
+            if len(parts) < 2:
+                self.clientmessage("❌ Use: /reportdone <report-number>", color=(1,0,0))
+                self.clientmessage("📝 Example: /reportdone 3", color=(1,1,0))
+                return
+            try:
+                report_id = int(parts[1])
+            except ValueError:
+                self.clientmessage("❌ Report number must be a number", color=(1,0,0))
+                return
+            reports = Uts.reports_data.get('reports', [])
+            if not reports:
+                self.clientmessage("📋 No reports to delete", color=(0.5,0.5,1))
+                return
+            found_index = None
+            for i, report in enumerate(reports):
+                if report.get('id') == report_id:
+                    found_index = i
+                    break
+            if found_index is None:
+                self.clientmessage(f"❌ Report #{report_id} not found", color=(1,0,0))
+                return
+            deleted_report = reports.pop(found_index)
+            Uts.save_reports_data()
+            reporter_name = deleted_report.get('reporter_name', 'Unknown')
+            reported_name = deleted_report.get('reported_name', 'Unknown')
+            reason = deleted_report.get('reason', 'No reason')
+            self.clientmessage(f"✅ Report #{report_id} deleted", color=(0,1,0))
+            self.util.cm(f"📋 Admin {Uts.usernames.get(client_id, 'Admin')} closed report #{report_id} ({reporter_name} reported {reported_name} for: {reason})")
+        except Exception as e:
+            print(f"❌ Error in process_report_done_command: {e}")
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
 
+    def process_banlist_command(self, client_id: int):
+        try:
+            if not self.fct.user_is_admin(client_id):
+                self.clientmessage(getlanguage("AdminOnly"), color=(1, 0, 0))
+                return
             if not Uts.bans_data:
                 self.clientmessage(getlanguage("NoBans"), color=(0.5, 0.5, 1))
                 return
-
-            # إرسال رأس الجدول
             self.send_chat_message("=" * 60 + "[ BAN LIST ]" + "=" * 60)
             self.send_chat_message("||           PB-ID / Client ID          ||            Reason              ||       Banned By      ||")
             self.send_chat_message("=" * 120)
-
-            # عرض آخر 10 محظورين
             bans_list = list(Uts.bans_data.items())
             for i, (ban_key, ban_data) in enumerate(bans_list[-10:], 1):
-                # محاولة عرض PB-ID إذا وجد، وإلا عرض client_id
                 identifier = ban_data.get('account_id') or f"Client_{ban_data.get('client_id')}" or ban_key
                 identifier = str(identifier)[:30]
                 reason = ban_data.get('reason', 'No reason')[:30]
                 banned_by = ban_data.get('banned_by', 'Unknown')[:20]
-                
                 row = f"|| {i:<2} || {identifier:<35} || {reason:<25} || {banned_by:<18} ||"
                 self.send_chat_message(row)
-
             self.send_chat_message("=" * 120)
             self.send_chat_message(f"🔨 إجمالي المحظورين: {len(Uts.bans_data)} | عرض آخر 10")
-            
         except Exception as e:
             print(f"❌ Error in process_banlist_command: {e}")
             self.clientmessage(f"❌ خطأ في عرض قائمة الحظر: {str(e)[:50]}", color=(1, 0, 0))
+
+    # ==================== نظام المساعدة المفصل ====================
+    def process_help_command(self, msg: str, client_id: int):
+        parts = msg.split()
+        if len(parts) == 1:
+            self.clientmessage("📚 **HELP MENU**", color=(0,1,1))
+            self.clientmessage("/help 1  -  Player commands (all players)", color=(1,1,0))
+            self.clientmessage("/help 2  -  Admin commands (admins only)", color=(1,1,0))
+            self.clientmessage("/help 3  -  Tag commands (admins only)", color=(1,1,0))
+            self.clientmessage("/help 4  -  Ban/Report commands", color=(1,1,0))
+            return
+        if len(parts) >= 2:
+            try:
+                page = int(parts[1])
+            except ValueError:
+                self.clientmessage("❌ Invalid help page number", color=(1,0,0))
+                return
+            if page == 1:
+                self.clientmessage("📋 **PLAYER COMMANDS**", color=(0,1,0))
+                cmds = [
+                    "-pan      : Receive a bread",
+                    "-ceb      : Celebrate!",
+                    "-colors   : Show available colors",
+                    "-mp       : Show max players",
+                    "-pb       : Show your PB-ID",
+                    "-effects  : Show available effects",
+                    "/list     : List all players",
+                    "/report   : Report a player",
+                    "test      : Test if CheatMax works",
+                    "help      : This menu"
+                ]
+                for cmd in cmds:
+                    self.clientmessage(cmd, color=(0.8,0.8,0.8))
+            elif page == 2:
+                if not self.fct.user_is_admin(client_id):
+                    self.clientmessage(getlanguage("AdminOnly"), color=(1,0,0))
+                    return
+                self.clientmessage("🔧 **ADMIN COMMANDS**", color=(1,0.5,0))
+                cmds = [
+                    "/name <id> <name>     : Change player's name",
+                    "/imp                 : Strong impulse",
+                    "/box                 : Transform into box",
+                    "/addAdmin <clientID> : Add admin",
+                    "/delAdmin <clientID> : Remove admin",
+                    "/kill <id>           : Kill player",
+                    "-pause               : Pause/Resume game",
+                    "/infoHost <text>     : Set host name",
+                    "/infoDes <text>      : Set description",
+                    "-info                : Toggle server info",
+                    "/infoColor <color>   : Set info color",
+                    "-end                 : End game",
+                    "/kick <clientID>     : Kick player",
+                    "-chatLive            : Toggle live chat",
+                    "/freeze <id>         : Freeze player",
+                    "/playerColor <id> <c>: Change player color",
+                    "/maxPlayers <num>    : Set max players",
+                    "-showMessages        : Toggle popup messages",
+                    "/sleep <id>          : Sleep player",
+                    "/mute <clientID>     : Mute player",
+                    "/unmute <clientID>   : Unmute player",
+                    "/gm <id>             : Toggle god mode",
+                    "-slow                : Toggle slow motion",
+                    "/speed <id>          : Toggle speed boost",
+                    "/effect <id> <eff>   : Add effect",
+                    "/punch <id>          : Super punch",
+                    "/mbox <id>           : Spawn magic box",
+                    "/drop <id>           : Drop bombs",
+                    "/gift <id>           : Explosive gift",
+                    "/curse <id>          : Curse",
+                    "/superjump <id>      : Super jump",
+                    "/closeserver <h> <tag> : Close server for training",
+                    "/stopcloseserver     : Stop server closure",
+                    "/closestatus         : Show closure status"
+                ]
+                for cmd in cmds:
+                    self.clientmessage(cmd, color=(0.8,0.8,0.8))
+            elif page == 3:
+                if not self.fct.user_is_admin(client_id):
+                    self.clientmessage(getlanguage("AdminOnly"), color=(1,0,0))
+                    return
+                self.clientmessage("🏷️ **TAG COMMANDS**", color=(0,1,1))
+                cmds = [
+                    "/customtag <text> <color> <scale> <id>  : Create custom tag",
+                    "/animationtag <text> <scale> <speed> <id> <c1> <c2>... : Animated tag",
+                    "/removetag <id>                         : Remove tag",
+                    "/savetag <name> <text> <color> <scale>  : Save as template",
+                    "/tagdata <name> <id>                    : Apply saved template",
+                    "/listtags                               : List templates"
+                ]
+                for cmd in cmds:
+                    self.clientmessage(cmd, color=(0.8,0.8,0.8))
+            elif page == 4:
+                if not self.fct.user_is_admin(client_id):
+                    self.clientmessage("📢 **REPORT COMMANDS**", color=(1,0.5,0))
+                    self.clientmessage("/report <pb-id/name/client> <reason>  : Report a player", color=(0.8,0.8,0.8))
+                else:
+                    self.clientmessage("🚫 **BAN / REPORT COMMANDS**", color=(1,0,0))
+                    cmds = [
+                        "/ban <pb-id/name/client> <reason>   : Ban player",
+                        "/unban <pb-id/name/client>          : Unban player",
+                        "/reports                            : View reports",
+                        "/reportdone <id>                    : Delete processed report",
+                        "/banlist                            : View banned players"
+                    ]
+                    for cmd in cmds:
+                        self.clientmessage(cmd, color=(0.8,0.8,0.8))
+            else:
+                self.clientmessage("❌ Invalid help page. Use 1-4", color=(1,0,0))
 
 class CommandFunctions:
     @staticmethod
@@ -2176,7 +2021,7 @@ class CommandFunctions:
             '/curse', '/superjump', '/list', '/customtag', '/animationtag',
             '/removetag', '/savetag', '/tagdata', '/listtags', '/sharedaccounts',
             '/closeserver', '/stopcloseserver', '/closestatus', '/testclosure',
-            '/ban', '/unban', '/reports', '/banlist'  # الأوامر الجديدة
+            '/ban', '/unban', '/reports', '/banlist', '/reportdone'
         ]
 
     @staticmethod
@@ -2199,7 +2044,6 @@ class CommandFunctions:
     def spaz_sjump(node: bs.Node) -> None:
         actor = node.source_player.actor
         del node
-        
         current_act = bs.get_foreground_host_activity()
         if current_act is not None:
             with current_act.context:
@@ -2233,7 +2077,6 @@ class CommandFunctions:
     def spaz_punch(node: bs.Node) -> None:
         actor = node.source_player.actor
         del node
-        
         current_act = bs.get_foreground_host_activity()
         if current_act is not None:
             with current_act.context:
@@ -2289,13 +2132,11 @@ class CommandFunctions:
     def freeze_spaz(node: bs.Node) -> None:
         actor = node.source_player.actor
         del node
-        
         current_act = bs.get_foreground_host_activity()
         if current_act is not None:
             with current_act.context:
                 if actor.shield:
                     actor.shield.delete()
-                    
                 actor.handlemessage(bs.FreezeMessage())
 
     @staticmethod
@@ -2339,7 +2180,6 @@ class CommandFunctions:
                                     magnitude=500 * 4,
                                     hit_subtype='imp',
                                     radius=7840)
-                              
                 if isinstance(msg, bs.HitMessage):
                     for i in range(2):
                         with current_act.context:
@@ -2362,17 +2202,14 @@ class CommandFunctions:
             call: Callable,
             attrs: dict[str, Any]) -> None:
         ClientMessage = attrs['ClientMessage']
-        
         current_act = bs.get_foreground_host_activity()
         if current_act is None:
             ClientMessage("No active game found", color=(1,0,0))
             return
-                
         def new_call(node: bs.Node):
             ClientMessage("Command Executed", color=(0, 1, 0))
             with current_act.context:
                 call(node)
-                
         if len(ms) == 1:
             if attrs['Actor'] is None:
                 ClientMessage("You're not in the game")
@@ -2408,11 +2245,9 @@ class CommandFunctions:
     def spaz_drop(node: bs.Node) -> None:
         self = node.source_player.actor
         del node
-
         current_act = bs.get_foreground_host_activity()
         if current_act is None:
             return
-
         def drop():
             pos = self.node.position
             psts = [
@@ -2424,7 +2259,6 @@ class CommandFunctions:
                 (pos[0]+2,pos[1]+4,pos[2]-1),
                 (pos[0]-2,pos[1]+4,pos[2]-1),
                 (pos[0],pos[1]+4,pos[2]+2)]
-                
             for p in psts:
                 bomb = Bomb(
                     position=p,
@@ -2432,7 +2266,6 @@ class CommandFunctions:
                     bomb_type='sticky').autoretain()
                 bomb.node.gravity_scale = 4.0
                 bomb.node.color_texture = bs.gettexture('bombStickyColor')
-                    
         for x in range(2):
             with current_act.context:
                 bs.timer(x * 0.308, drop)
@@ -2440,31 +2273,24 @@ class CommandFunctions:
     @staticmethod
     def get_user_list(c_id: int) -> None:
         current_act = bs.get_foreground_host_activity()
-        
         def delete_text(t_id: int):
             if current_act and hasattr(current_act, '_ids') and current_act._ids.node.exists():
                 if t_id == id(current_act._ids.node):
                     current_act._ids.node.opacity = 0.0
-            
         def gText(txt: str):
             if current_act is None:
-                # Can't display in-game text without activity
                 bs.screenmessage(txt, clients=[c_id])
                 return
-                
             with current_act.context:
                 current_act._ids = text.Text(txt, position=(-0.0, 270.0),
                     h_align=text.Text.HAlign.CENTER, scale=1.1,
                     transition=text.Text.Transition.FADE_IN).autoretain()
                 current_act._ids.node.opacity = 0.5
-                
                 t_id = id(current_act._ids.node)
                 bs.timer(8.0, bs.CallStrict(delete_text, t_id))
-    
         txt = str()
         txts = ["Name | Player ID | Client ID",
                 "______________________"]
-
         try:
             if current_act is not None:
                 players = current_act.players
@@ -2474,13 +2300,8 @@ class CommandFunctions:
                         txts.append(f"{s.getname(False)} | {idx} | {s.inputdevice.client_id}")
         except Exception:
             players = []
-        
         txt = '\n'.join(txts)
-
-        # Always send via screenmessage for reliability
         bs.screenmessage(txt, clients=[c_id])
-        
-        # Try to display in-game if possible
         try:
             if current_act is not None:
                 with current_act.context:
@@ -2501,7 +2322,6 @@ class CommandFunctions:
     def user_is_admin(c_id: int) -> bool:
         if c_id == -1:
             return True
-    
         if c_id in Uts.accounts:
             return Uts.accounts[c_id]['Admin']
         else:
@@ -2509,16 +2329,12 @@ class CommandFunctions:
             
     @staticmethod
     def user_is_owner(c_id: int) -> bool:
-        """تحقق إذا كان اللاعب هو المالك"""
         if c_id == -1:
             return True
-    
         if c_id in Uts.accounts:
-            # تحقق إذا كان اللاعب في قائمة المالكين
             account_id = None
             for acc_id, data in Uts.pdata.items():
                 if data.get('Owner', False):
-                    # تحقق إذا كان هذا الحساب مرتبطًا بـ client_id الحالي
                     if c_id in Uts.userpbs and Uts.userpbs[c_id] == acc_id:
                         return True
             return Uts.accounts[c_id].get('Owner', False)
@@ -2530,7 +2346,6 @@ class CommandFunctions:
         current_act = bs.get_foreground_host_activity()
         if current_act is None:
             return None
-        
         for player in current_act.players:
             try:
                 if c_id == player.sessionplayer.inputdevice.client_id:
@@ -2543,29 +2358,24 @@ def ActorMessage(msg: str, actor: spaz.Spaz):
     current_act = bs.get_foreground_host_activity()
     if current_act is None:
         return
-        
     def die(node: bs.Node):
         if node.exists():
             bs.animate(popup.node, 'opacity', {0: 1.0, 0.1: 0.0})
             bs.timer(0.1, popup.node.delete)
-        
     with current_act.context:
         if getattr(actor, 'my_message', None):
             actor.my_message.node.delete()
-        
         c = (1.0, 1.0, 1.0)
-        position = (-0.0, 1.5, 0.0)  # تغيير الموضع ليكون أعلى
-
+        position = (-0.0, 1.5, 0.0)
         m = bs.newnode('math', owner=actor.node, attrs={'input1':
             (position[0], position[1], position[2]), 'operation': 'add'})
         actor.node.connectattr('position_center', m, 'input2')
-        
         actor.my_message = popup = PopupText(
              text=msg, color=c, scale=1.5).autoretain()
         m.connectattr('output', popup.node, 'position')
         bs.timer(5.0, bs.CallStrict(die, popup.node))
 
-# Effects
+# ------------------ Effects ------------------
 def _fire(self) -> None:
     if not self.node.exists():
         self._cm_effect_timer = None
@@ -2605,7 +2415,6 @@ def aure(self) -> None:
              0.4: (1,0,1)}, loop=True)
         bs.animate_array(node, 'size', 1,
             {0: [1.0], 0.2: [1.5], 0.3: [1.0]}, loop=True)
-
     attrs = ['torso_position', 'position_center', 'position']
     for i, pos in enumerate(attrs):
         loc = bs.newnode('locator', owner=self.node,
@@ -2631,7 +2440,6 @@ def black_aure(self) -> None:
                      'additive': False})
         bs.animate(loc, 'opacity', {0: 1.0, 1.9: 0.0})
         bs.apptimer(2.0, loc.delete)
-        
     def anim(node: bs.Node) -> None:
         bs.animate_array(node, 'color', 3,
             {0: (1,1,1), 0.1: (0,0,0),
@@ -2639,7 +2447,6 @@ def black_aure(self) -> None:
              0.4: (1,1,1)}, loop=True)
         bs.animate_array(node, 'size', 1,
             {0: [0.5], 0.2: [1.0], 0.3: [0.5]}, loop=True)
-
     attrs = ['torso_position', 'position_center', 'position']
     for i, pos in enumerate(attrs):
         loc = bs.newnode('locator', owner=self.node,
@@ -2657,7 +2464,6 @@ def stars(self) -> None:
             m = node.mesh_scale
             bs.animate(node, 'mesh_scale', {0: m, 0.1: 0})
             bs.apptimer(0.1, node.delete)
-    
     if not self.node.exists() or self._dead:
         self._cm_effect_timer = None
     else:
@@ -2665,18 +2471,15 @@ def stars(self) -> None:
         pos_list = [
             (c, 0, 0), (0, 0, c),
             (-c, 0, 0), (0, 0, -c)]
-            
         for p in pos_list:
             m = 1.5
             np = self.node.position
             pos = (np[0]+p[0], np[1]+p[1]+0.0, np[2]+p[2])
             vel = (random.uniform(-m, m), random.uniform(2, 7), random.uniform(-m, m))
-
             texs = ['bombStickyColor', 'aliColor', 'aliColorMask', 'eggTex3']
             tex = bs.gettexture(random.choice(texs))
             mesh = bs.getmesh('flash')
             factory = SpazFactory.get()
-            
             mat = bs.Material()
             mat.add_actions(
                 conditions=('they_have_material', factory.punch_material),
@@ -2684,7 +2487,6 @@ def stars(self) -> None:
                     ('modify_part_collision', 'collide', False),
                     ('modify_part_collision', 'physical', False),
                 ))
-
             node = bs.newnode('prop',
                 owner=self.node,
                 attrs={'body': 'sphere',
@@ -2699,7 +2501,6 @@ def stars(self) -> None:
                        'reflection': 'soft',
                        'reflection_scale': [1.5],
                        'materials': [mat]})
-            
             light = bs.newnode('light',
                 owner=node,
                 attrs={
@@ -2718,7 +2519,6 @@ def chispitas(self) -> None:
             m = node.mesh_scale
             bs.animate(node, 'mesh_scale', {0: m, 0.1: 0})
             bs.apptimer(0.1, node.delete)
-    
     if not self.node.exists() or self._dead:
         self._cm_effect_timer = None
     else:
@@ -2726,17 +2526,14 @@ def chispitas(self) -> None:
         pos_list = [
             (c, 0, 0), (0, 0, c),
             (-c, 0, 0), (0, 0, -c)]
-            
         for p in pos_list:
             m = 1.5
             np = self.node.position
             pos = (np[0]+p[0], np[1]+p[1]+0.0, np[2]+p[2])
             vel = (random.uniform(-m, m), random.uniform(2, 7), random.uniform(-m, m))
-
             tex = bs.gettexture('null')
             mesh = None
             factory = SpazFactory.get()
-            
             mat = bs.Material()
             mat.add_actions(
                 conditions=('they_have_material', factory.punch_material),
@@ -2744,7 +2541,6 @@ def chispitas(self) -> None:
                     ('modify_part_collision', 'collide', False),
                     ('modify_part_collision', 'physical', False),
                 ))
-
             node = bs.newnode('bomb',
                 owner=self.node,
                 attrs={'body': 'sphere',
@@ -2756,7 +2552,6 @@ def chispitas(self) -> None:
                        'color_texture': tex,
                        'fuse_length': 0.1,
                        'materials': [mat]})
-            
             light = bs.newnode('light',
                 owner=node,
                 attrs={
@@ -2775,7 +2570,6 @@ def darkmagic(self) -> None:
             m = node.mesh_scale
             bs.animate(node, 'mesh_scale', {0: m, 0.1: 0})
             bs.apptimer(0.1, node.delete)
-    
     if not self.node.exists() or self._dead:
         self._cm_effect_timer = None
     else:
@@ -2783,17 +2577,14 @@ def darkmagic(self) -> None:
         pos_list = [
             (c, 0, 0), (0, 0, c),
             (-c, 0, 0), (0, 0, -c)]
-            
         for p in pos_list:
             m = 1.5
             np = self.node.position
             pos = (np[0]+p[0], np[1]+p[1]+0.0, np[2]+p[2])
             vel = (random.uniform(-m, m), 30.0, random.uniform(-m, m))
-
             tex = bs.gettexture('impactBombColor')
             mesh = bs.getmesh('impactBomb')
             factory = SpazFactory.get()
-            
             mat = bs.Material()
             mat.add_actions(
                 conditions=('they_have_material', factory.punch_material),
@@ -2801,7 +2592,6 @@ def darkmagic(self) -> None:
                     ('modify_part_collision', 'collide', False),
                     ('modify_part_collision', 'physical', False),
                 ))
-
             node = bs.newnode('prop',
                 owner=self.node,
                 attrs={'body': 'sphere',
@@ -2816,7 +2606,6 @@ def darkmagic(self) -> None:
                        'reflection': 'soft',
                        'reflection_scale': [0.0],
                        'materials': [mat]})
-            
             light = bs.newnode('light',
                 owner=node,
                 attrs={'intensity': 1.0,
@@ -2835,11 +2624,9 @@ def _rainbow(self) -> None:
         0.8: (0.0, 2.0, 2.0),
         1.0: (0.0, 0.0, 2.0),
     }.items()
-
     def _changecolor(color: Sequence[float]) -> None:
         if self.node.exists():
             self.node.color = color
-
     for time, color in keys:
         bs.apptimer(time, lambda color=color: _changecolor(color))
         
@@ -3269,24 +3056,18 @@ def apply_effect(self, eff: str) -> None:
     elif eff == 'stickers_sweat':
         self._cm_effect_timer = bs.Timer(0.1, lambda: stickers_sweat(self), repeat=True)
 
+# ------------------ Chat filter ------------------
 def filter_chat_message(msg: str, client_id: int) -> None:
     try:
-        # Get current activity first
         activity = bs.get_foreground_host_activity()
-        
-        # If no activity and it's a chat command, we can't process it
         if activity is None and msg.strip() != '':
-            # Check if it's a command that doesn't need activity
             if msg.strip() in ['-pan', '-pb', '-mp', '-colors', '-effects']:
-                # Create a simple Commands object without activity
                 try:
                     command = Commands(msg, client_id, msg.split(' '))
                     return command.get
                 except:
                     return None
             return None
-            
-        # Normal processing with activity
         command = Commands(msg, client_id, msg.split(' '))
         return command.get
     except Exception as e:
@@ -3294,66 +3075,71 @@ def filter_chat_message(msg: str, client_id: int) -> None:
         import traceback
         traceback.print_exc()
         return None
-    
+
+# ------------------ Hooking (runtime monkey patch) ------------------
+def hook_chat_filter():
+    """تثبيت فلتر الشات بدون تعديل أي ملفات"""
+    try:
+        import bascenev1._hooks
+        original = bascenev1._hooks.filter_chat_message
+        def wrapped_filter(msg, client_id):
+            # استدعاء الدالة الأصلية أولاً
+            ret = original(msg, client_id)
+            # ثم استدعاء فلترنا
+            try:
+                cm = bs.app.cheatmax_filter_chat(msg, client_id)
+                if cm == '@':
+                    return None
+            except:
+                pass
+            return ret
+        bascenev1._hooks.filter_chat_message = wrapped_filter
+        print("✅ Chat filter hooked successfully (runtime)")
+    except Exception as e:
+        print(f"⚠️ Failed to hook chat filter: {e}")
+
+# ------------------ Game Activity hooks ------------------
 def new_ga_on_transition_in(self) -> None:
     calls['GA_OnTransitionIn'](self)
     Uts.create_data_text(self)
     Uts.create_live_chat(self, live=False)
 
 def new_on_player_join(self, player: bs.Player) -> None:
-    """دالة معدلة لفحص الحظر عند انضمام اللاعب"""
     calls['OnPlayerJoin'](self, player)
-    
-    # فحص الحظر أولاً
     if Uts.check_player_ban_on_join(player):
-        return  # إذا كان محظوراً، لا نكمل
-    
+        return
     Uts.player_join(player)
-    
-    # التحقق من إغلاق السيرفر
     if Uts.server_close_active:
         Uts.check_player_allowed_on_join(player)
     
 def new_playerspaz_init_(self, *args, **kwargs) -> None:
     calls['PlayerSpazInit'](self, *args, **kwargs)
     Uts.update_usernames()
-
     try:
         user = self._player.sessionplayer.get_v1_account_id()
     except (AttributeError, ba.SessionPlayerNotFoundError):
         user = None
-        
     if not hasattr(Uts, 'pdata'): 
         Uts.create_players_data()
-    
     if user and user in Uts.pdata:
         eff = Uts.pdata[user]['Effect']
         apply_effect(self, eff)
-    
-    # تطبيق التاج المخصص إذا كان موجودًا
     if user and user in Uts.tags:
         tag_data = Uts.tags[user]
         text = tag_data.get('text', '')
         color = tag_data.get('color', (1, 1, 1))
         scale = tag_data.get('scale', 0.02)
-        
-        # تأخير إنشاء التاج لضمان اكتمال تهيئة العقدة
         current_act = bs.get_foreground_host_activity()
         if current_act is not None:
             with current_act.context:
                 bs.timer(0.5, lambda: create_custom_tag_for_spaz(self, text, color, scale))
 
 def create_custom_tag_for_spaz(spaz, text, color, scale):
-    """إنشاء تاج مخصص للسباز"""
     if not spaz.node or not spaz.node.exists():
         return
-    
-    # إزالة التاج القديم إذا كان موجودًا
     if hasattr(spaz.node, 'custom_tag') and spaz.node.custom_tag:
         if spaz.node.custom_tag.exists():
             spaz.node.custom_tag.delete()
-    
-    # إنشاء نص التاج
     tag = bs.newnode('text',
         attrs={
             'text': text,
@@ -3365,32 +3151,23 @@ def create_custom_tag_for_spaz(spaz, text, color, scale):
             'scale': scale,
             'color': color
         })
-    
-    # ربط التاج بالسباز
     spaz.node.connectattr('position_center', tag, 'position')
-    
-    # حفظ المرجع
     spaz.node.custom_tag = tag
             
 def new_playerspaz_on_jump_press(self) -> None:    
     calls['OnJumpPress'](self)
-    
     if not getattr(self, 'cm_superjump', False):
         return
-        
     if (not self.node or not self.node.jump_pressed):
         return
-    
     current_act = bs.get_foreground_host_activity()
     if current_act is None:
         return
-    
     msg = bs.HitMessage(pos=self.node.position,
                         velocity=self.node.velocity,
                         magnitude=160*2,
                         hit_subtype='imp',
                         radius=460*2)
-                      
     if isinstance(msg, bs.HitMessage):
         for i in range(2):
             with current_act.context:
@@ -3405,19 +3182,15 @@ class ExplosiveGift(bs.Actor):
                  time: float = 3.0,
                  owner: bs.Node = None):
         super().__init__()
-        
         self.time = time
         self.owner = owner
         self.scale = 0.8
         self.touch = False
-        
         pos = list(owner.position)
         velocity = (0.0, 60, 0.0)
         position = (pos[0], pos[1]+1.47, pos[2])
-                     
         tex = bs.gettexture('crossOutMask')
         mesh = bs.getmesh('tnt')
-                     
         self.node = bs.newnode('bomb',
                                delegate=self,
                                attrs={'body': 'sphere',
@@ -3441,7 +3214,6 @@ class ExplosiveGift(bs.Actor):
     def _xplosion(self):
         radius = 3.0
         shared = SharedObjects.get()
-        
         mat = bs.Material()
         mat.add_actions(
             conditions=(
@@ -3453,9 +3225,7 @@ class ExplosiveGift(bs.Actor):
                 ('modify_part_collision', 'physical', False),
                 ('call', 'at_connect', self.call)
             ))
-        
         rmats = [mat, shared.attack_material]
-
         region = bs.newnode('region',
             delegate=self,
             owner=self.node,
@@ -3463,34 +3233,28 @@ class ExplosiveGift(bs.Actor):
                    'type': 'sphere',
                    'materials': rmats})
         self.node.connectattr('position', region, 'position')
-        
         shield = bs.newnode('shield',
             owner=region,
                 attrs={'color': (2.0, 1.0, 0.0),
                        'radius': radius})
         region.connectattr('position', shield, 'position')
-        
         bs.getsound('explosion03').play(1, self.node.position)
         bs.timer(0.1, bs.CallStrict(
             self.handlemessage, bs.DieMessage()))
         
     def call(self) -> None:
         node = bs.getcollision().opposingnode
-        
         def action():
-            #if node != self.owner or node != self.node:
-                msg = bs.HitMessage(
-                    pos=self.node.position,
-                    velocity=node.velocity,
-                    magnitude=1200 * 5,
-                    radius=800 * 5)
-
-                node.handlemessage(
-                    'impulse', msg.pos[0], msg.pos[1], msg.pos[2],
-                    msg.velocity[0], msg.velocity[1]+2.0, msg.velocity[2], msg.magnitude,
-                    msg.velocity_magnitude, msg.radius, 0, msg.force_direction[0],
-                    msg.force_direction[1], msg.force_direction[2])
-
+            msg = bs.HitMessage(
+                pos=self.node.position,
+                velocity=node.velocity,
+                magnitude=1200 * 5,
+                radius=800 * 5)
+            node.handlemessage(
+                'impulse', msg.pos[0], msg.pos[1], msg.pos[2],
+                msg.velocity[0], msg.velocity[1]+2.0, msg.velocity[2], msg.magnitude,
+                msg.velocity_magnitude, msg.radius, 0, msg.force_direction[0],
+                msg.force_direction[1], msg.force_direction[2])
         if not self.touch:
             self.touch = True
         else:
@@ -3507,12 +3271,10 @@ class ExplosiveGift(bs.Actor):
 class MagicBox(bs.Actor):
     def __init__(self, pos: Sequence[float] = (0.0, 1.0, 0.0)) -> None:
         super().__init__()
-        
         shared = SharedObjects.get()
         tex = bs.gettexture('rgbStripes')
         mesh = bs.getmesh('powerup')
         position = (pos[0], pos[1] + 1.5, pos[2])
-        
         self.node = bs.newnode('prop',
             delegate=self,
             attrs={'body': 'box',
@@ -3548,8 +3310,8 @@ class Uts:
     useraccounts: dict[int, str] = {}
     userpbs: dict[int, str] = {}
     players: dict[int, bs.SessionPlayer] = {}
-    tags: dict[str, dict] = {}  # تخزين بيانات التاجات
-    tag_system = None  # نظام التيجان المتطور
+    tags: dict[str, dict] = {}
+    tag_system = None
     
     # متغيرات إغلاق السيرفر
     server_close_active = False
@@ -3565,17 +3327,13 @@ class Uts:
 
     @staticmethod
     def create_bans_data():
-        """إنشاء بيانات الحظر"""
         folder = Uts.directory_user + '/Configs'
         file = folder + '/CheatMaxBansData.json'
-        
         if not os.path.exists(folder):
             os.mkdir(folder)
-            
         if not os.path.exists(file):
             with open(file, 'w') as f:
                 f.write('{}')
-        
         try:
             with open(file) as f:
                 r = f.read()
@@ -3592,7 +3350,6 @@ class Uts:
     
     @staticmethod
     def save_bans_data():
-        """حفظ بيانات الحظر"""
         try:
             folder = Uts.directory_user + '/Configs'
             file = folder + '/CheatMaxBansData.json'
@@ -3605,17 +3362,13 @@ class Uts:
     
     @staticmethod
     def create_reports_data():
-        """إنشاء بيانات الإبلاغات"""
         folder = Uts.directory_user + '/Configs'
         file = folder + '/CheatMaxReportsData.json'
-        
         if not os.path.exists(folder):
             os.mkdir(folder)
-            
         if not os.path.exists(file):
             with open(file, 'w') as f:
                 f.write('{"reports": []}')
-        
         try:
             with open(file) as f:
                 r = f.read()
@@ -3628,7 +3381,6 @@ class Uts:
     
     @staticmethod
     def save_reports_data():
-        """حفظ بيانات الإبلاغات"""
         folder = Uts.directory_user + '/Configs'
         file = folder + '/CheatMaxReportsData.json'
         with open(file, 'w') as f:
@@ -3637,51 +3389,37 @@ class Uts:
 
     @staticmethod
     def check_player_ban_on_join(player: bs.Player) -> bool:
-        """التحقق من حظر اللاعب عند الانضمام"""
         try:
             sessionplayer = player.sessionplayer
             client_id = sessionplayer.inputdevice.client_id
             if client_id == -1:
                 print("👑 Host is joining - skip ban check.")
                 return False
-            
-            # محاولة الحصول على account_id (PB-ID)
             account_id = None
             try:
                 account_id = sessionplayer.get_v1_account_id()
             except:
                 if client_id in Uts.userpbs:
                     account_id = Uts.userpbs[client_id]
-            
-            # محاولة الحصول على اسم اللاعب
             player_name = None
             try:
                 player_name = sessionplayer.getname(full=True)
             except:
                 if client_id in Uts.usernames:
                     player_name = Uts.usernames[client_id]
-            
             print(f"🔍 Checking ban for: {player_name} (Client: {client_id}, PB-ID: {account_id})")
-            
-            # إعادة تحميل بيانات الحظر للتأكد من أحدث البيانات
             Uts.create_bans_data()
-            
-            # 1. فحص باستخدام PB-ID (الأكثر موثوقية)
             if account_id:
                 for ban_key, ban_info in Uts.bans_data.items():
                     if ban_info.get('account_id') == account_id:
                         print(f"🚫 Ban match (PB-ID): {ban_key}")
                         Uts.kick_banned_player(client_id, ban_info)
                         return True
-            
-            # 2. فحص باستخدام client_id
             for ban_key, ban_info in Uts.bans_data.items():
                 if ban_info.get('client_id') == client_id:
                     print(f"🚫 Ban match (Client ID): {ban_key}")
                     Uts.kick_banned_player(client_id, ban_info)
                     return True
-            
-            # 3. فحص باستخدام الاسم
             if player_name:
                 player_name_lower = player_name.lower()
                 for ban_key, ban_info in Uts.bans_data.items():
@@ -3690,59 +3428,42 @@ class Uts:
                         print(f"🚫 Ban match (Name): {ban_key}")
                         Uts.kick_banned_player(client_id, ban_info)
                         return True
-            
             print(f"✅ Player is not banned: {player_name}")
             return False
-            
         except Exception as e:
             print(f"❌ Error in check_player_ban_on_join: {e}")
             return False
     
     @staticmethod
     def kick_banned_player(client_id: int, ban_data: dict):
-        """طرد لاعب محظور مع إرسال رسالة (بدون transient)"""
         try:
             reason = ban_data.get('reason', 'No reason provided')
             banned_by = ban_data.get('banned_by', 'Admin')
             player_name = ban_data.get('name', f'Player {client_id}')
-            
             message = getlanguage("BannedMessage", subs=[reason, banned_by])
-            # استخدام Uts.sm (bs.broadcastmessage) الذي يدعم clients
-            Uts.sm(message, color=(1,0,0), clients=[client_id], transient=True)
-            
+            Uts.sm(message, color=(1,0,0), clients=[client_id])
             def kick():
                 try:
                     bs.disconnect_client(client_id)
                     print(f"✅ Kicked banned player: {player_name} (Client: {client_id})")
                 except Exception as e:
                     print(f"❌ Error kicking player {client_id}: {e}")
-            
-            # تأكد من تنفيذ الطرد في الخيط الرئيسي
             bs.apptimer(2.0, lambda: bs.pushcall(kick))
-            
         except Exception as e:
             print(f"❌ Error in kick_banned_player: {e}")
 
     @staticmethod
     def start_server_closure(hours: float, tag_name: str, admin_client_id: int) -> bool:
-        """بدء إغلاق السيرفر للتدريب"""
         try:
             current_time = time.time()
-            
-            # التحقق من أن السيرفر ليس مغلقًا بالفعل
             if Uts.server_close_active:
                 return False
-            
-            # بدء إغلاق السيرفر
             Uts.server_close_active = True
             Uts.server_close_end_time = current_time + (hours * 3600)
             Uts.server_close_tag_name = tag_name
             Uts.server_close_original_players = []
             Uts.server_close_last_update = current_time
-            
             print(f"✅ Server closure started at {current_time}. End time: {Uts.server_close_end_time} for tag: {tag_name}")
-            
-            # حفظ اللاعبين الأصليين (الذين سيبقون)
             activity = bs.get_foreground_host_activity()
             if activity:
                 for player in activity.players:
@@ -3751,43 +3472,28 @@ class Uts:
                         Uts.server_close_original_players.append(client_id)
                     except:
                         continue
-            
-            # بدء عرض العد التنازلي
             Uts.start_close_server_countdown()
-            
-            # إرسال إشعار للجميع
             Uts.cm(f"Server closed for {hours} hours for '{tag_name}' tag training")
-            
             return True
-            
         except Exception as e:
             print(f"❌ Error starting server closure: {e}")
             return False
     
     @staticmethod
     def is_player_allowed_during_closure(client_id: int, tag_name: str) -> bool:
-        """التحقق إذا كان اللاعب مسموحًا له أثناء إغلاق السيرفر"""
         try:
-            # المالكين (-1) والادمنز مسموح لهم دائمًا
             if client_id == -1 or CommandFunctions.user_is_admin(client_id):
                 return True
-            
-            # الحصول على اسم اللاعب للبحث عنه
             player_name = Uts.usernames.get(client_id, None)
             if not player_name:
-                # إذا لم يكن الاسم موجودًا، محاولة البحث في roster
                 for r in roster():
                     if r['client_id'] == client_id:
                         player_name = r['display_string']
                         break
-            
             if not player_name:
                 return False
-            
-            # البحث عن بيانات اللاعب في Uts.pdata
             account_id = None
             for acc_id, acc_data in Uts.pdata.items():
-                # التحقق من اسم الحساب في القائمة
                 if 'Accounts' in acc_data:
                     for acc_name in acc_data['Accounts']:
                         if player_name == acc_name:
@@ -3795,69 +3501,48 @@ class Uts:
                             break
                 if account_id:
                     break
-            
             if account_id and account_id in Uts.pdata:
                 player_data = Uts.pdata[account_id]
                 if 'Tag' in player_data:
                     tag_data = player_data['Tag']
                     player_tag = tag_data.get('text', '').strip().lower()
                     required_tag = tag_name.strip().lower()
-                    
-                    # مقارنة التيجان (بدون حساسية لحالة الحروف)
                     if player_tag == required_tag:
                         return True
-            
-            # إذا لم يكن لديه التاج المطلوب، تحقق إذا كان من اللاعبين الأصليين
             if client_id in Uts.server_close_original_players:
                 return True
-                
             return False
-            
         except Exception as e:
             print(f"❌ Error checking player allowance: {e}")
             return False
     
     @staticmethod
     def start_close_server_countdown():
-        """بدء عرض العد التنازلي لإغلاق السيرفر"""
         try:
             def update_countdown():
                 try:
                     if not Uts.server_close_active:
-                        # إزالة النص إذا توقف الإغلاق
                         if Uts.server_close_countdown_text and Uts.server_close_countdown_text.exists():
                             Uts.server_close_countdown_text.delete()
                             Uts.server_close_countdown_text = None
                         return
-                    
                     activity = bs.get_foreground_host_activity()
                     if not activity:
-                        # إعادة المحاولة بعد ثانية
                         bs.apptimer(1.0, update_countdown)
                         return
-                    
-                    # حساب الوقت المتبقي باستخدام time.time()
                     current_time = time.time()
                     remaining_time = Uts.server_close_end_time - current_time
-                    
                     if remaining_time <= 0:
-                        # انتهى الوقت، إوقف الإغلاق
                         Uts.stop_server_closure()
                         Uts.cm("✅ Server closure ended. Everyone can join now.")
                         return
-                    
-                    # تحويل الوقت إلى تنسيق ساعات:دقائق:ثواني
                     hours = int(remaining_time // 3600)
                     minutes = int((remaining_time % 3600) // 60)
                     seconds = int(remaining_time % 60)
                     time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-                    
-                    # استخدام سياق النشاط لعرض النص
                     if hasattr(activity, 'context'):
                         with activity.context:
-                            # إنشاء أو تحديث نص العد التنازلي
                             if Uts.server_close_countdown_text is None or not Uts.server_close_countdown_text.exists():
-                                # إنشاء نص جديد
                                 Uts.server_close_countdown_text = text.Text(
                                     f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}",
                                     position=(0, 250),
@@ -3868,11 +3553,9 @@ class Uts:
                                 )
                                 Uts.server_close_countdown_text.node.opacity = 0.7
                             else:
-                                # تحديث النص الحالي مباشرة
                                 try:
                                     Uts.server_close_countdown_text.node.text = f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}"
                                 except:
-                                    # إعادة إنشاء النص إذا كان هناك خطأ
                                     Uts.server_close_countdown_text = text.Text(
                                         f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}",
                                         position=(0, 250),
@@ -3882,95 +3565,53 @@ class Uts:
                                         v_align=text.Text.VAlign.CENTER
                                     )
                                     Uts.server_close_countdown_text.node.opacity = 0.7
-                    
-                    # جدولة التحديث التالي بعد ثانية واحدة
                     bs.apptimer(1.0, update_countdown)
-                        
                 except Exception as e:
                     print(f"❌ Error in countdown update: {e}")
-                    # إعادة المحاولة بعد 2 ثانية في حالة الخطأ
                     bs.apptimer(2.0, update_countdown)
-            # بدء العد التنازلي
             bs.apptimer(0.5, update_countdown)
             print(f"✅ Countdown started for server closure")
-            
         except Exception as e:
             print(f"❌ Error starting countdown: {e}")
     
     @staticmethod
     def stop_server_closure():
-        """إيقاف إغلاق السيرفر"""
         try:
             Uts.server_close_active = False
             Uts.server_close_end_time = 0.0
             Uts.server_close_tag_name = ""
             Uts.server_close_original_players = []
-            
-            # إزالة نص العد التنازلي
             if Uts.server_close_countdown_text and Uts.server_close_countdown_text.exists():
                 Uts.server_close_countdown_text.delete()
                 Uts.server_close_countdown_text = None
-            
             print("✅ Server closure stopped.")
-            
         except Exception as e:
             print(f"❌ Error stopping server closure: {e}")
     
     @staticmethod
     def check_player_allowed_on_join(player: bs.Player):
-        """التحقق من اللاعب عند الانضمام أثناء إغلاق السيرفر"""
         try:
             if not Uts.server_close_active:
                 return
-            
             client_id = player.sessionplayer.inputdevice.client_id
-            
-            # التحقق إذا كان اللاعب مسموحًا له
             if not Uts.is_player_allowed_during_closure(client_id, Uts.server_close_tag_name):
-                # حساب الوقت المتبقي
                 current_time = time.time()
                 remaining_time = Uts.server_close_end_time - current_time
-                
                 if remaining_time <= 0:
                     Uts.stop_server_closure()
                     return
-                
                 hours = int(remaining_time // 3600)
                 minutes = int((remaining_time % 3600) // 60)
                 seconds = int(remaining_time % 60)
                 time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-                
-                # إرسال رسالة للاعب - بدون transient!
                 message = f"There's a training match for {Uts.server_close_tag_name}. Please try to join again after {time_str}"
-                
-                # استخدام سياق النشاط إن وجد
-                activity = bs.get_foreground_host_activity()
-                if activity and hasattr(activity, 'context'):
-                    try:
-                        with activity.context:
-                            bs.screenmessage(message, color=(1, 0, 0), clients=[client_id])
-                            
-                            # طرد اللاعب بعد ثانيتين
-                            def kick_player():
-                                try:
-                                    bs.disconnect_client(client_id)
-                                except:
-                                    pass
-                            
-                            bs.apptimer(2.0, kick_player)
-                    except:
-                        # إذا فشل السياق، طرد مباشرة
-                        try:
-                            bs.disconnect_client(client_id)
-                        except:
-                            pass
-                else:
-                    # إذا لم يكن هناك سياق، طرد مباشرة
+                Uts.sm(message, color=(1, 0, 0), clients=[client_id])
+                def kick_player():
                     try:
                         bs.disconnect_client(client_id)
                     except:
                         pass
-                    
+                bs.apptimer(2.0, kick_player)
         except Exception as e:
             print(f"❌ Error checking player on join: {e}")
 
@@ -3990,10 +3631,8 @@ class Uts:
     @staticmethod
     def sort_list(vals: list, count: int = 3) -> list:
         vals_dict = dict(r=[])
-        
         for n in range(len(vals)):
             vals_dict[n] = list()
-            
             for c in vals:
                 if len(vals_dict[n]) == count:
                     break
@@ -4001,11 +3640,9 @@ class Uts:
                     if c not in vals_dict['r']:
                         vals_dict['r'].append(c)
                         vals_dict[n].append(c)
-        
             if len(vals_dict['r']) == len(vals):
                 vals_dict.pop('r')
                 break
-
         return list(vals_dict.values())
 
     @staticmethod
@@ -4026,7 +3663,6 @@ class Uts:
         admins = []
         if not hasattr(Uts, 'pdata'): 
             Uts.create_players_data()
-        
         if len(Uts.pdata) > 0:
             for p, d in getattr(Uts, 'pdata', {}).items():
                 if d['Admin']:
@@ -4035,11 +3671,9 @@ class Uts:
         
     @staticmethod
     def get_owners() -> list[str]:
-        """الحصول على قائمة المالكين"""
         owners = []
         if not hasattr(Uts, 'pdata'): 
             Uts.create_players_data()
-        
         if len(Uts.pdata) > 0:
             for p, d in getattr(Uts, 'pdata', {}).items():
                 if d.get('Owner', False):
@@ -4050,7 +3684,6 @@ class Uts:
     def add_or_del_user(c_id: int, add: bool = True) -> None:
         if c_id == -1:
             return Uts.sm("You Are Amazing!!", color=(0.5, 0, 1), clients=[c_id], transient=True)
-            
         if c_id not in Uts.userpbs:
             Uts.sm(f"'{c_id}' Does not belong to any player.", clients=[c_id], transient=True)
         else:
@@ -4058,7 +3691,6 @@ class Uts:
             if add:
                 if not hasattr(Uts, 'pdata'): 
                     Uts.create_players_data()
-                
                 if user in Uts.pdata:
                     if not Uts.pdata[user]['Admin']:
                         Uts.pdata[user]['Admin'] = add
@@ -4066,7 +3698,6 @@ class Uts:
             else:
                 if not hasattr(Uts, 'pdata'): 
                     Uts.create_players_data()
-                
                 if user in Uts.pdata:
                     if Uts.pdata[user]['Admin']:
                         Uts.pdata[user]['Admin'] = add
@@ -4075,58 +3706,46 @@ class Uts:
             
     @staticmethod
     def add_owner(account_id: str) -> None:
-        """إضافة مالك جديد"""
         if not hasattr(Uts, 'pdata'): 
             Uts.create_players_data()
-        
         if account_id not in Uts.pdata:
             Uts.pdata[account_id] = {
                 'Mute': False,
                 'Effect': 'none',
-                'Admin': True,  # المالك يكون مشرفًا
-                'Owner': True,  # هذا هو الحقل الجديد للمالك
+                'Admin': True,
+                'Owner': True,
                 'Accounts': []
             }
         else:
             Uts.pdata[account_id]['Admin'] = True
             Uts.pdata[account_id]['Owner'] = True
-            
         Uts.save_players_data()
         print(f"Added owner: {account_id}")
 
     @staticmethod
     def create_players_data() -> None:
-        # Check if already created to avoid recursion
         if hasattr(Uts, 'pdata'):
             return
-        
         folder = Uts.directory_user + '/Configs'
         file = folder + '/CheatMaxPlayersData.json'
-                
         if not os.path.exists(folder):
             os.mkdir(folder)
-            
         if not os.path.exists(file):
             with open(file, 'w') as f:
                 f.write('{}')
-
         with open(file) as f:
             r = f.read()
             Uts.pdata = json.loads(r)
             
     @staticmethod
     def create_tags_data() -> None:
-        """إنشاء ملف تخزين التاجات"""
         folder = Uts.directory_user + '/Configs'
         file = folder + '/CheatMaxTagsData.json'
-        
         if not os.path.exists(folder):
             os.mkdir(folder)
-            
         if not os.path.exists(file):
             with open(file, 'w') as f:
                 f.write('{}')
-
         with open(file) as f:
             r = f.read()
             Uts.tags = json.loads(r)
@@ -4141,7 +3760,6 @@ class Uts:
             
     @staticmethod
     def save_tags_data() -> None:
-        """حفظ بيانات التاجات"""
         folder = Uts.directory_user + '/Configs'
         file = folder + '/CheatMaxTagsData.json'
         with open(file, 'w') as f:
@@ -4150,39 +3768,29 @@ class Uts:
 
     @staticmethod
     def player_join(player: bs.Player) -> None:
-        """معالجة انضمام لاعب - تم تعديلها لإضافة الـ accounts"""
         if not hasattr(Uts, "pdata"):
             Uts.create_players_data()
-        
         try:
             sessionplayer = player.sessionplayer
             account_id = sessionplayer.get_v1_account_id()
             client_id = sessionplayer.inputdevice.client_id
             account_name = sessionplayer.inputdevice.get_v1_account_name(True)
         except Exception as e:
-            # Only log if it's a real error, not just missing account
             if "account" not in str(e).lower():
                 bs.chatmessage(f"Error in player_join: {e}")
             account_id = None
-        
         if account_id:
             if type(account_id) is str and account_id.startswith('pb'):
                 if account_id not in Uts.pdata:
                     Uts.add_player_data(account_id)
                     Uts.sm("Saving user data...", color=(0.35, 0.7, 0.1), transient=True, clients=[client_id])
-                
                 accounts = Uts.pdata[account_id]['Accounts']
                 if account_name not in accounts:
                     accounts.append(account_name)
                     Uts.save_players_data()
-                    
-                # ===== التعديل المهم: ربط client_id بالحساب =====
                 Uts.accounts[client_id] = Uts.pdata[account_id]
-                
-                # إذا كان المالك، أرسل رسالة ترحيب
                 if Uts.pdata[account_id].get('Owner', False):
                     Uts.sm("You are the owner!", color=(1.0, 0.5, 0.0), transient=True, clients=[client_id])
-            
             Uts.usernames[client_id] = account_name
             Uts.useraccounts[client_id] = account_name
             Uts.players[client_id] = sessionplayer
@@ -4197,27 +3805,22 @@ class Uts:
                         Uts.accounts[c_id] = Uts.pdata[r['account_id']]
                 if c_id not in Uts.usernames:
                     Uts.usernames[c_id] = r['display_string']
-                    
                 acc = r['display_string']
                 for acc_id, dt in list(Uts.pdata.items()):
                     for ac in dt['Accounts']:
                         if ac == acc:
                             Uts.accounts[c_id] = Uts.pdata[acc_id]
                             Uts.userpbs[c_id] = acc_id
-                            
         except Exception as e:
             print(f"⚠️ Error in update_usernames (roster): {e}")
-                        
         for c_id, p in list(Uts.players.items()):
             try:
                 if p.exists():
                     Uts.usernames[c_id] = p.getname(full=True)
                     Uts.shortnames[c_id] = p.getname(full=False)
-                    
                     if p.get_v1_account_id() is not None:
                         Uts.userpbs[c_id] = p.get_v1_account_id()
             except:
-                # Player might have disconnected
                 if c_id in Uts.players:
                     del Uts.players[c_id]
             
@@ -4225,7 +3828,6 @@ class Uts:
     def add_player_data(account_id: str) -> None:
         if not hasattr(Uts, 'pdata'):
             Uts.create_players_data()
-        
         if account_id not in Uts.pdata:
             Uts.pdata[account_id] = {
                 'Mute': False,
@@ -4240,7 +3842,6 @@ class Uts:
         global cfg
         folder = Uts.directory_user + '/Configs'
         file = folder + '/CheatMaxSettings.json'
-        
         with open(file, 'w') as f:
             w = json.dumps(cfg, indent=4)
             f.write(w)
@@ -4250,46 +3851,31 @@ class Uts:
         global cfg
         folder = Uts.directory_user + '/Configs'
         file = folder + '/CheatMaxSettings.json'
-        
         if not os.path.exists(folder):
             os.mkdir(folder)
-        
         if not os.path.exists(file):
             with open(file, 'w') as f:
                 f.write('{}')
-
         with open(file) as f:
             r = f.read()
             cfg = json.loads(r)
 
     @staticmethod
     def create_user_system_scripts() -> None:
-        """Set up a copy of Ballistica app scripts under user scripts dir.
-    
-        (for editing and experimenting)
-        """
         import shutil
-        
         app = _babase.app.env
-
-        # Its possible these are unset in non-standard environments.
         if app.python_directory_user is None:
             raise RuntimeError('user python dir unset')
         if app.python_directory_app is None:
             raise RuntimeError('app python dir unset')
-    
         path = app.python_directory_user + '/sys/' + app.engine_version + '_' + str(_babase.app.env.engine_build_number)
-        
-        # Check if directory already exists
         if os.path.exists(path):
             print(f"System scripts already exist at: '{path}'")
             return
-        
         try:
             print(f'COPYING "{app.python_directory_app}" -> "{path}".')
             shutil.copytree(app.python_directory_app, path, 
                            ignore=shutil.ignore_patterns('__pycache__'))
-            
             print(f"Created system scripts at: '{path}'")
             print(f"Restart {bui.appname()} to use them.")
             print("(use babase.quit() to exit the game)")
@@ -4300,14 +3886,11 @@ class Uts:
     def create_data_text(self) -> None:
         if isinstance(self, MainMenuActivity):
             return
-
         if getattr(self, '_text_data', None):
             self._text_data.node.delete()
-
         if cfg['Commands'].get('ShowInfo'):
             info = f"\ue043|Host: {cfg['Commands'].get('HostName', '???')}\n\ue01e|Description: {cfg['Commands'].get('Description', '???')}\n\ue01e|Version: {_babase.app.env.engine_version}"
             color = tuple(list(cfg['Commands'].get('InfoColor', Uts.colors()['white'])) + [1])
-                
             self._text_data = text.Text(info,
                 position=(-650.0, -200.0), color=color)
 
@@ -4318,35 +3901,28 @@ class Uts:
                          admin: bool = False) -> None:
         if isinstance(self, MainMenuActivity):
             return
-        
         if getattr(self, '_live_chat', None):
             self._live_chat.node.delete()
-            
         if cfg['Commands'].get('ChatLive'):
             max_chats = 6
             chats = list()
             txt = str()
             icon = bui.charstr(bui.SpecialChar.STEAM_LOGO) if admin else ''
-            
             if any(bs.get_chat_messages()):
                 if len(Chats) == max_chats:
                     Chats.pop(0)
-                    
                 if live:
                     name = Uts.shortnames.get(chat[0], chat[0])
                     msg = chat[1]
                     Chats.append(f'{icon}{name}: {msg}')
-                
                 for msg in Chats:
                     if len(chats) != max_chats:
                         chats.append(msg)
                     else: break
                 txt = '\n'.join(chats)
-            
             livetext = "\ue043 CHAT LIVE \ue043"
             txt = (livetext + '\n' + ''.join(['=' for s 
                 in range(len(livetext))]) + '\n') + txt
-
             self._live_chat = text.Text(txt, position=(650.0, 200.0),
                 color=(1, 1, 1, 1), h_align=text.Text.HAlign.RIGHT)
 
@@ -4363,28 +3939,20 @@ class Uts:
 
 # ==================== نظام التيجان المتطور ====================
 class TagSystem:
-    """نظام التيجان المتطور للأدمنز"""
     def __init__(self):
         self.current_tags = {}
         self.animated_tags = {}
         self.char_animations = {}
         self.animation_states = {}
         self.saved_tag_templates = {}
-        
-        # قاموس الأيقونات واختصاراتها
         self.icons = {
-            # الرموز الأساسية
             'left': '\ue001', 'right': '\ue002', 'up': '\ue003', 'down': '\ue004',
             'dleft': '\ue005', 'dup': '\ue006', 'dright': '\ue007', 'ddown': '\ue008',
             'back': '\ue009', 'joystick': '\ue010', 'circles': '\ue019',
             'android': '\ue020', 'rbyp': '\ue021',
-            
-            # النرد والرموز الرياضية
             'dice1': '\ue022', 'dice2': '\ue023', 'dice3': '\ue024', 'dice4': '\ue025',
             'volley': '\ue026', 'gather': '\ue027', 't': '\ue028', 'ticket': '\ue029',
             'pc': '\ue030', 'rbyp2': '\ue031',
-            
-            # أعلام الدول
             'us': '\ue032', 'italy': '\ue033', 'germany': '\ue034', 'brazil': '\ue035',
             'russia': '\ue036', 'china': '\ue037', 'uk': '\ue038', 'canada': '\ue039',
             'rwb': '\ue040', 'hat': '\ue041', 'fire': '\ue042', 'crown': '\ue043',
@@ -4392,43 +3960,20 @@ class TagSystem:
             'dragon': '\ue048', 'helmet': '\ue049', 'rgwb': '\ue050', 'mw': '\ue051',
             'syria': '\ue052', 'bgwr': '\ue053', 'gwl': '\ue054', 'saudi': '\ue055',
             'malaysia': '\ue056', 'bwr': '\ue057', 'australia': '\ue058', 'rws': '\ue059',
-            
-            # التحكم
             'up2': '\ue00a', 'down2': '\ue00b', 'bslogo': '\ue00c', 'back2': '\ue00d',
             'pause': '\ue00e', 'forward': '\ue00f', 'u': '\ue01a', 'y': '\ue01b',
             'a': '\ue01c', 'usmall': '\ue01d', 'logo': '\ue01e', 'ticket2': '\ue01f',
-            
-            # الميداليات
             'bronze': '\ue02a', 'silver': '\ue02b', 'gold': '\ue02c', 'badge1': '\ue02d',
             'badge2': '\ue02e', 'trophy': '\ue02f',
-            
-            # أعلام إضافية
             'india': '\ue03a', 'japan': '\ue03b', 'france': '\ue03c', 'rw': '\ue03d',
             'gwr': '\ue03e', 'korea': '\ue03f',
-            
-            # الرموز
             'mushroom': '\ue04a', 'nstar': '\ue04b', 'bull': '\ue04c', 'moon': '\ue04d',
             'spider': '\ue04e', 'fireball': '\ue04f', 'rect': '\ue05a', 'steam': '\ue05b',
             'nvidia': '\ue05c',
-            
-            # اختصارات إضافية
-            'ns': '\ue04b',  # ninja star
-            'dr': '\ue048',  # dragon
-            'fb': '\ue04f',  # fireball
-            'cr': '\ue043',  # crown
-            'sk': '\ue046',  # skull
-            'ht': '\ue047',  # heart
-            'hl': '\ue049',  # helmet
-            'ms': '\ue04a',  # mushroom
-            'bl': '\ue04c',  # bull
-            'mn': '\ue04d',  # moon
-            'sp': '\ue04e',  # spider
-            'la': '\ue001',  # left arrow
-            'ra': '\ue002',  # right arrow
-            'ua': '\ue003',  # up arrow
-            'da': '\ue004',  # down arrow
+            'ns': '\ue04b', 'dr': '\ue048', 'fb': '\ue04f', 'cr': '\ue043', 'sk': '\ue046',
+            'ht': '\ue047', 'hl': '\ue049', 'ms': '\ue04a', 'bl': '\ue04c', 'mn': '\ue04d',
+            'sp': '\ue04e', 'la': '\ue001', 'ra': '\ue002', 'ua': '\ue003', 'da': '\ue004'
         }
-        
         self.colors = {
             'red': (1.0, 0.0, 0.0),
             'green': (0.0, 1.0, 0.0),
@@ -4444,31 +3989,23 @@ class TagSystem:
             'lime': (0.5, 1.0, 0.0),
             'rainbow': 'rainbow'
         }
-        
         self.positions = {
-            'top': (0, 2.0, 0),  # أعلى رأس اللاعب
+            'top': (0, 2.0, 0),
             'down': (0, -2.0, 0),
             'right': (2.0, 1.0, 0),
             'left': (-2.0, 1.0, 0),
-            'center': (0, 2.0, 0),  # أعلى الرأس
-            'head': (0, 2.5, 0),  # أعلى الرأس
+            'center': (0, 2.0, 0),
+            'head': (0, 2.5, 0),
             'feet': (0, -1.0, 0)
         }
-        
         print("🎮 TagMaster Advanced System Loading...")
-        
-        # تحميل القوالب المحفوظة
         self.templates_file = Uts.directory_user + '/Configs/tag_templates.json'
         self.load_templates()
-        
-        # بدء مراقبة اللعبة بعد تأخير
         bs.apptimer(3.0, lambda: self.start_game_monitoring())
     
     def start_game_monitoring(self):
-        """بدء مراقبة اللعبة مع فحص الصلاحيات"""
         def game_monitor():
             try:
-                # في وضع السيرفر، تقليل التكرار
                 activity = bs.get_foreground_host_activity()
                 if activity and hasattr(activity, 'players'):
                     try:
@@ -4477,43 +4014,29 @@ class TagSystem:
                         self.check_player_respawns(activity)
                     except Exception as e:
                         print(f"⚠️ Tag monitor error: {e}")
-                
-                # إعادة الجدولة
                 bs.apptimer(2.0, game_monitor)
-                    
             except Exception as e:
                 print(f"❌ Game monitor error: {e}")
-                # إعادة المحاولة بعد 5 ثواني في حالة الخطأ
                 bs.apptimer(5.0, game_monitor)
-        
-        # بدء المراقبة بعد تأخير
         bs.apptimer(1.0, game_monitor)
         print("🎮 Tag monitoring started (server optimized)")
     
     def quick_apply_tags(self, activity):
-        """تطبيق سريع للتيجان"""
         try:
             if not activity or not hasattr(activity, 'players'):
                 return
-                
             for player in activity.players:
                 try:
                     if not player.is_alive() or not player.actor or not player.actor.node:
                         continue
-                        
                     client_id = player.sessionplayer.inputdevice.client_id
-                    
-                    # البحث عن account_id
                     account_id = None
                     if client_id in Uts.userpbs:
                         account_id = Uts.userpbs[client_id]
-                    
                     if account_id and account_id in Uts.pdata:
                         player_data = Uts.pdata[account_id]
                         if 'Tag' in player_data:
                             tag_data = player_data['Tag']
-                            
-                            # تطبيق التاج فقط إذا لم يكن مطبقًا بالفعل
                             if str(client_id) not in self.current_tags:
                                 if tag_data.get('type') == 'animated':
                                     self.create_animated_tag_gradual(player, client_id, tag_data, activity)
@@ -4522,20 +4045,16 @@ class TagSystem:
                                                                       tuple(tag_data.get('color', (1,1,1))), 
                                                                       tag_data.get('scale', 0.03), 
                                                                       activity)
-                    
                 except Exception as e:
                     continue
-                    
         except Exception as e:
             print(f"❌ Quick apply tags error: {e}")
 
     def apply_normal_tag(self, player, client_id, tag_data, activity):
-        """تطبيق تاج عادي"""
         try:
             if str(client_id) in self.current_tags:
                 self.remove_tag_visual(client_id)
                 self.stop_char_animation(client_id)
-            
             self.create_tag_with_char_animation(player, client_id, tag_data['text'], 
                                               tuple(tag_data.get('color', (1,1,1))), 
                                               tag_data.get('scale', 0.03), activity)
@@ -4543,37 +4062,29 @@ class TagSystem:
             print(f"❌ Error applying normal tag: {e}")
 
     def create_animated_tag_gradual(self, player, client_id, tag_data, activity):
-        """إنشاء تاج متحرك"""
         try:
             player_name = player.getname()
             if not player.actor or not player.actor.node:
                 return False
-            
             with activity.context:
                 colors = tag_data.get('colors', [(1, 1, 1)])
                 first_color = colors[0] if colors else (1, 1, 1)
-                
                 attrs = {
                     'text': tag_data['text'],
                     'in_world': True,
                     'shadow': 1.0,
-                    'flatness': 1.0,  # نفس PopupText
+                    'flatness': 1.0,
                     'h_align': 'center',
                     'v_align': 'center',
                     'scale': tag_data['scale'],
                     'color': first_color,
                     'opacity': 0.0
                 }
-                
                 tag_node = bs.newnode('text', attrs=attrs)
-                
-                # ربط التاج باللاعب أعلى الرأس - نفس PopupText
                 math_node = bs.newnode('math',
                     attrs={'input1': (0.0, 1.5, 0.0), 'operation': 'add'})
-                
                 player.actor.node.connectattr('position_center', math_node, 'input2')
                 math_node.connectattr('output', tag_node, 'position')
-                
                 self.current_tags[str(client_id)] = {
                     'type': 'animated_gradual',
                     'tag_node': tag_node,
@@ -4583,7 +4094,6 @@ class TagSystem:
                     'scale': tag_data['scale'],
                     'speed': tag_data['speed']
                 }
-                
                 animation_data = {
                     'tag_node': tag_node,
                     'text': tag_data['text'],
@@ -4592,41 +4102,31 @@ class TagSystem:
                     'duration': 0.5,
                     'original_opacity': 1.0
                 }
-                
                 self.char_animations[str(client_id)] = animation_data
-                
                 def animate_text_display():
                     try:
                         if str(client_id) not in self.char_animations:
                             return
-                        
                         data = self.char_animations[str(client_id)]
                         current_idx = data['current_char_index']
-                        
                         if current_idx > len(data['text']):
                             data['tag_node'].opacity = data['original_opacity']
                             self.start_gradual_animation(client_id)
                             return
-                        
                         partial_text = data['text'][:current_idx]
                         data['tag_node'].text = partial_text
-                        
                         progress = min(1.0, current_idx / len(data['text']))
                         opacity = progress
-                        
                         if progress < 0.5:
                             opacity = progress * 2
                         else:
                             opacity = 1.0
-                        
                         data['tag_node'].opacity = opacity
                         data['current_char_index'] += 1
-                        
                         if current_idx <= len(data['text']):
                             bs.apptimer(0.08, animate_text_display)
                     except:
                         pass
-                
                 bs.apptimer(0.1, animate_text_display)
                 print(f"🌈 Animated tag '{tag_data['text']}' created for {player_name}")
                 return True
@@ -4635,71 +4135,55 @@ class TagSystem:
             return False
 
     def start_gradual_animation(self, client_id):
-        """بدء الأنيميشن التدريجي"""
         try:
             if str(client_id) not in self.current_tags:
                 return
-            
             tag_data = self.current_tags[str(client_id)]
             colors = tag_data['colors']
-            
             if len(colors) < 2:
                 return
-            
             self.animation_states[str(client_id)] = {
                 'current_index': 0,
                 'next_index': 1,
                 'transition': 0.0
             }
-            
             def animate_gradual():
                 try:
                     if str(client_id) not in self.current_tags or str(client_id) not in self.animation_states:
                         return
-                    
                     tag_data = self.current_tags[str(client_id)]
                     tag_node = tag_data['tag_node']
-                    
                     if not tag_node.exists():
                         if str(client_id) in self.animation_states:
                             del self.animation_states[str(client_id)]
                         return
-                    
                     state = self.animation_states[str(client_id)]
                     colors = tag_data['colors']
-                    
                     color1 = colors[state['current_index']]
                     color2 = colors[state['next_index']]
-                    
                     t = state['transition']
                     r = color1[0] + (color2[0] - color1[0]) * t
                     g = color1[1] + (color2[1] - color1[1]) * t
                     b = color1[2] + (color2[2] - color1[2]) * t
-                    
                     tag_node.color = (r, g, b)
                     state['transition'] += 0.05 * tag_data['speed']
-                    
                     if state['transition'] >= 1.0:
                         state['transition'] = 0.0
                         state['current_index'] = state['next_index']
                         state['next_index'] = (state['next_index'] + 1) % len(colors)
-                    
                     bs.apptimer(0.05, animate_gradual)
                 except:
                     if str(client_id) in self.animation_states:
                         del self.animation_states[str(client_id)]
-            
             bs.apptimer(0.05, animate_gradual)
         except Exception as e:
             print(f"❌ Error starting gradual animation: {e}")
 
     def cleanup_dead_players(self, activity):
-        """تنظيف التيجان للاعبين الموتى"""
         try:
             for client_id_str in list(self.current_tags.keys()):
                 player_found = False
                 player_alive = False
-                
                 for player in activity.players:
                     try:
                         if str(player.sessionplayer.inputdevice.client_id) == client_id_str:
@@ -4709,7 +4193,6 @@ class TagSystem:
                             break
                     except:
                         continue
-                
                 if not player_found or not player_alive:
                     try:
                         client_id = int(client_id_str)
@@ -4721,19 +4204,15 @@ class TagSystem:
             pass
 
     def check_player_respawns(self, activity):
-        """التحقق من إعادة ولادة اللاعبين"""
         try:
             for player in activity.players:
                 try:
                     client_id = player.sessionplayer.inputdevice.client_id
                     account_id = None
-                    
-                    # البحث عن account_id الخاص باللاعب
                     for acc_id, acc_data in Uts.pdata.items():
                         if client_id in Uts.userpbs and Uts.userpbs[client_id] == acc_id:
                             account_id = acc_id
                             break
-                    
                     if account_id and account_id in Uts.pdata:
                         player_data = Uts.pdata[account_id]
                         if 'Tag' in player_data:
@@ -4752,38 +4231,29 @@ class TagSystem:
             pass
 
     def create_tag_with_char_animation(self, player, client_id, text: str, color, scale: float, activity) -> bool:
-        """إنشاء تاج مع أنيميشن للحروف - يظهر أعلى رأس اللاعب"""
         try:
             player_name = player.getname()
             if not player.actor or not player.actor.node:
                 return False
-
             with activity.context:
-                # إزالة التاج السابق إذا موجود
                 self.remove_tag_visual(client_id)
                 self.stop_char_animation(client_id)
-
-                # إنشاء عقدة النص - نفس خصائص PopupText
                 tag_node = bs.newnode('text',
                                       attrs={
                                           'text': '',
                                           'in_world': True,
                                           'shadow': 1.0,
-                                          'flatness': 1.0,  # نفس PopupText
+                                          'flatness': 1.0,
                                           'h_align': 'center',
                                           'v_align': 'center',
                                           'scale': scale,
                                           'color': color,
                                           'opacity': 0.0
                                       })
-
-                # ربط التاج باللاعب أعلى الرأس - نفس طريقة PopupText
                 math_node = bs.newnode('math',
                                        attrs={'input1': (0.0, 1.5, 0.0), 'operation': 'add'})
                 player.actor.node.connectattr('position_center', math_node, 'input2')
                 math_node.connectattr('output', tag_node, 'position')
-
-                # حفظ البيانات
                 self.current_tags[str(client_id)] = {
                     'type': 'normal',
                     'tag_node': tag_node,
@@ -4792,44 +4262,30 @@ class TagSystem:
                     'color': color,
                     'scale': scale
                 }
-
-                # أنيميشن ظهور الحروف واحدة تلو الأخرى
                 def animate_text():
                     try:
                         if str(client_id) not in self.current_tags:
                             return
-
                         tag_node = self.current_tags[str(client_id)]['tag_node']
                         if not tag_node.exists():
                             return
-
-                        # إذا كانت الرسالة فارغة، تخطي
                         if not text:
                             tag_node.text = ''
                             tag_node.opacity = 1.0
                             return
-
-                        # عرض الحروف تدريجيًا
                         for i in range(len(text) + 1):
                             def update_text(idx):
                                 return lambda: self._update_text_animation(client_id, text, idx, color)
-
                             bs.apptimer(i * 0.05, update_text(i))
-
-                        # بعد اكتمال ظهور النص، زيادة الشفافية
                         def finalize():
                             if str(client_id) in self.current_tags:
                                 tag_node = self.current_tags[str(client_id)]['tag_node']
                                 if tag_node.exists():
                                     tag_node.opacity = 1.0
-
                         bs.apptimer(len(text) * 0.05 + 0.5, finalize)
                     except Exception as e:
                         print(f"Error in animate_text: {e}")
-
-                # بدء الأنيميشن بعد تأخير قصير
                 bs.apptimer(0.1, animate_text)
-
                 print(f"Created tag '{text}' for {player_name}")
                 return True
         except Exception as e:
@@ -4837,30 +4293,21 @@ class TagSystem:
             return False
 
     def _update_text_animation(self, client_id, full_text, index, color):
-        """تحديث النص أثناء الأنيميشن"""
         try:
             if str(client_id) not in self.current_tags:
                 return
-
             tag_node = self.current_tags[str(client_id)]['tag_node']
             if not tag_node.exists():
                 return
-
-            # عرض النص حتى الحرف الحالي
             partial_text = full_text[:index]
             tag_node.text = partial_text
-
-            # تحديث اللون
             tag_node.color = color
-
-            # زيادة الشفافية تدريجيًا
             opacity = min(1.0, index / len(full_text))
             tag_node.opacity = opacity
         except Exception as e:
             print(f"Error in _update_text_animation: {e}")
 
     def remove_tag_visual(self, client_id):
-        """إزالة التاج المرئي"""
         try:
             client_id_str = str(client_id)
             if client_id_str in self.current_tags:
@@ -4874,7 +4321,6 @@ class TagSystem:
             print(f"Error removing tag visual: {e}")
 
     def stop_char_animation(self, client_id):
-        """إيقاف أنيميشن الحروف"""
         try:
             client_id_str = str(client_id)
             if client_id_str in self.char_animations:
@@ -4883,7 +4329,6 @@ class TagSystem:
             pass
 
     def stop_animation(self, client_id):
-        """إيقاف الأنيميشن"""
         try:
             client_id_str = str(client_id)
             if client_id_str in self.animation_states:
@@ -4892,7 +4337,6 @@ class TagSystem:
             pass
 
     def load_templates(self):
-        """تحميل قوالب التاجات المحفوظة"""
         try:
             if os.path.exists(self.templates_file):
                 with open(self.templates_file, 'r') as f:
@@ -4903,7 +4347,6 @@ class TagSystem:
             self.saved_tag_templates = {}
 
     def save_templates(self):
-        """حفظ قوالب التاجات"""
         try:
             with open(self.templates_file, 'w') as f:
                 json.dump(self.saved_tag_templates, f, indent=4)
@@ -4911,21 +4354,15 @@ class TagSystem:
             pass
 
     def send_client_message(self, client_id, message, color=(1,1,1)):
-        """إرسال رسالة إلى العميل"""
         try:
             bs.screenmessage(message, color=color, clients=[client_id])
         except:
             pass
 
     def parse_color(self, color_str: str):
-        """تحويل نص اللون إلى قيم RGB"""
         color_str = color_str.lower()
-
-        # إذا كان اللون معروفًا في القاموس
         if color_str in self.colors:
             return self.colors[color_str]
-
-        # إذا كان بتنسيق rgb مثل 1.0,0.5,0.0
         if ',' in color_str:
             try:
                 parts = color_str.split(',')
@@ -4936,8 +4373,6 @@ class TagSystem:
                     return (max(0.0, min(1.0, r)), max(0.0, min(1.0, g)), max(0.0, min(1.0, b)))
             except:
                 pass
-
-        # إذا كان بتنسيق hex مثل #ff00ff
         if color_str.startswith('#') and len(color_str) == 7:
             try:
                 r = int(color_str[1:3], 16) / 255.0
@@ -4946,17 +4381,12 @@ class TagSystem:
                 return (r, g, b)
             except:
                 pass
-
-        # افتراضي
         return (1.0, 1.0, 1.0)
 
     def generate_rainbow_colors(self, count: int):
-        """إنشاء قائمة بألوان قوس قزح"""
         colors = []
         for i in range(count):
-            # توزيع ألوان قوس قزح
             hue = i / count
-            # تحويل من HSV إلى RGB (تبسيط)
             if hue < 1/6:
                 r, g, b = 1.0, hue * 6, 0.0
             elif hue < 2/6:
@@ -4969,7 +4399,6 @@ class TagSystem:
                 r, g, b = (hue - 4/6) * 6, 0.0, 1.0
             else:
                 r, g, b = 1.0, 0.0, (1 - hue) * 6
-
             colors.append((r, g, b))
         return colors
 
@@ -4977,121 +4406,31 @@ class TagSystem:
 Uts.tag_system = TagSystem()
 
 def _install() -> None:
-    from bascenev1 import _hooks
-    from babase import _app, modutils
-    _file = Uts.directory_sys + "/bascenev1/_hooks.py"
-    
-    # تعيين دالة فلترة الشات
-    bs.app.cheatmax_filter_chat = filter_chat_message
-    
-    def seq():
-        """تسلسل التثبيت"""
-        bs.screenmessage(f"Installing <{__name__}>")
-        bs.apptimer(2.0, bs.CallStrict(Uts.sm, f"<{__name__}> Installed successfully!", (0.0, 1.0, 0.0)))
-        bs.apptimer(4.0, bs.CallStrict(Uts.sm, "Rebooting..."))
-        bs.apptimer(6.0, bui.quit)
-    
-    # إنشاء المجلدات إذا لم تكن موجودة
-    if not os.path.exists(Uts.directory_sys):
-        os.makedirs(os.path.dirname(_file), exist_ok=True)
-        print(f"✅ Created system directory: {Uts.directory_sys}")
-    
-    try:
-        if os.path.exists(_file):
-            with open(_file, 'r', encoding='utf-8') as s:
-                read = s.read()
-                read_l = read.split("\n")
-            
-            if Uts.key not in read:
-                f_list = Uts.funtion().split("\n")
-                try:
-                    # البحث عن دالة filter_chat_message
-                    ix = None
-                    for i, line in enumerate(read_l):
-                        if "def filter_chat_message" in line:
-                            ix = i
-                            break
-                    
-                    if ix is not None:
-                        # إدخال الكود في المكان المناسب
-                        for i, lt in enumerate(f_list):
-                            read_l.insert(i + (ix + 1), lt)
-                        read = "\n".join(read_l)
-                        
-                        # إنشاء نسخة احتياطية
-                        backup_file = _file + ".backup"
-                        if os.path.exists(backup_file):
-                            os.remove(backup_file)
-                        os.rename(_file, backup_file)
-                        
-                        # كتابة الملف المعدل
-                        with open(_file, "w", encoding='utf-8') as s:
-                            s.write(read)
-                        print("✅ Successfully injected code into _hooks.py")
-                        seq()
-                    else:
-                        print("⚠️ Could not find filter_chat_message function in _hooks.py")
-                        # المحاولة باستمرار بدون إعادة تشغيل
-                except (ValueError, IndexError) as e:
-                    print(f"⚠️ Error finding insertion point: {e}")
-                except PermissionError:
-                    print("❌ Permission denied to modify _hooks.py")
-                    # الاستمرار بدون الحقن
-                except Exception as e:
-                    print(f"❌ Error during injection: {e}")
-        else:
-            print(f"⚠️ _hooks.py not found at {_file}")
-            # إنشاء ملف _hooks.py بديل إذا كان ضرورياً
-            try:
-                with open(_file, 'w', encoding='utf-8') as f:
-                    f.write("""
-# كود أساسي للـ hooks إذا كان الملف غير موجود
-""")
-                print(f"✅ Created new _hooks.py at {_file}")
-            except Exception as e:
-                print(f"❌ Failed to create _hooks.py: {e}")
-    except Exception as e:
-        print(f"❌ Install error: {e}")
-        # المتابعة على أي حال
-    
-    # تهيئة البيانات
+    # لم نعد نحتاج إلى تعديل الملف، نستخدم الربط المباشر في الذاكرة
+    # نكتفي بتهيئة البيانات
     try:
         Uts.create_players_data()
         Uts.save_players_data()
-        
-        # إنشاء بيانات التاجات
         if not hasattr(Uts, 'tags'):
             Uts.create_tags_data()
-        
-        # إضافة المالك الافتراضي
         owner_account = 'pb-IF4yVRIDXA=='
         if owner_account not in Uts.pdata:
             Uts.add_owner(owner_account)
             print(f"✅ Added owner: {owner_account}")
-        
-        # تحميل بيانات الحظر والإبلاغات
         Uts.create_bans_data()
         Uts.create_reports_data()
-        
-        # إرسال رسالة تأكيد
         bs.apptimer(3.0, lambda: Uts.sm("Owner added!", color=(1.0, 0.5, 0.0)))
-        
     except Exception as e:
         print(f"❌ Error initializing data: {e}")
-    
-    # تهيئة نظام التيجان
     if not hasattr(Uts, 'tag_system'):
         Uts.tag_system = TagSystem()
         print("✅ Tag system initialized")
 
 def settings():
-    """تهيئة الإعدادات"""
     global cfg
     Uts.create_settings()
-    
     if cfg.get('Commands') is None:
         cfg['Commands'] = dict()
-        # إعدادات افتراضية
         cfg['Commands']['ShowInfo'] = True
         cfg['Commands']['ShowMessages'] = True
         cfg['Commands']['ChatLive'] = True
@@ -5100,93 +4439,66 @@ def settings():
         cfg['Commands']['InfoColor'] = list(Uts.colors()['white'])
         Uts.save_settings()
         print("✅ Default settings created")
-    
-    # تحميل بيانات الحظر والإبلاغات
     try:
         Uts.create_bans_data()
         Uts.create_reports_data()
         print("✅ Bans and reports systems initialized")
     except Exception as e:
         print(f"⚠️ Error loading bans/reports data: {e}")
-    
     print("✅ Settings loaded successfully")
 
 def plugin():
-    """توصيل الدوال المخصصة باللعبة"""
     try:
-        # حفظ الدوال الأصلية
         calls['GA_OnTransitionIn'] = bs.GameActivity.on_transition_in
         calls['OnJumpPress'] = PlayerSpaz.on_jump_press
         calls['OnPlayerJoin'] = Activity.on_player_join
         calls['PlayerSpazInit'] = PlayerSpaz.__init__
-        
-        # استبدال بالدوال المخصصة
         bs.GameActivity.on_transition_in = new_ga_on_transition_in
         PlayerSpaz.on_jump_press = new_playerspaz_on_jump_press
         Activity.on_player_join = new_on_player_join
         PlayerSpaz.__init__ = new_playerspaz_init_
-        
-        # تفعيل أيقونة الحزب دائمًا
         try:
             bui.set_party_icon_always_visible(True)
         except:
             pass
-        
         print("✅ Plugin functions connected successfully")
-        
     except Exception as e:
         print(f"❌ Error connecting plugin functions: {e}")
 
 def additional_features():
-    """إضافة ميزات إضافية"""
-    
-    # 1. نظام الحماية من الإساءة
     class AbuseProtection:
         def __init__(self):
             self.warning_count = {}
             self.kick_threshold = 3
-            self.mute_duration = 300  # 5 دقائق
-            
+            self.mute_duration = 300
         def warn_player(self, client_id, reason):
             if client_id not in self.warning_count:
                 self.warning_count[client_id] = 0
             self.warning_count[client_id] += 1
-            
             name = Uts.usernames.get(client_id, f"Player {client_id}")
-            bs.screenmessage(f"⚠️ Warning to {name}: {reason}", color=(1, 1, 0))
-            
+            Uts.sm(f"⚠️ Warning to {name}: {reason}", color=(1, 1, 0), clients=[client_id])
             if self.warning_count[client_id] >= self.kick_threshold:
                 bs.disconnect_client(client_id)
                 bs.chatmessage(f"🚫 {name} was kicked for repeated warnings")
                 del self.warning_count[client_id]
-    
     Uts.abuse_protection = AbuseProtection()
-    
-    # 2. نظام الإحصائيات
     class Statistics:
         def __init__(self):
             self.player_stats = {}
-            
         def record_kill(self, killer_id, victim_id):
             if killer_id not in self.player_stats:
                 self.player_stats[killer_id] = {'kills': 0, 'deaths': 0}
             if victim_id not in self.player_stats:
                 self.player_stats[victim_id] = {'kills': 0, 'deaths': 0}
-                
             self.player_stats[killer_id]['kills'] += 1
             self.player_stats[victim_id]['deaths'] += 1
-            
         def get_stats(self, client_id):
             return self.player_stats.get(client_id, {'kills': 0, 'deaths': 0})
-    
     Uts.statistics = Statistics()
-    
-    # 3. نظام المكافآت اليومية
     class DailyRewards:
         def __init__(self):
             self.rewards_file = Uts.directory_user + '/Configs/daily_rewards.json'
             self.rewards_data = self.load_rewards()
-            
         def load_rewards(self):
             try:
                 if os.path.exists(self.rewards_file):
@@ -5195,104 +4507,75 @@ def additional_features():
                 return {}
             except:
                 return {}
-                
         def save_rewards(self):
             try:
                 with open(self.rewards_file, 'w') as f:
                     json.dump(self.rewards_data, f, indent=4)
             except:
                 pass
-                
         def give_reward(self, account_id):
             today = str(datetime.now().date())
             if account_id not in self.rewards_data:
                 self.rewards_data[account_id] = {'last_reward': '', 'streak': 0}
-            
             if self.rewards_data[account_id]['last_reward'] != today:
                 self.rewards_data[account_id]['last_reward'] = today
                 self.rewards_data[account_id]['streak'] += 1
                 self.save_rewards()
-                
-                # مكافأة حسب عدد الأيام المتتالية
                 streak = self.rewards_data[account_id]['streak']
                 reward_msg = f"🎁 Daily Reward! Streak: {streak} days"
                 bs.chatmessage(reward_msg)
                 return True
             return False
-    
     Uts.daily_rewards = DailyRewards()
-    
     print("✅ Additional features initialized")
 
 def setup_automatic_backup():
-    """إعداد النسخ الاحتياطي التلقائي"""
     import shutil
     from datetime import datetime
-    
     backup_dir = Uts.directory_user + '/Backups'
     if not os.path.exists(backup_dir):
         os.makedirs(backup_dir)
-    
     def backup_data():
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            # نسخ بيانات اللاعبين
             players_file = Uts.directory_user + '/Configs/CheatMaxPlayersData.json'
             if os.path.exists(players_file):
                 backup_file = f"{backup_dir}/players_backup_{timestamp}.json"
                 shutil.copy2(players_file, backup_file)
-            
-            # نسخ الإعدادات
             settings_file = Uts.directory_user + '/Configs/CheatMaxSettings.json'
             if os.path.exists(settings_file):
                 backup_file = f"{backup_dir}/settings_backup_{timestamp}.json"
                 shutil.copy2(settings_file, backup_file)
-            
-            # نسخ بيانات الحظر
             bans_file = Uts.directory_user + '/Configs/CheatMaxBansData.json'
             if os.path.exists(bans_file):
                 backup_file = f"{backup_dir}/bans_backup_{timestamp}.json"
                 shutil.copy2(bans_file, backup_file)
-            
-            # نسخ بيانات الإبلاغات
             reports_file = Uts.directory_user + '/Configs/CheatMaxReportsData.json'
             if os.path.exists(reports_file):
                 backup_file = f"{backup_dir}/reports_backup_{timestamp}.json"
                 shutil.copy2(reports_file, backup_file)
-            
-            # حذف النسخ القديمة (احتفظ بـ 10 فقط)
             backup_files = sorted([f for f in os.listdir(backup_dir) if f.endswith('.json')])
             for old_file in backup_files[:-10]:
                 try:
                     os.remove(os.path.join(backup_dir, old_file))
                 except:
                     pass
-                
         except Exception as e:
             print(f"⚠️ Backup error: {e}")
-    
-    # دالة تكرارية للنسخ الاحتياطي
     def backup_loop():
         backup_data()
-        # إعادة الجدولة بعد ساعة
         bs.apptimer(3600.0, backup_loop)
-    
-    # بدء النسخ الاحتياطي التلقائي
     bs.apptimer(3600.0, backup_loop)
     print("✅ Automatic backup system activated")
 
 def setup_performance_monitor():
-    """مراقبة الأداء"""
     import threading
-    
     class PerformanceMonitor:
         def __init__(self):
             self.fps_history = []
             self.max_history = 100
             self.thread = threading.Thread(target=self.monitor, daemon=True)
             self.thread.start()
-            
         def monitor(self):
             import time
             while True:
@@ -5301,17 +4584,13 @@ def setup_performance_monitor():
                     self.fps_history.append(fps)
                     if len(self.fps_history) > self.max_history:
                         self.fps_history.pop(0)
-                    
-                    # تحذير إذا كان الـ FPS منخفض
                     if len(self.fps_history) > 10:
                         avg_fps = sum(self.fps_history[-10:]) / 10
                         if avg_fps < 30:
                             print(f"⚠️ Low FPS: {avg_fps:.1f}")
-                    
                     time.sleep(5)
                 except:
                     time.sleep(10)
-                    
         def get_performance_report(self):
             if not self.fps_history:
                 return "No data"
@@ -5319,92 +4598,72 @@ def setup_performance_monitor():
             min_fps = min(self.fps_history)
             max_fps = max(self.fps_history)
             return f"FPS: Avg {avg_fps:.1f}, Min {min_fps:.1f}, Max {max_fps:.1f}"
-    
     Uts.performance_monitor = PerformanceMonitor()
     print("✅ Performance monitor started")
 
 def add_special_commands():
-    """إضافة أوامر خاصة إضافية"""
-    
-    # قائمة بالأوامر الخاصة
     special_commands = {
-        # أوامر المرح
         'party': {
             'description': 'بدء حفلة!',
             'admin_only': False,
             'function': lambda client_id: start_party(client_id)
         },
-        
-        # أوامر المعلومات
         'stats': {
             'description': 'عرض إحصائياتك',
             'admin_only': False,
             'function': lambda client_id: show_stats(client_id)
         },
-        
-        # أوامر الإبلاغ والحظر
         'ban': {
             'description': 'حظر لاعب (لـAdmins فقط)',
             'admin_only': True,
-            'function': lambda client_id: bs.screenmessage("Use: /ban <player> <reason>", clients=[client_id])
+            'function': lambda client_id: Uts.sm("Use: /ban <player> <reason>", clients=[client_id])
         },
         'unban': {
             'description': 'إلغاء حظر لاعب (لـAdmins فقط)',
             'admin_only': True,
-            'function': lambda client_id: bs.screenmessage("Use: /unban <player>", clients=[client_id])
+            'function': lambda client_id: Uts.sm("Use: /unban <player>", clients=[client_id])
         },
         'report': {
             'description': 'الإبلاغ عن لاعب',
             'admin_only': False,
-            'function': lambda client_id: bs.screenmessage("Use: /report <player> <reason>", clients=[client_id])
+            'function': lambda client_id: Uts.sm("Use: /report <player> <reason>", clients=[client_id])
         },
         'reports': {
             'description': 'عرض الإبلاغات (لـAdmins فقط)',
             'admin_only': True,
-            'function': lambda client_id: bs.screenmessage("Use: /reports", clients=[client_id])
+            'function': lambda client_id: Uts.sm("Use: /reports", clients=[client_id])
         },
         'banlist': {
             'description': 'عرض قائمة الحظر (لـAdmins فقط)',
             'admin_only': True,
-            'function': lambda client_id: bs.screenmessage("Use: /banlist", clients=[client_id])
+            'function': lambda client_id: Uts.sm("Use: /banlist", clients=[client_id])
         }
     }
-    
     def start_party(client_id):
         activity = bs.get_foreground_host_activity()
         if activity:
             for _ in range(50):
                 pos = (random.uniform(-5, 5), random.uniform(2, 10), random.uniform(-5, 5))
                 Bomb(position=pos, bomb_type='impact', bomb_scale=0.5).autoretain()
-            bs.screenmessage("🎉 PARTY TIME! 🎉", clients=[client_id], color=(1,0,1))
-    
+            Uts.sm("🎉 PARTY TIME! 🎉", clients=[client_id], color=(1,0,1))
     def show_stats(client_id):
         if client_id in Uts.statistics.player_stats:
             stats = Uts.statistics.player_stats[client_id]
             message = f"📊 Kills: {stats['kills']} | Deaths: {stats['deaths']}"
-            bs.screenmessage(message, clients=[client_id])
+            Uts.sm(message, clients=[client_id])
         else:
-            bs.screenmessage("📊 No stats yet", clients=[client_id])
-    
-    # إضافة الأوامر إلى نظام الأوامر
+            Uts.sm("📊 No stats yet", clients=[client_id])
     for cmd, data in special_commands.items():
         CommandFunctions.all_cmd().append(cmd)
-    
     print(f"✅ Added {len(special_commands)} special commands")
 
 def final_setup():
-    """الإعداد النهائي بعد التحميل"""
-    
-    # التحقق من وجود النظام
     if not hasattr(bs, 'app') or not hasattr(bs.app, 'cheatmax_filter_chat'):
         print("⚠️ CheatMax system not fully initialized")
-        # المحاولة لإعادة التعيين
         try:
             bs.app.cheatmax_filter_chat = filter_chat_message
         except:
             pass
-    
-    # عرض رسالة ترحيب
     welcome_msg = f"""
 ╔══════════════════════════════════════════╗
 ║       🎮 CheatMax System v2.0 🎮        ║
@@ -5418,73 +4677,69 @@ def final_setup():
 ║ • Report System: ✓ Active              ║
 ╚══════════════════════════════════════════╝
     """
-    
     for line in welcome_msg.split('\n'):
         print(line)
-    
-    # بدء النظام
     try:
         Uts.tag_system.start_game_monitoring()
     except:
         pass
-    
     print("✅ CheatMax system ready!")
 
 # ==================== الفئة الرئيسية للمود ====================
-
 # ba_meta export babase.Plugin
 class CheatMaxSystem(bs.Plugin):
-    """نظام CheatMax المتقدم للتحكم والإدارة في BombSquad"""
-    
     def __init__(self):
         self.initialized = False
         self.version = "2.0.0"
         self.author = "CheatMax Team"
+        self._hooked = False
         
     def on_app_running(self) -> None:
-        """عند تشغيل التطبيق"""
         try:
             print(f"🚀 Loading CheatMax System v{self.version}...")
-            
-            # تأخير بسيط لضمان تحميل كل شيء
+            # منع التهيئة المزدوجة
+            if self.initialized:
+                return
             bs.apptimer(0.5, self.initialize_system)
-            
         except Exception as e:
             print(f"❌ Error in on_app_running: {e}")
     
     def initialize_system(self):
-        """تهيئة النظام"""
+        if self.initialized:
+            return
         try:
-            # 1. توصيل الدوال
+            # 1. ربط فلتر الشات في الذاكرة (لا يحتاج ملفات)
+            hook_chat_filter()
+            bs.app.cheatmax_filter_chat = filter_chat_message
+            
+            # 2. توصيل الدوال
             plugin()
             
-            # 2. تحميل الإعدادات
+            # 3. تحميل الإعدادات
             settings()
             
-            # 3. تثبيت النظام
-            bs.apptimer(1.0, _install)
+            # 4. تثبيت النظام (بدون تعديل ملفات)
+            _install()
             
-            # 4. الميزات الإضافية
+            # 5. الميزات الإضافية
             bs.apptimer(2.0, additional_features)
             
-            # 5. النسخ الاحتياطي التلقائي
+            # 6. النسخ الاحتياطي التلقائي
             bs.apptimer(3.0, setup_automatic_backup)
             
-            # 6. مراقبة الأداء
+            # 7. مراقبة الأداء
             bs.apptimer(4.0, setup_performance_monitor)
             
-            # 7. الأوامر الخاصة
+            # 8. الأوامر الخاصة
             bs.apptimer(5.0, add_special_commands)
             
-            # 8. الإعداد النهائي
+            # 9. الإعداد النهائي
             bs.apptimer(6.0, final_setup)
             
             self.initialized = True
             print("✅ CheatMax System initialization sequence started")
-            
         except Exception as e:
             print(f"❌ Error initializing system: {e}")
-            # المحاولة للاستمرار بأقل الميزات
             try:
                 plugin()
                 settings()
@@ -5492,16 +4747,12 @@ class CheatMaxSystem(bs.Plugin):
             except:
                 print("❌ Failed to load minimal system")
 
-# ==================== التعامل مع الأخطاء ====================
-
 def error_handler(func):
-    """معالج أخطاء للدوال المهمة"""
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
         except Exception as e:
             print(f"⚠️ Error in {func.__name__}: {e}")
-            # تسجيل الخطأ في ملف
             try:
                 error_log = Uts.directory_user + '/Configs/cheatmax_errors.log'
                 with open(error_log, 'a') as f:
@@ -5511,24 +4762,17 @@ def error_handler(func):
             return None
     return wrapper
 
-# تطبيق معالج الأخطاء على الدوال المهمة
 filter_chat_message = error_handler(filter_chat_message)
 new_ga_on_transition_in = error_handler(new_ga_on_transition_in)
 new_on_player_join = error_handler(new_on_player_join)
 new_playerspaz_init_ = error_handler(new_playerspaz_init_)
 new_playerspaz_on_jump_press = error_handler(new_playerspaz_on_jump_press)
 
-# ==================== اختبار النظام ====================
-
 def system_test():
-    """اختبار النظام للتأكد من عمله"""
     def run_tests():
         print("🧪 Running system tests...")
-        
         tests_passed = 0
         tests_failed = 0
-        
-        # اختبار 1: وجود الملفات
         try:
             if os.path.exists(Uts.directory_user + '/Configs'):
                 print("✅ Test 1: Config directory exists")
@@ -5538,8 +4782,6 @@ def system_test():
                 tests_failed += 1
         except:
             tests_failed += 1
-        
-        # اختبار 2: نظام التيجان
         try:
             if hasattr(Uts, 'tag_system'):
                 print("✅ Test 2: Tag system initialized")
@@ -5549,8 +4791,6 @@ def system_test():
                 tests_failed += 1
         except:
             tests_failed += 1
-        
-        # اختبار 3: بيانات اللاعبين
         try:
             if hasattr(Uts, 'pdata'):
                 print("✅ Test 3: Player data loaded")
@@ -5560,8 +4800,6 @@ def system_test():
                 tests_failed += 1
         except:
             tests_failed += 1
-        
-        # اختبار 4: الإعدادات
         try:
             global cfg
             if cfg and 'Commands' in cfg:
@@ -5572,8 +4810,6 @@ def system_test():
                 tests_failed += 1
         except:
             tests_failed += 1
-        
-        # اختبار 5: نظام الحظر
         try:
             if hasattr(Uts, 'bans_data'):
                 print(f"✅ Test 5: Ban system initialized ({len(Uts.bans_data)} bans)")
@@ -5583,8 +4819,6 @@ def system_test():
                 tests_failed += 1
         except:
             tests_failed += 1
-        
-        # اختبار 6: نظام الإبلاغات
         try:
             if hasattr(Uts, 'reports_data'):
                 print(f"✅ Test 6: Reports system initialized ({len(Uts.reports_data.get('reports', []))} reports)")
@@ -5594,29 +4828,25 @@ def system_test():
                 tests_failed += 1
         except:
             tests_failed += 1
-        
-        # اختبار 7: نظام ربط PB-ID
+        # Test 7: التحقق من أن فلتر الشات مُطعَّم
         try:
-            if hasattr(Uts, 'userpbs') and isinstance(Uts.userpbs, dict):
-                print("✅ Test 7: PB-ID mapping system available")
+            import bascenev1._hooks
+            # نتحقق إذا كانت دالة الفلتر هي الـ wrapped function
+            if hasattr(bascenev1._hooks.filter_chat_message, '__wrapped__'):
+                print("✅ Test 7: Chat filter hooked successfully")
                 tests_passed += 1
             else:
-                print("❌ Test 7: PB-ID mapping system not available")
+                print("❌ Test 7: Chat filter not hooked")
                 tests_failed += 1
         except:
             tests_failed += 1
-        
         print(f"📊 Test Results: {tests_passed} passed, {tests_failed} failed")
-        
         if tests_failed == 0:
             print("🎉 All tests passed! System is ready.")
         else:
             print("⚠️ Some tests failed. System may have issues.")
-    
-    # تشغيل الاختبارات بعد 10 ثواني
     bs.apptimer(10.0, run_tests)
 
-# تشغيل اختبار النظام
 bs.apptimer(8.0, system_test)
 
 print("=" * 50)
