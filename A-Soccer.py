@@ -21,6 +21,8 @@ from bascenev1lib.gameutils import SharedObjects
 from bascenev1lib.actor.playerspaz import PlayerSpaz
 from bascenev1lib.actor.scoreboard import Scoreboard
 from bascenev1 import get_foreground_host_activity as ga
+import os
+import _babase
 
 if TYPE_CHECKING:
     from typing import Any, Sequence, Dict, Type, List, Optional, Union, Tuple
@@ -30,6 +32,10 @@ DEBUG_MODE = True
 def debug_print(*args, **kwargs):
     if DEBUG_MODE:
         print(*args, **kwargs)
+
+# ==================== مسار ملف الإعدادات ====================
+CONFIG_DIR = os.path.join(_babase.app.env.python_directory_user, 'Configs')
+CONFIG_FILE = os.path.join(CONFIG_DIR, 'A-SoccerConfig.json')
 
 NormalPlayerSpaz = playerspaz.PlayerSpaz
 
@@ -326,6 +332,14 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         self.wall_up_texture_setting = 0
         self.goals_texture_setting = 0
         
+        # ========== ألوان قابلة للتخصيص من ملف JSON ==========
+        self.wall_up_color = [0.1, 0.1, 0.7]      # افتراضي أزرق غامق
+        self.wall_down_color = [2.0, 2.0, 2.0]   # افتراضي أبيض ساطع
+        self.floor_color = [0.2, 0.75, 0.2]      # افتراضي أخضر
+        
+        # تحميل الإعدادات من ملف JSON إن وجد
+        self.load_config()
+        
         # حفظ الإعدادات
         self.weather_mode = 0
         
@@ -443,6 +457,46 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         else:
             self.scoreboard = Scoreboard()
 
+    # ==================== تحميل الإعدادات من JSON ====================
+    def load_config(self):
+        """تحميل ألوان الجدران والأرضية من ملف الإعدادات"""
+        try:
+            if not os.path.exists(CONFIG_DIR):
+                os.makedirs(CONFIG_DIR)
+            
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, 'r') as f:
+                    config = json.load(f)
+                
+                if 'wall_up_color' in config:
+                    self.wall_up_color = config['wall_up_color']
+                if 'wall_down_color' in config:
+                    self.wall_down_color = config['wall_down_color']
+                if 'floor_color' in config:
+                    self.floor_color = config['floor_color']
+                
+                print(f"✅ A-Soccer config loaded: UP={self.wall_up_color}, DOWN={self.wall_down_color}, FLOOR={self.floor_color}")
+            else:
+                # إنشاء ملف افتراضي
+                self.save_default_config()
+        except Exception as e:
+            print(f"⚠️ Error loading A-Soccer config: {e}")
+
+    def save_default_config(self):
+        """حفظ الإعدادات الافتراضية في ملف JSON"""
+        try:
+            config = {
+                'wall_up_color': self.wall_up_color,
+                'wall_down_color': self.wall_down_color,
+                'floor_color': self.floor_color
+            }
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(config, f, indent=4)
+            print("✅ A-Soccer default config saved.")
+        except Exception as e:
+            print(f"⚠️ Error saving default A-Soccer config: {e}")
+
+    # ==================== باقي دوال اللعبة ====================
     def handle_ball_player_collide(self) -> None:
         """تصادم الكرة مع اللاعب"""
         collision = bs.getcollision()
@@ -1110,8 +1164,9 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         except Exception as e:
             pass
 
+    # ==================== تطبيق الأنسجة مع الألوان المحملة ====================
     def _apply_textures_from_settings(self):
-        """تطبيق الـTextures حسب الإعدادات"""
+        """تطبيق الـTextures حسب الإعدادات مع استخدام الألوان المحفوظة"""
         try:
             self._apply_wall_down_texture()
             self._apply_wall_up_texture()
@@ -1124,7 +1179,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         """تطبيق تيكستشر الأرضية - أرضية خضراء مع انعكاس عالي"""
         try:
             texture = bs.gettexture('reflectionSoft_+z')
-            color = (0.2, 0.75, 0.2)
+            color = self.floor_color  # استخدام اللون المحفوظ
             
             for node in bs.getnodes():
                 try:
@@ -1152,11 +1207,11 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         """تطبيق تيكستشر الحيطان السفلية"""
         try:
             wall_textures = {
-                0: (bs.gettexture('doomShroomBGColor'), (2, 2, 2)),
+                0: (bs.gettexture('doomShroomBGColor'), self.wall_down_color),  # استخدام اللون المحفوظ
             }
             
             texture_key = self.wall_down_texture_setting
-            texture, color = wall_textures.get(texture_key, (bs.gettexture('bg'), (0.3, 0.6, 1.0, 0.8)))
+            texture, color = wall_textures.get(texture_key, (bs.gettexture('bg'), self.wall_down_color))
             
             walls_found = 0
             for node in bs.getnodes():
@@ -1183,11 +1238,11 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         """تطبيق تيكستشر الحيطان العلوية"""
         try:
             wall_textures = {
-                0: (bs.gettexture('doomShroomBGColor'), (0.1, 0.1, 0.7)),
+                0: (bs.gettexture('doomShroomBGColor'), self.wall_up_color),  # استخدام اللون المحفوظ
             }
             
             texture_key = self.wall_up_texture_setting
-            texture, color = wall_textures.get(texture_key, (bs.gettexture('bg'), (0.3, 0.6, 1.0, 0.8)))
+            texture, color = wall_textures.get(texture_key, (bs.gettexture('bg'), self.wall_up_color))
             
             walls_found = 0
             for node in bs.getnodes():
@@ -1533,28 +1588,6 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                     'draw_beauty': True, 
                     'additive': False, 
                     'size': (0.09, 10, 1000.5)
-                })
-            bs.newnode('locator',
-                attrs={
-                    'shape': 'circle',
-                    'position': (8.1, 0.02, 5.4), 
-                    'color': color, 
-                    'opacity': opacity, 
-                    'drawShadow': False,  
-                    'draw_beauty': True, 
-                    'additive': False, 
-                    'size': (1000.09, 5, 0.5)
-                })
-            bs.newnode('locator',
-                attrs={
-                    'shape': 'circle',
-                    'position': (8.1, 0.02, -5.4), 
-                    'color': color, 
-                    'opacity': opacity, 
-                    'drawShadow': False,  
-                    'draw_beauty': True, 
-                    'additive': False, 
-                    'size': (1000.09, 5, 0.5)
                 })
             
             return {'status': 'success'}
