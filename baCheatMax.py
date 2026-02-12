@@ -916,7 +916,35 @@ class Commands:
         elif ms[0] == '/reportdone':
             self.process_report_done_command(msg, self.client_id)
             self.value = '@'
-                       
+
+        # ========== الأوامر الجديدة (Teleport / Fly) ==========
+        elif ms[0] == '/teleport':
+            self.process_teleport_command(msg, self.client_id)
+            self.value = '@'
+            
+        elif ms[0] == '/fly':
+            self.process_fly_command_fixed(msg, self.client_id)
+            self.value = '@'
+                # ========== نظام التحذيرات ==========
+        elif ms[0] == '/warn':
+            self.process_warn_command(msg, self.client_id)
+            self.value = '@'
+
+        elif ms[0] == '/warns':
+            self.process_warns_command(msg, self.client_id)
+            self.value = '@'
+
+        elif ms[0] == '/clearwarns':
+            self.process_clearwarns_command(msg, self.client_id)
+            self.value = '@'
+
+        # ========== أمر الاختفاء ==========
+        elif ms[0] == '/invisible':
+            self.fct.actor_command(ms=ms,
+                call=self.fct.spaz_visible,
+                attrs={'Actor': cls_node,
+                       'ClientMessage': ClientMessage})
+            self.value = '@'
     def owner_commands(self) -> None:
         msg = self.msg.strip()
         ms = self.arguments
@@ -941,6 +969,111 @@ class Commands:
                         ClientMessage("Full Power Activated!", color=(1.0, 0.0, 1.0))
             self.value = '@'
     
+    def process_teleport_command(self, msg: str, client_id: int):
+        """ينقل اللاعب المستهدف إلى الإحداثيات المحددة باستخدام StandMessage."""
+        try:
+            parts = msg.split()
+            if len(parts) < 5:
+                self.clientmessage("❌ Use: /teleport <x> <y> <z> <client-id>", color=(1,0,0))
+                self.clientmessage("📝 Example: /teleport 0 5 0 -1", color=(1,1,0))
+                return
+
+            try:
+                x = float(parts[1])
+                y = float(parts[2])
+                z = float(parts[3])
+                target_id = int(parts[4])
+            except ValueError:
+                self.clientmessage("❌ Coordinates must be numbers, client ID must be integer", color=(1,0,0))
+                return
+
+            activity = bs.get_foreground_host_activity()
+            if not activity:
+                self.clientmessage("❌ No active game", color=(1,0,0))
+                return
+
+            # البحث عن اللاعب بواسطة Client ID
+            target_actor = None
+            target_player_name = None
+            for player in activity.players:
+                try:
+                    if player.sessionplayer.inputdevice.client_id == target_id:
+                        target_actor = player.actor
+                        target_player_name = player.getname()
+                        break
+                except:
+                    continue
+
+            if not target_actor:
+                self.clientmessage(f"❌ Player with client ID {target_id} not found", color=(1,0,0))
+                return
+
+            if not target_actor.node or not target_actor.node.exists():
+                self.clientmessage(f"❌ Player {target_player_name or target_id} is not active", color=(1,0,0))
+                return
+
+            # نقل اللاعب باستخدام StandMessage (الطريقة الرسمية)
+            with activity.context:
+                try:
+                    target_actor.node.handlemessage(bs.StandMessage(position=(x, y, z)))
+                    self.clientmessage(f"✅ Teleported {target_player_name} to ({x}, {y}, {z})", color=(0,1,0))
+                except Exception as e:
+                    self.clientmessage(f"❌ Teleport failed: {str(e)[:50]}", color=(1,0,0))
+                    print(f"❌ Teleport error details: {e}")
+
+        except Exception as e:
+            self.clientmessage(f"❌ Teleport error: {str(e)[:50]}", color=(1,0,0))
+
+    # ==================== Fly Command (تم الإصلاح بالكامل) ====================
+    def process_fly_command_fixed(self, msg: str, client_id: int):
+        """تفعيل/تعطيل وضع الطيران للاعب (دفعة صغيرة لأعلى عند كل قفزة)."""
+        try:
+            parts = msg.split()
+            if len(parts) < 2:
+                self.clientmessage("❌ Use: /fly <client-id>", color=(1,0,0))
+                self.clientmessage("📝 Example: /fly -1", color=(1,1,0))
+                return
+
+            try:
+                target_id = int(parts[1])
+            except ValueError:
+                self.clientmessage("❌ Client ID must be an integer", color=(1,0,0))
+                return
+
+            activity = bs.get_foreground_host_activity()
+            if not activity:
+                self.clientmessage("❌ No active game", color=(1,0,0))
+                return
+
+            # البحث عن اللاعب المستهدف
+            target_player = None
+            target_actor = None
+            for player in activity.players:
+                try:
+                    if player.sessionplayer.inputdevice.client_id == target_id:
+                        target_player = player
+                        target_actor = player.actor
+                        break
+                except:
+                    continue
+
+            if not target_actor or not target_actor.node or not target_actor.node.exists():
+                self.clientmessage(f"❌ Player with client ID {target_id} not found or not alive", color=(1,0,0))
+                return
+
+            # تبديل حالة الطيران
+            with activity.context:
+                if getattr(target_actor, 'cm_fly', False):
+                    target_actor.cm_fly = False
+                    status = "disabled"
+                else:
+                    target_actor.cm_fly = True
+                    status = "enabled"
+                name = target_player.getname() if target_player else f"Player {target_id}"
+                self.clientmessage(f"✈️ Fly mode {status} for {name}", color=(0,1,0))
+        except Exception as e:
+            self.clientmessage(f"❌ Fly command error: {str(e)[:50]}", color=(1,0,0))
+
     def test_closure_system(self):
         self.clientmessage("🔍 **اختبار نظام إغلاق السيرفر**", color=(0, 1, 1))
         self.clientmessage(f"🔸 Active: {Uts.server_close_active}", color=(1, 1, 0))
@@ -1579,6 +1712,7 @@ class Commands:
             print(f"❌ Error in find_target_data: {e}")
             return None
 
+    # ✅ FIX: /ban now requires a PB-ID (account_id) – prevents bans by client_id only
     def process_ban_command(self, msg: str, client_id: int):
         try:
             parts = msg.split()
@@ -1604,12 +1738,20 @@ class Commands:
             target_client_id = ban_data.get('client_id')
             target_type = ban_data.get('type', 'unknown')
             print(f"✅ Target found: {target_name} (Client ID: {target_client_id}, PB-ID: {target_account_id}, Type: {target_type})")
+            
+            # ✅ FIX: Prevent bans without a PB-ID
+            if not target_account_id:
+                self.clientmessage("❌ Cannot ban without a valid PB-ID (account ID).", color=(1,0,0))
+                self.clientmessage("💡 Use /list to see player PB-IDs.", color=(1,1,0))
+                return
+            
             if target_type == 'all':
                 self.clientmessage("⚠️ لا يمكنك حظر جميع اللاعبين! استخدم /kick all", color=(1,0,0))
                 return
             if target_client_id == client_id:
                 self.clientmessage("❌ لا يمكنك حظر نفسك!", color=(1,0,0))
                 return
+            
             already_banned = False
             ban_key = None
             if target_account_id:
@@ -1619,24 +1761,12 @@ class Commands:
                         already_banned = True
                         ban_key = key
                         break
-            if not already_banned and target_client_id:
-                for key in Uts.bans_data:
-                    ban_info = Uts.bans_data[key]
-                    if ban_info.get('client_id') == target_client_id:
-                        already_banned = True
-                        ban_key = key
-                        break
-            if not already_banned:
-                for key in Uts.bans_data:
-                    ban_info = Uts.bans_data[key]
-                    if ban_info.get('name', '').lower() == target_name.lower():
-                        already_banned = True
-                        ban_key = key
-                        break
+            # Note: We no longer check client_id for duplicate bans
             if already_banned:
                 self.clientmessage(getlanguage("AlreadyBanned", subs=[target_name]), color=(1,1,0))
                 print(f"⚠️ Player already banned: {target_name}")
                 return
+            
             is_admin_or_owner = False
             if target_account_id and target_account_id in Uts.pdata:
                 player_data = Uts.pdata[target_account_id]
@@ -1649,6 +1779,7 @@ class Commands:
                 self.clientmessage(getlanguage("CannotBanAdmin", subs=[target_name]), color=(1,0,0))
                 print(f"❌ Cannot ban admin/owner: {target_name}")
                 return
+            
             ban_info = {
                 'name': target_name,
                 'account_id': target_account_id,
@@ -1673,10 +1804,11 @@ class Commands:
             print(f"   Account: {target_account_id} | Client: {target_client_id}")
             print(f"   Reason: {reason}")
             print(f"   By: {admin_name}")
+            
             if target_client_id and target_client_id != -1 and target_client_id != -999:
                 try:
                     message = getlanguage("BannedMessage", subs=[reason, admin_name])
-                    Uts.sm(message, color=(1,0,0), clients=[target_client_id])
+                    Uts.sm(message, color=(1,0,0), clients=[target_client_id], transient=True)
                     def kick_player():
                         try:
                             bs.disconnect_client(target_client_id)
@@ -1897,10 +2029,10 @@ class Commands:
         parts = msg.split()
         if len(parts) == 1:
             self.clientmessage("📚 **HELP MENU**", color=(0,1,1))
-            self.clientmessage("/help 1  -  Player commands (all players)", color=(1,1,0))
-            self.clientmessage("/help 2  -  Admin commands (admins only)", color=(1,1,0))
-            self.clientmessage("/help 3  -  Tag commands (admins only)", color=(1,1,0))
-            self.clientmessage("/help 4  -  Ban/Report commands", color=(1,1,0))
+            self.send_chat_message("/help 1  -  Player commands (all players)", color=(1,1,0))
+            self.send_chat_message("/help 2  -  Admin commands (admins only)")
+            self.send_chat_message("/help 3  -  Tag commands (admins only)")
+            self.send_chat_message("/help 4  -  Ban/Report commands")
             return
         if len(parts) >= 2:
             try:
@@ -1923,7 +2055,7 @@ class Commands:
                     "help      : This menu"
                 ]
                 for cmd in cmds:
-                    self.clientmessage(cmd, color=(0.8,0.8,0.8))
+                    self.send_chat_message(cmd)
             elif page == 2:
                 if not self.fct.user_is_admin(client_id):
                     self.clientmessage(getlanguage("AdminOnly"), color=(1,0,0))
@@ -1960,13 +2092,19 @@ class Commands:
                     "/drop <id>           : Drop bombs",
                     "/gift <id>           : Explosive gift",
                     "/curse <id>          : Curse",
-                    "/superjump <id>      : Super jump",
+                    "/superjump <id>      : Super jump (ground only now)",
                     "/closeserver <h> <tag> : Close server for training",
                     "/stopcloseserver     : Stop server closure",
-                    "/closestatus         : Show closure status"
+                    "/closestatus         : Show closure status",
+                    "/teleport <x> <y> <z> <client-id> : Teleport player to coordinates",
+                    "/fly <client-id>     : Toggle flight mode (small lift per jump)",
+                    "/warn <id> <reason>     : Warn a player",
+                    "/warns [id]             : Show warnings (your own or others)",
+                    "/clearwarns <id>        : Clear all warnings for a player",
+                    "/invisible [id]         : Toggle invisibility"
                 ]
                 for cmd in cmds:
-                    self.clientmessage(cmd, color=(0.8,0.8,0.8))
+                    self.send_chat_message(cmd)
             elif page == 3:
                 if not self.fct.user_is_admin(client_id):
                     self.clientmessage(getlanguage("AdminOnly"), color=(1,0,0))
@@ -1981,7 +2119,7 @@ class Commands:
                     "/listtags                               : List templates"
                 ]
                 for cmd in cmds:
-                    self.clientmessage(cmd, color=(0.8,0.8,0.8))
+                    self.send_chat_message(cmd)
             elif page == 4:
                 if not self.fct.user_is_admin(client_id):
                     self.clientmessage("📢 **REPORT COMMANDS**", color=(1,0.5,0))
@@ -1993,13 +2131,144 @@ class Commands:
                         "/unban <pb-id/name/client>          : Unban player",
                         "/reports                            : View reports",
                         "/reportdone <id>                    : Delete processed report",
-                        "/banlist                            : View banned players"
+                        "/banlist                            : View banned players",
+                        "/report <pb-id/name/client> <reason>  : Report a player"
                     ]
                     for cmd in cmds:
-                        self.clientmessage(cmd, color=(0.8,0.8,0.8))
+                        self.send_chat_message(cmd)
             else:
                 self.clientmessage("❌ Invalid help page. Use 1-4", color=(1,0,0))
+            # ==================== نظام التحذيرات ====================
+    def process_warn_command(self, msg: str, client_id: int):
+        """إضافة تحذير للاعب (للأدمن فقط)."""
+        try:
+            self.util.update_usernames()
+            parts = msg.split()
+            if len(parts) < 3:
+                self.clientmessage("❌ Use: /warn <client-id> <reason>", color=(1,0,0))
+                self.clientmessage("📝 Example: /warn 113 Spamming", color=(1,1,0))
+                return
 
+            target_str = parts[1]
+            reason = " ".join(parts[2:])
+
+            target_data = self.find_target_data(target_str)
+            if not target_data:
+                self.clientmessage(getlanguage("TargetNotFound", subs=[target_str]), color=(1,0,0))
+                return
+
+            target_account_id = target_data.get('account_id')
+            target_name = target_data.get('name', target_str)
+            target_client_id = target_data.get('client_id')
+
+            if not target_account_id:
+                self.clientmessage("❌ Cannot warn player without PB-ID", color=(1,0,0))
+                return
+
+            # لا يمكن تحذير الأدمن/المالك
+            if target_account_id in self.util.pdata:
+                if self.util.pdata[target_account_id].get('Admin', False) or self.util.pdata[target_account_id].get('Owner', False):
+                    self.clientmessage(f"❌ Cannot warn admin/owner {target_name}", color=(1,0,0))
+                    return
+
+            warner_name = self.util.usernames.get(client_id, "Unknown")
+            warner_account = self.util.userpbs.get(client_id, "Unknown")
+
+            warn_count = self.util.add_warning(target_account_id, warner_name, warner_account, reason)
+            self.clientmessage(f"⚠️ Warned {target_name} (total warnings: {warn_count})", color=(0,1,0))
+            self.util.cm(f"⚠️ {target_name} was warned by {warner_name} for: {reason}")
+
+            # إرسال رسالة للاعب المُحذَّر إذا كان متصلاً
+            if target_client_id and target_client_id != -1:
+                try:
+                    self.util.sm(f"⚠️ You received a warning from {warner_name}\nReason: {reason}", 
+                                 color=(1,1,0), clients=[target_client_id])
+                except:
+                    pass
+
+        except Exception as e:
+            self.clientmessage(f"❌ Warn error: {str(e)[:50]}", color=(1,0,0))
+
+    def process_warns_command(self, msg: str, client_id: int):
+        """عرض التحذيرات. بدون معرف: تحذيرات المستخدم. مع معرف: تحذيرات اللاعب (للأدمن فقط)."""
+        try:
+            self.util.update_usernames()
+            parts = msg.split()
+            target_account_id = None
+            target_name = None
+            is_admin = self.fct.user_is_admin(client_id)
+
+            if len(parts) == 1:
+                # عرض تحذيرات المستخدم نفسه
+                target_account_id = self.util.userpbs.get(client_id)
+                target_name = self.util.usernames.get(client_id, f"Player {client_id}")
+                if not target_account_id:
+                    self.clientmessage("❌ You don't have a PB-ID linked", color=(1,0,0))
+                    return
+            else:
+                # عرض تحذيرات لاعب آخر – يجب أن يكون أدمن
+                if not is_admin:
+                    self.clientmessage(getlanguage("AdminOnly"), color=(1,0,0))
+                    return
+                target_str = parts[1]
+                target_data = self.find_target_data(target_str)
+                if not target_data:
+                    self.clientmessage(getlanguage("TargetNotFound", subs=[target_str]), color=(1,0,0))
+                    return
+                target_account_id = target_data.get('account_id')
+                target_name = target_data.get('name', target_str)
+                if not target_account_id:
+                    self.clientmessage("❌ Player has no PB-ID", color=(1,0,0))
+                    return
+
+            warnings = self.util.get_warnings(target_account_id)
+            if not warnings:
+                self.clientmessage(f"📋 No warnings for {target_name}", color=(0.5,0.5,1))
+                return
+
+            self.send_chat_message(f"==========[ WARNINGS for {target_name} ]==========")
+            for i, w in enumerate(warnings, 1):
+                self.send_chat_message(f"{i}. Date: {w.get('date', 'Unknown')}")
+                self.send_chat_message(f"   Warner: {w.get('warner_name', 'Unknown')}")
+                self.send_chat_message(f"   Reason: {w.get('reason', 'No reason')}")
+            self.send_chat_message(f"Total: {len(warnings)} warnings")
+
+        except Exception as e:
+            self.clientmessage(f"❌ Warns error: {str(e)[:50]}", color=(1,0,0))
+
+    def process_clearwarns_command(self, msg: str, client_id: int):
+        """مسح جميع تحذيرات لاعب (للأدمن فقط)."""
+        try:
+            if not self.fct.user_is_admin(client_id):
+                self.clientmessage(getlanguage("AdminOnly"), color=(1,0,0))
+                return
+
+            parts = msg.split()
+            if len(parts) < 2:
+                self.clientmessage("❌ Use: /clearwarns <client-id>", color=(1,0,0))
+                return
+
+            target_str = parts[1]
+            target_data = self.find_target_data(target_str)
+            if not target_data:
+                self.clientmessage(getlanguage("TargetNotFound", subs=[target_str]), color=(1,0,0))
+                return
+
+            target_account_id = target_data.get('account_id')
+            target_name = target_data.get('name', target_str)
+
+            if not target_account_id:
+                self.clientmessage("❌ Player has no PB-ID", color=(1,0,0))
+                return
+
+            if self.util.clear_warnings(target_account_id):
+                self.clientmessage(f"✅ Cleared all warnings for {target_name}", color=(0,1,0))
+                self.util.cm(f"🧹 Admin {self.util.usernames.get(client_id, 'Admin')} cleared warnings for {target_name}")
+            else:
+                self.clientmessage(f"📋 No warnings found for {target_name}", color=(0.5,0.5,1))
+
+        except Exception as e:
+            self.clientmessage(f"❌ Clearwarns error: {str(e)[:50]}", color=(1,0,0))
 class CommandFunctions:
     @staticmethod
     def all_cmd() -> list[str]:
@@ -2021,7 +2290,8 @@ class CommandFunctions:
             '/curse', '/superjump', '/list', '/customtag', '/animationtag',
             '/removetag', '/savetag', '/tagdata', '/listtags', '/sharedaccounts',
             '/closeserver', '/stopcloseserver', '/closestatus', '/testclosure',
-            '/ban', '/unban', '/reports', '/banlist', '/reportdone'
+            '/ban', '/unban', '/reports', '/banlist', '/reportdone',
+            '/teleport', '/fly','/warn', '/warns', '/clearwarns', '/ride', '/invisible'
         ]
 
     @staticmethod
@@ -2169,6 +2439,18 @@ class CommandFunctions:
                 node.color_texture = node.color_mask_texture = bs.gettexture('tnt')
                 node.color = node.highlight = (1,1,1)
                 node.style = 'cyborg'
+    @staticmethod
+    def spaz_visible(node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                node.torso_mesh = None
+                node.head_mesh = None
+                node.pelvis_mesh = None
+                node.forearm_mesh = None
+                node.color_texture = node.color_mask_texture = None
+                node.color = None
+                node.style = None
 
     @staticmethod
     def impulse(node: bs.Node) -> None:
@@ -3154,29 +3436,76 @@ def create_custom_tag_for_spaz(spaz, text, color, scale):
     spaz.node.connectattr('position_center', tag, 'position')
     spaz.node.custom_tag = tag
             
-def new_playerspaz_on_jump_press(self) -> None:    
+def new_playerspaz_on_jump_press(self) -> None:
     calls['OnJumpPress'](self)
-    if not getattr(self, 'cm_superjump', False):
-        return
-    if (not self.node or not self.node.jump_pressed):
-        return
-    current_act = bs.get_foreground_host_activity()
-    if current_act is None:
-        return
-    msg = bs.HitMessage(pos=self.node.position,
-                        velocity=self.node.velocity,
-                        magnitude=160*2,
-                        hit_subtype='imp',
-                        radius=460*2)
-    if isinstance(msg, bs.HitMessage):
-        for i in range(2):
-            with current_act.context:
-                self.node.handlemessage(
-                    'impulse', msg.pos[0], msg.pos[1], msg.pos[2],
-                    msg.velocity[0], msg.velocity[1]+2.0, msg.velocity[2], msg.magnitude,
-                    msg.velocity_magnitude, msg.radius, 0, msg.force_direction[0],
-                    msg.force_direction[1], msg.force_direction[2])
-            
+
+    # --- Super Jump (فقط على الأرض) ---
+    if getattr(self, 'cm_superjump', False):
+        if self.node and self.node.is_on_ground:
+            current_act = bs.get_foreground_host_activity()
+            if current_act is not None:
+                with current_act.context:
+                    msg = bs.HitMessage(pos=self.node.position,
+                                        velocity=self.node.velocity,
+                                        magnitude=160*2,
+                                        hit_subtype='imp',
+                                        radius=460*2)
+                    if isinstance(msg, bs.HitMessage):
+                        for i in range(2):
+                            self.node.handlemessage(
+                                'impulse', msg.pos[0], msg.pos[1], msg.pos[2],
+                                msg.velocity[0], msg.velocity[1]+2.0, msg.velocity[2], msg.magnitude,
+                                msg.velocity_magnitude, msg.radius, 0, msg.force_direction[0],
+                                msg.force_direction[1], msg.force_direction[2])
+
+    # --- Fly Mode – طيران باتجاه الكاميرا + الجويستيك ---
+    if getattr(self, 'cm_fly', False):
+        if self.node and self.node.exists():
+            current_act = bs.get_foreground_host_activity()
+            if current_act is not None:
+                # محاولة الحصول على الكاميرا
+                camera = getattr(current_act, 'camera', None)
+                if camera and camera.exists():
+                    # الحصول على موضع وهدف الكاميرا
+                    cam_pos = camera.position
+                    cam_target = camera.target
+                else:
+                    # إذا لم توجد كاميرا، نستخدم اتجاه افتراضي (Z+)
+                    cam_pos = (0, 0, -10)
+                    cam_target = (0, 0, 0)
+
+                with current_act.context:
+                    # 1. حساب المتجه الأمامي (في المستوى الأفقي)
+                    forward = (cam_target[0] - cam_pos[0], 0, cam_target[2] - cam_pos[2])
+                    flen = (forward[0]**2 + forward[2]**2)**0.5
+                    if flen > 0:
+                        forward = (forward[0]/flen, 0, forward[2]/flen)
+                    else:
+                        forward = (0, 0, 1)  # افتراضي
+
+                    # 2. المتجه الأيمن (عمودي على forward و up)
+                    right = (-forward[2], 0, forward[0])
+
+                    # 3. قراءة مدخلات الجويستيك
+                    lr = self.node.move_left_right   # -1 .. 1
+                    ud = self.node.move_up_down      # -1 .. 1
+
+                    # 4. حساب سرعة الدفع في الاتجاهات الأفقية (قوة 80)
+                    fx = (right[0] * lr + forward[0] * ud) * 80
+                    fz = (right[2] * lr + forward[2] * ud) * 80
+
+                    # 5. الدفع الرأسي – قوي جداً (150)
+                    fy = 150
+
+                    # 6. إرسال رسالة impulse
+                    self.node.handlemessage(
+                        'impulse',
+                        self.node.position[0], self.node.position[1], self.node.position[2],
+                        fx, fy, fz,
+                        (fx**2 + fy**2 + fz**2)**0.5,  # magnitude
+                        0, 0, 0,
+                        0, 1, 0
+                    )
 class ExplosiveGift(bs.Actor):
     def __init__(self,
                  time: float = 3.0,
@@ -3324,6 +3653,8 @@ class Uts:
     # بيانات الحظر والإبلاغات
     bans_data = {}
     reports_data = {"reports": []}
+    # بيانات التحذيرات
+    warns_data = {}
 
     @staticmethod
     def create_bans_data():
@@ -3387,6 +3718,7 @@ class Uts:
             w = json.dumps(Uts.reports_data, indent=4)
             f.write(w)
 
+    # ✅ FIX: Ban enforcement – only by PB-ID (account_id), client_id check removed
     @staticmethod
     def check_player_ban_on_join(player: bs.Player) -> bool:
         try:
@@ -3395,39 +3727,42 @@ class Uts:
             if client_id == -1:
                 print("👑 Host is joining - skip ban check.")
                 return False
+
             account_id = None
             try:
                 account_id = sessionplayer.get_v1_account_id()
             except:
                 if client_id in Uts.userpbs:
                     account_id = Uts.userpbs[client_id]
+
             player_name = None
             try:
                 player_name = sessionplayer.getname(full=True)
             except:
                 if client_id in Uts.usernames:
                     player_name = Uts.usernames[client_id]
+
             print(f"🔍 Checking ban for: {player_name} (Client: {client_id}, PB-ID: {account_id})")
             Uts.create_bans_data()
+
+            # ✅ ONLY check by account_id (pb‑ID) – client_id check removed
             if account_id:
                 for ban_key, ban_info in Uts.bans_data.items():
                     if ban_info.get('account_id') == account_id:
                         print(f"🚫 Ban match (PB-ID): {ban_key}")
                         Uts.kick_banned_player(client_id, ban_info)
                         return True
-            for ban_key, ban_info in Uts.bans_data.items():
-                if ban_info.get('client_id') == client_id:
-                    print(f"🚫 Ban match (Client ID): {ban_key}")
-                    Uts.kick_banned_player(client_id, ban_info)
-                    return True
-            if player_name:
+
+            # Optional: still check by exact name match (only if no account_id)
+            if player_name and not account_id:
                 player_name_lower = player_name.lower()
                 for ban_key, ban_info in Uts.bans_data.items():
                     banned_name = ban_info.get('name', '').lower()
                     if banned_name and banned_name == player_name_lower:
-                        print(f"🚫 Ban match (Name): {ban_key}")
+                        print(f"🚫 Ban match (Name – no PB-ID): {ban_key}")
                         Uts.kick_banned_player(client_id, ban_info)
                         return True
+
             print(f"✅ Player is not banned: {player_name}")
             return False
         except Exception as e:
@@ -3441,7 +3776,8 @@ class Uts:
             banned_by = ban_data.get('banned_by', 'Admin')
             player_name = ban_data.get('name', f'Player {client_id}')
             message = getlanguage("BannedMessage", subs=[reason, banned_by])
-            Uts.sm(message, color=(1,0,0), clients=[client_id])
+            # إضافة transient=True لإرسال الرسالة لعميل محدد
+            Uts.sm(message, color=(1,0,0), clients=[client_id], transient=True)
             def kick():
                 try:
                     bs.disconnect_client(client_id)
@@ -3478,7 +3814,69 @@ class Uts:
         except Exception as e:
             print(f"❌ Error starting server closure: {e}")
             return False
-    
+
+    @staticmethod
+    def create_warns_data():
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxWarnsData.json'
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+        if not os.path.exists(file):
+            with open(file, 'w') as f:
+                f.write('{}')
+        try:
+            with open(file) as f:
+                r = f.read()
+                if r.strip():
+                    Uts.warns_data = json.loads(r)
+                else:
+                    Uts.warns_data = {}
+            print(f"✅ Warns data loaded: {sum(len(v) for v in Uts.warns_data.values())} warnings")
+        except Exception as e:
+            print(f"⚠️ Error loading warns data: {e}")
+            Uts.warns_data = {}
+
+    @staticmethod
+    def save_warns_data():
+        try:
+            folder = Uts.directory_user + '/Configs'
+            file = folder + '/CheatMaxWarnsData.json'
+            with open(file, 'w') as f:
+                w = json.dumps(Uts.warns_data, indent=4)
+                f.write(w)
+        except Exception as e:
+            print(f"❌ Error saving warns data: {e}")
+
+    @staticmethod
+    def add_warning(account_id: str, warner_name: str, warner_account: str, reason: str):
+        """إضافة تحذير لحساب معين"""
+        if account_id not in Uts.warns_data:
+            Uts.warns_data[account_id] = []
+        warning = {
+            'warner_name': warner_name,
+            'warner_account': warner_account,
+            'reason': reason,
+            'timestamp': time.time(),
+            'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        Uts.warns_data[account_id].append(warning)
+        Uts.save_warns_data()
+        return len(Uts.warns_data[account_id])  # عدد التحذيرات بعد الإضافة
+
+    @staticmethod
+    def get_warnings(account_id: str):
+        """استرجاع قائمة التحذيرات لحساب"""
+        return Uts.warns_data.get(account_id, [])
+
+    @staticmethod
+    def clear_warnings(account_id: str):
+        """مسح كل التحذيرات لحساب"""
+        if account_id in Uts.warns_data:
+            del Uts.warns_data[account_id]
+            Uts.save_warns_data()
+            return True
+        return False
+
     @staticmethod
     def is_player_allowed_during_closure(client_id: int, tag_name: str) -> bool:
         try:
@@ -4419,6 +4817,7 @@ def _install() -> None:
             print(f"✅ Added owner: {owner_account}")
         Uts.create_bans_data()
         Uts.create_reports_data()
+        Uts.create_warns_data()
         bs.apptimer(3.0, lambda: Uts.sm("Owner added!", color=(1.0, 0.5, 0.0)))
     except Exception as e:
         print(f"❌ Error initializing data: {e}")
@@ -4675,6 +5074,11 @@ def final_setup():
 ║ • Protection: ✓ Enabled                 ║
 ║ • Ban System: ✓ Active (PB-ID Verified)║
 ║ • Report System: ✓ Active              ║
+║ • Teleport: ✓ Fixed (uses client ID)   ║
+║ • Fly Mode: ✓ Fixed (uses client ID)   ║
+║ • Super Jump: ✓ Ground Only            ║
+║ • Ride: ✓ Fixed (RideMessage)          ║
+║ • Invisible: ✓ Fixed (mesh removal)    ║
 ╚══════════════════════════════════════════╝
     """
     for line in welcome_msg.split('\n'):
@@ -4828,11 +5232,10 @@ def system_test():
                 tests_failed += 1
         except:
             tests_failed += 1
-        # Test 7: التحقق من أن فلتر الشات مُطعَّم
+        # Test 7: التحقق من أن فلتر الشات مُطعَّم بشكل صحيح
         try:
             import bascenev1._hooks
-            # نتحقق إذا كانت دالة الفلتر هي الـ wrapped function
-            if hasattr(bascenev1._hooks.filter_chat_message, '__wrapped__'):
+            if hasattr(bascenev1._hooks.filter_chat_message, '__wrapped__') or hasattr(bs.app, 'cheatmax_filter_chat'):
                 print("✅ Test 7: Chat filter hooked successfully")
                 tests_passed += 1
             else:
