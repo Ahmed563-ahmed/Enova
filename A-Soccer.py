@@ -258,7 +258,7 @@ NEON_COLORS = {
 # ba_meta export bascenev1.GameActivity
 class SoccerGame(bs.TeamGameActivity[Player, Team]):
     creator = "XERO Club"
-    name = 'Soccer Game'
+    name = 'ㅤ'
     description = f"Showup Your Soccer Skills\nin a Very Customizable Soccer Game \ue047."
     gk_easy, gk_medium, gk_hard = 300, 350, 380
     
@@ -441,7 +441,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         self.sgt = 0.2
         self.gd = "Welcome To XERO Football Club"
         self.hdag = 'Score a Goal To Win'
-        self.hd = f"Score {self.score_to_win} Goals."
+        self.hd = f"ㅤ"
         self.gmgd = f"Save Your Goal « LEVEL : {self.gk_level} »" if self.gk_level else "Goal Keeper Mode"
         self.gmhd = f"Goal Keaper Mode « LEVEL : {self.gk_level} »" if self.gk_level else "GK Mode"
         self.gmbsd = 0.5
@@ -961,8 +961,34 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
     def on_begin(self) -> None:
         super().on_begin()
         shared = SharedObjects.get()
+        self.title_text = Text('Enova Soccer', 0.04, (-3.06, 0.66, -8.5), (0.6,0.8,1,0.6), 1.0, in_world=True)
         self.title_text = Text('Enova Soccer', 0.04, (-3, 0.7, -8.5), (1,1,1,0.6), 1.0, in_world=True)
-        
+        bs.newnode('text',
+                                            attrs={
+                                                'text': 'Enova',
+                                                'scale': 0.6,
+                                                'color': (0.6, 0.8, 1),
+                                                'h_align': 'right',
+                                                'v_align': 'center',
+                                                'shadow': 0.8,
+                                                'flatness': 1.0,
+                                                'position': (-482, 228),
+                                                'maxwidth': 200,
+                                                'big': True
+                                            })
+        bs.newnode('text',
+                                            attrs={
+                                                'text': 'Enova',
+                                                'scale': 0.6,
+                                                'color': (1, 1, 1),
+                                                'h_align': 'right',
+                                                'v_align': 'center',
+                                                'shadow': 0.8,
+                                                'flatness': 1.0,
+                                                'position': (-480, 230),
+                                                'maxwidth': 200,
+                                                'big': True
+                                            })
         try:
             if hasattr(self.map, 'is_hockey'):
                 self.map.is_hockey = False
@@ -1770,7 +1796,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
             return self.gmhd
         if self.score_to_win == 1:
             return self.hdag
-        return f"Score {self.score_to_win}"
+        return f"ㅤ"
 
     def gk_setup(self) -> None:
         """إعداد وضع حارس المرمى"""
