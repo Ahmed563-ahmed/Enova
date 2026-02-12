@@ -961,7 +961,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
     def on_begin(self) -> None:
         super().on_begin()
         shared = SharedObjects.get()
-        self.title_text = Text('Hqz Hideout', 0.04, (-3, 0.7, -8.5), (1,0,0,1), 1.0, in_world=True)
+        self.title_text = Text('Enova Soccer', 0.04, (-3, 0.7, -8.5), (1,1,1,0.6), 1.0, in_world=True)
         
         try:
             if hasattr(self.map, 'is_hockey'):
