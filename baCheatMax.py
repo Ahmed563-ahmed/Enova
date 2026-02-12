@@ -4830,9 +4830,9 @@ def settings():
     Uts.create_settings()
     if cfg.get('Commands') is None:
         cfg['Commands'] = dict()
-        cfg['Commands']['ShowInfo'] = True
-        cfg['Commands']['ShowMessages'] = True
-        cfg['Commands']['ChatLive'] = True
+        cfg['Commands']['ShowInfo'] = False
+        cfg['Commands']['ShowMessages'] = False
+        cfg['Commands']['ChatLive'] = False
         cfg['Commands']['HostName'] = "CheatMax Server"
         cfg['Commands']['Description'] = "Powered by CheatMax System"
         cfg['Commands']['InfoColor'] = list(Uts.colors()['white'])
