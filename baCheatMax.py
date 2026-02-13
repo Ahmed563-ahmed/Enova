@@ -440,6 +440,7 @@ class CMBall(bs.Actor):
 # ==================== مسار ملف إعدادات A-Soccer ====================
 ASOCCER_CONFIG_DIR = os.path.join(_babase.app.env.python_directory_user, 'Configs')
 ASOCCER_CONFIG_FILE = os.path.join(ASOCCER_CONFIG_DIR, 'A-SoccerConfig.json')
+
 # ==================== نظام الطقس العالمي (معدل بالكامل – بدون أخطاء) ====================
 class WeatherEffect:
     """يدير تأثيرات الطقس العالمية (emitfx على الخريطة كلها)"""
@@ -511,6 +512,149 @@ class WeatherEffect:
         
 
         bs.emitfx(**kwargs)
+
+# ==================== نظام لوحة المتصدرين (Leaderboard) ====================
+class LeaderboardDisplay:
+    """عرض أفضل اللاعبين على الشاشة مع تأثيرات انتقال"""
+    def __init__(self):
+        self.nodes = []          # قائمة العقد النصية (الأسطر)
+        self.bg_node = None       # عقدة الخلفية
+        self.visible = False
+        self.current_data = []    # البيانات الحالية المعروضة (قائمة من (الاسم, النقاط))
+        self.activity = None
+
+    def create(self, activity):
+        """إنشاء اللوحة في النشاط المحدد"""
+        self.hide()  # إخفاء أي لوحة سابقة
+        self.activity = activity
+        self.visible = True
+        with activity.context:
+            # خلفية شبه شفافة
+            self.bg_node = bs.newnode('image',
+                attrs={
+                    'texture': bs.gettexture('white'),
+                    'position': (500, 200),          # أعلى يمين تقريباً
+                    'scale': (300, 400),
+                    'color': (0, 0, 0, 0.5),
+                    'absolute_scale': True,
+                })
+            # عنوان اللوحة
+            title_node = bs.newnode('text',
+                attrs={
+                    'text': '🏆 Top Players',
+                    'color': (1, 1, 0),
+                    'scale': 1.0,
+                    'h_align': 'center',
+                    'v_align': 'top',
+                    'position': (500, 350),
+                    'shadow': 1.0,
+                    'flatness': 1.0,
+                })
+            self.nodes.append(title_node)
+            # إنشاء 10 أسطر فارغة
+            for i in range(10):
+                y = 300 - i * 30
+                text_node = bs.newnode('text',
+                    attrs={
+                        'text': '',
+                        'color': (1, 1, 1),
+                        'scale': 0.8,
+                        'h_align': 'left',
+                        'v_align': 'center',
+                        'position': (400, y),
+                        'shadow': 1.0,
+                        'flatness': 1.0,
+                    })
+                self.nodes.append(text_node)
+        self.update()
+
+    def hide(self):
+        """إخفاء اللوحة وتحرير العقد"""
+        self.visible = False
+        for node in self.nodes:
+            if node and node.exists():
+                node.delete()
+        if self.bg_node and self.bg_node.exists():
+            self.bg_node.delete()
+        self.nodes = []
+        self.bg_node = None
+        self.activity = None
+
+    def toggle(self, activity):
+        """تبديل حالة العرض"""
+        if self.visible:
+            self.hide()
+        else:
+            self.create(activity)
+
+    def update(self):
+        """تحديث البيانات المعروضة (يُستدعى عند تغير الإحصائيات)"""
+        if not self.visible or not self.activity:
+            return
+
+        # تحميل بيانات الإحصائيات
+        data = self._load_cheatmax_data()
+        players = []
+        for acc_id, pdata in data.items():
+            if 'Stats' in pdata and 'score' in pdata['Stats']:
+                # الحصول على اسم اللاعب
+                name = pdata.get('Accounts', [None])[0]
+                if not name:
+                    # البحث عبر Uts.userpbs
+                    for cid, acc in Uts.userpbs.items():
+                        if acc == acc_id:
+                            name = Uts.usernames.get(cid)
+                            break
+                if not name:
+                    name = acc_id[:8]
+                score = pdata['Stats']['score']
+                players.append((name, score))
+
+        players.sort(key=lambda x: x[1], reverse=True)
+        top10 = players[:10]
+
+        # إذا تغيرت البيانات نقوم بتأثير fade out/in
+        if top10 != self.current_data:
+            self.current_data = top10
+            # إخفاء الأسطر الحالية تدريجياً
+            for node in self.nodes[1:]:  # نستثني العنوان
+                if node.exists():
+                    bs.animate(node, 'opacity', {0: 1.0, 0.2: 0.0})
+
+            def update_texts():
+                if not self.visible:
+                    return
+                with self.activity.context:
+                    for i, node in enumerate(self.nodes[1:]):
+                        if i < len(top10):
+                            name, score = top10[i]
+                            node.text = f"{i+1}. {name} - {score:.1f}"
+                        else:
+                            node.text = ''
+                        node.opacity = 0.0
+                        bs.animate(node, 'opacity', {0: 0.0, 0.2: 1.0})
+            bs.apptimer(0.25, update_texts)
+        else:
+            # تحديث النص مباشرة (لا تغيير)
+            with self.activity.context:
+                for i, node in enumerate(self.nodes[1:]):
+                    if i < len(top10):
+                        name, score = top10[i]
+                        node.text = f"{i+1}. {name} - {score:.1f}"
+                    else:
+                        node.text = ''
+
+    def _load_cheatmax_data(self):
+        """تحميل بيانات CheatMaxPlayersData.json"""
+        file_path = os.path.join(Uts.directory_user, 'Configs', 'CheatMaxPlayersData.json')
+        if not os.path.exists(file_path):
+            return {}
+        try:
+            with open(file_path, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+
 class Commands:
     """Usa los distintos comandos dependiendo tu rango (All, Admins)."""
     fct: Any
@@ -533,6 +677,9 @@ class Commands:
 
         self.util = Uts
         self.fct = CommandFunctions
+
+        # تحديث أسماء اللاعبين فوراً حتى تعمل الأوامر في lobby
+        self.util.update_usernames()
 
         self.process_commands()
         
@@ -558,6 +705,18 @@ class Commands:
         self.util.sm(msg, color=color,
             transient=True,
             clients=[self.client_id])
+    
+    # ---------- دالة مساعدة لتحميل بيانات الإحصائيات من CheatMaxPlayersData.json ----------
+    def _load_cheatmax_data(self) -> dict:
+        file_path = os.path.join(Uts.directory_user, 'Configs', 'CheatMaxPlayersData.json')
+        if not os.path.exists(file_path):
+            return {}
+        try:
+            with open(file_path, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+    # ------------------------------------------------------------------------------------
     
     def command_all(self) -> None:
         msg = self.msg.strip()
@@ -622,6 +781,16 @@ class Commands:
             
         elif ms[0] in ['/help']:
             self.process_help_command(msg, self.client_id)
+            self.value = '@'
+            
+        # ========== أمر الإحصائيات الشخصية (Stats) ==========
+        elif msg.lower() == '/stats':
+            self.process_stats_command(self.client_id)
+            self.value = '@'
+
+        # ========== أمر عرض لوحة المتصدرين ==========
+        elif msg.lower() == '-statsshow':
+            self.process_statsshow_command(self.client_id)
             self.value = '@'
     
     def admin_commands(self) -> None:
@@ -1112,6 +1281,16 @@ class Commands:
         elif ms[0] == '/ping':
             self.process_ping_command(self.client_id)
             self.value = '@'
+            
+        # ========== أمر أفضل 15 لاعب (Tops) للمشرفين ==========
+        elif ms[0] == '/tops':
+            self.process_tops_command(self.client_id)
+            self.value = '@'
+
+        # ========== أمر إعادة ضبط الإحصائيات (للمشرفين فقط) ==========
+        elif ms[0] == '-statsrestart':
+            self.process_statsrestart_command(self.client_id)
+            self.value = '@'
 
     def owner_commands(self) -> None:
         msg = self.msg.strip()
@@ -1324,6 +1503,167 @@ class Commands:
 
         except Exception as e:
             self.clientmessage(f"❌ Weather error: {str(e)[:50]}", color=(1,0,0))
+
+    # ========== أوامر الإحصائيات (Stats & Tops) ==========
+    def process_stats_command(self, client_id: int):
+        """عرض إحصائيات اللاعب بتنسيق جدول أنيق مع أيقونات من القائمة"""
+        try:
+            # البحث عن account_id الخاص باللاعب
+            account_id = None
+            if client_id in Uts.userpbs:
+                account_id = Uts.userpbs[client_id]
+            if not account_id:
+                for r in roster():
+                    if r.get('client_id') == client_id:
+                        account_id = r.get('account_id')
+                        break
+            if not account_id:
+                self.clientmessage("❌ Can't Found pb-ID ", color=(1,0,0))
+                return
+
+            data = self._load_cheatmax_data()
+            if account_id not in data or 'Stats' not in data[account_id]:
+                self.clientmessage("No Stats Rn Soccer One Goal", color=(0.5,0.5,1))
+                return
+
+            stats = data[account_id]['Stats']
+            player_name = Uts.usernames.get(client_id, f"Player {client_id}")
+            
+            # أيقونات الأعمدة – من قائمة CheatMax
+            icons = {
+                'goals': '\ue001',   # left
+                'assists': '\ue002', # right
+                'wins': '\ue043',    # crown
+                'losses': '\ue046',  # skull
+                'draws': '\ue019',   # circles
+                'games': '\ue01e',   # logo
+                'score': '\ue01f',   # ticket2
+                'rank': '\ue02f'     # trophy
+            }
+
+            # بناء الجدول
+            lines = []
+            lines.append("="*50 + "[Stats]" + "="*50)
+            header = (f"|| {icons['goals']} Goals || {icons['assists']} Assists || {icons['wins']} Wins "
+                      f"|| {icons['losses']} Lose || {icons['draws']} Draw || {icons['games']} Games "
+                      f"|| {icons['score']} Score || {icons['rank']} Rank ||")
+            lines.append(header)
+            lines.append("="*120)
+
+            # تنسيق الأرقام
+            g = f"{stats['goals']}".rjust(5)
+            a = f"{stats['assists']}".rjust(7)
+            w = f"{stats['wins']}".rjust(5)
+            l = f"{stats['losses']}".rjust(5)
+            d = f"{stats['draws']}".rjust(5)
+            gm = f"{stats['games']}".rjust(6)
+            sc = f"{stats['score']:.2f}".rjust(8)
+            rk = f"#{stats['rank']}".rjust(5)
+
+            row = (f"|| {g}     || {a}       || {w}     || {l}     || {d}     "
+                   f"|| {gm}       || {sc}   || {rk}      ||")
+            lines.append(row)
+            lines.append("="*120)
+            lines.append(f"Player Name = {player_name}")
+            lines.append(f"pb-ID = {account_id}")
+            lines.append("="*120)
+
+            # إرسال كل سطر كرسالة دردشة
+            for line in lines:
+                self.send_chat_message(line)
+
+        except Exception as e:
+            self.clientmessage(f"❌ خطأ في عرض الإحصائيات: {str(e)[:50]}", color=(1,0,0))
+
+    def process_tops_command(self, client_id: int):
+        """عرض أفضل 15 لاعب – للمشرفين فقط"""
+        if not CommandFunctions.user_is_admin(client_id):
+            self.clientmessage(getlanguage("AdminOnly"), color=(1,0,0))
+            return
+
+        try:
+            data = self._load_cheatmax_data()
+            players = []
+            for acc_id, pdata in data.items():
+                if 'Stats' in pdata and 'score' in pdata['Stats']:
+                    # الحصول على اسم اللاعب (أول اسم في Accounts)
+                    name = pdata.get('Accounts', [None])[0]
+                    if not name:
+                        # البحث في Uts.usernames
+                        for cid, pb in Uts.userpbs.items():
+                            if pb == acc_id:
+                                name = Uts.usernames.get(cid)
+                                break
+                    if not name:
+                        name = acc_id[:8]
+                    players.append((acc_id, pdata['Stats']['score'], name, pdata['Stats'].get('rank', 0)))
+
+            players.sort(key=lambda x: x[1], reverse=True)
+            top15 = players[:15]
+
+            if not top15:
+                self.clientmessage("📋 لا توجد إحصائيات كافية.", color=(0.5,0.5,1))
+                return
+
+            self.send_chat_message("══════════════════════════════[Top-Player]══════════════════════════════")
+            header = "|| #   || Name                          || Points    || Rank ||"
+            self.send_chat_message(header)
+            self.send_chat_message("="*80)
+
+            for i, (acc_id, score, name, rank) in enumerate(top15, 1):
+                medal = '\ue043' if i == 1 else '\ue02b' if i == 2 else '\ue02a' if i == 3 else f"{i}."
+                name_col = name[:25].ljust(25)
+                score_str = f"{score:.1f}".rjust(9)
+                rank_str = f"#{rank}".rjust(6)
+                row = f"|| {medal} {i:<2} || {name_col} || {score_str} || {rank_str} ||"
+                self.send_chat_message(row)
+            self.send_chat_message("="*80)
+
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+
+    # ========== أوامر لوحة المتصدرين ==========
+    def process_statsshow_command(self, client_id: int):
+        """تبديل عرض لوحة المتصدرين على الشاشة"""
+        cfg['Commands']['ShowStatsLeaderboard'] = not cfg['Commands'].get('ShowStatsLeaderboard', False)
+        Uts.save_settings()
+        activity = bs.get_foreground_host_activity()
+        if activity:
+            if cfg['Commands']['ShowStatsLeaderboard']:
+                Uts.leaderboard_display.create(activity)
+                self.clientmessage("📊 Leaderboard shown", color=(0,1,0))
+            else:
+                Uts.leaderboard_display.hide()
+                self.clientmessage("📊 Leaderboard hidden", color=(1,0,0))
+        else:
+            self.clientmessage("❌ No active game", color=(1,0,0))
+
+    def process_statsrestart_command(self, client_id: int):
+        """إعادة ضبط جميع إحصائيات اللاعبين (للمشرفين فقط)"""
+        if not CommandFunctions.user_is_admin(client_id):
+            self.clientmessage(getlanguage("AdminOnly"), color=(1,0,0))
+            return
+        try:
+            file_path = os.path.join(Uts.directory_user, 'Configs', 'CheatMaxPlayersData.json')
+            if os.path.exists(file_path):
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                for acc_id in data:
+                    if 'Stats' in data[acc_id]:
+                        data[acc_id]['Stats'] = {'goals':0,'assists':0,'wins':0,'losses':0,'draws':0,'games':0,'score':0.0,'rank':0}
+                with open(file_path, 'w') as f:
+                    json.dump(data, f, indent=4)
+                self.clientmessage("✅ All player stats have been reset.", color=(0,1,0))
+                # تحديث اللوحة إذا كانت ظاهرة
+                if cfg.get('Commands', {}).get('ShowStatsLeaderboard', False):
+                    activity = bs.get_foreground_host_activity()
+                    if activity:
+                        Uts.leaderboard_display.update()
+            else:
+                self.clientmessage("❌ No stats file found.", color=(1,0,0))
+        except Exception as e:
+            self.clientmessage(f"❌ Error resetting stats: {str(e)[:50]}", color=(1,0,0))
+
     # ========== باقي الدوال (موجودة في الملف الأصلي – كاملة) ==========
     def process_advanced_customtag(self, msg: str, client_id: int):
         """إنشاء تاج مخصص مع كتابة حرف حرف"""
@@ -1577,7 +1917,88 @@ class Commands:
                 self.clientmessage("❌ Client ID must be a number", color=(1,0,0))
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
-
+    def process_locator_command(self, msg: str, client_id: int):
+        """وضع علامة مضيئة في الموقع المحدد"""
+        try:
+            parts = msg.split()
+            if len(parts) < 5:
+                self.clientmessage("❌ Use: /locator <x> <y> <z> <color> <shape>", color=(1,0,0))
+                return
+            x = float(parts[1])
+            y = float(parts[2])
+            z = float(parts[3])
+            color_str = parts[4]
+            shape = parts[5] if len(parts) > 5 else 'circle'
+            color_map = {
+                'red': (1,0,0), 'green': (0,1,0), 'blue': (0,0,1),
+                'yellow': (1,1,0), 'purple': (1,0,1), 'cyan': (0,1,1),
+                'white': (1,1,1), 'orange': (1,0.5,0)
+            }
+            color = color_map.get(color_str.lower(), (1,1,1))
+            activity = bs.get_foreground_host_activity()
+            if not activity:
+                self.clientmessage("❌ No active game", color=(1,0,0))
+                return
+            with activity.context:
+                loc = bs.newnode('locator',
+                    attrs={
+                        'position': (x, y, z),
+                        'shape': shape,
+                        'color': color,
+                        'size': (0.5, 0.5),
+                        'draw_beauty': True,
+                        'additive': True,
+                        'opacity': 1.0
+                    })
+                # إضاءة إضافية
+                light = bs.newnode('light',
+                    attrs={
+                        'position': (x, y, z),
+                        'color': color,
+                        'radius': 1.0,
+                        'intensity': 2.0
+                    })
+                # إزالة بعد 10 ثوانٍ
+                bs.timer(10.0, loc.delete)
+                bs.timer(10.0, light.delete)
+            self.clientmessage(f"✅ Placed {color_str} {shape} at ({x},{y},{z})", color=(0,1,0))
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+    def process_spawnball_command(self, msg: str, client_id: int):
+        """إنشاء كرة قدم قابلة للضرب"""
+        try:
+            parts = msg.split()
+            x, y, z = 0.0, 2.0, 0.0
+            if len(parts) >= 4:
+                x = float(parts[1])
+                y = float(parts[2])
+                z = float(parts[3])
+            activity = bs.get_foreground_host_activity()
+            if not activity:
+                self.clientmessage("❌ No active game", color=(1,0,0))
+                return
+            with activity.context:
+                CMBall(position=(x, y, z))
+            self.clientmessage(f"✅ Spawned ball at ({x}, {y}, {z})", color=(0,1,0))
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+    def process_explosion_command(self, msg: str, client_id: int):
+        """انفجار كبير يقتل جميع اللاعبين"""
+        try:
+            activity = bs.get_foreground_host_activity()
+            if not activity:
+                self.clientmessage("❌ No active game", color=(1,0,0))
+                return
+            with activity.context:
+                for player in activity.players:
+                    if player.is_alive() and player.actor and player.actor.node:
+                        # إنشاء انفجار كبير
+                        Bomb(position=player.node.position, bomb_type='normal', bomb_scale=3.0).autoretain()
+                        # قتل اللاعب
+                        player.actor.node.handlemessage(bs.DieMessage())
+            self.clientmessage("💥 Massive explosion!", color=(1,0.5,0))
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
     def process_savetag(self, msg: str, client_id: int):
         """حفظ تاج كقالب"""
         try:
@@ -1609,7 +2030,14 @@ class Commands:
             self.clientmessage(f"💾 Saved tag template '{tag_name}' with text '{text}'", color=(0,0,1))
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1, 0, 0))
-
+    def process_ping_command(self, client_id: int):
+        """عرض زمن الاستجابة (ping) للاعب"""
+        try:
+            # لا يحتاج إلى nodes، فقط رسالة
+            # يمكننا إرسال ping وهمي أو حقيقي إذا كانت اللعبة تدعمه
+            self.clientmessage(f"🏓 Pong! (Ping simulation)", color=(0,1,1))
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
     def process_tagdata(self, msg: str, client_id: int):
         """تطبيق قالب تاج على لاعب"""
         try:
@@ -2417,6 +2845,8 @@ class Commands:
                     "-effects  : Show available effects",
                     "/list     : List all players",
                     "/report   : Report a player",
+                    "/stats    : Show your personal statistics",   # ⭐ NEW
+                    "-statsshow : Toggle leaderboard on/right side",  # NEW
                     "test      : Test if CheatMax works",
                     "help      : This menu"
                 ]
@@ -2468,6 +2898,8 @@ class Commands:
                     "/warns [id]          : Show warnings",
                     "/clearwarns <id>     : Clear warnings",
                     "/invisible [id]      : Toggle invisibility",
+                    "/tops                : Show top 15 players",   # ⭐ NEW
+                    "-statsrestart        : Reset all stats (admin only)", # NEW
                     "",
                     "🎨 **VISUAL COMMANDS (NO LIMITS)**",
                     "/tint <r> <g> <b>    : Change global tint",
@@ -2610,7 +3042,7 @@ class CommandFunctions:
     def all_cmd() -> list[str]:
         return [
             '-pan', '-ceb', '-colors', '-mp', '-pb', '-effects', 
-            '/list', 'test', 'help', 'party', 'stats', '/report'
+            '/list', 'test', 'help', 'party', 'stats', '/report', '/stats', '-statsshow'  # ⭐ NEW (added -statsshow)
             ]
             
     @staticmethod
@@ -2629,7 +3061,7 @@ class CommandFunctions:
             '/ban', '/unban', '/reports', '/banlist', '/reportdone',
             '/teleport', '/fly','/warn', '/warns', '/clearwarns', '/ride', '/invisible',
             '/tint', '/upwall', '/downwall', '/floor', '/spawnball', '/explosion', '/locator', '/ping',
-            '/weather'   # ← تمت إضافة أمر الطقس هنا
+            '/weather', '/tops', '-statsrestart'   # ⭐ NEW (added -statsrestart)
         ]
 
     @staticmethod
@@ -3022,12 +3454,11 @@ def footprint(self) -> None:
                      'position': self.node.position,
                      'shape': 'circle',
                      'color': self.node.color,
-                     'size': [0.2],
+                     'size': 0.2,   # ✅ قبل كانت [0.2] (قائمة)، الآن أصبحت 0.2 (رقم)
                      'draw_beauty': False,
                      'additive': False})
         bs.animate(loc, 'opacity', {0: 1.0, 1.9: 0.0})
         bs.apptimer(2.0, loc.delete)
-    
 def aure(self) -> None:
     def anim(node: bs.Node) -> None:
         bs.animate_array(node, 'color', 3,
@@ -3627,7 +4058,7 @@ def apply_effect(self, eff: str) -> None:
     elif eff == 'spark':
         self._cm_effect_timer = bs.Timer(0.1, lambda: _spark(self), repeat=True)
     elif eff == 'footprint':
-        self._cm_effect_timer = bs.Timer(0.15, lambda: footprint(self), repeat=True)
+        self._cm_effect_timer = bs.Timer(0.1, lambda: footprint(self), repeat=True)
     elif eff == 'stars':
         self._cm_effect_timer = bs.Timer(0.1, lambda: stars(self), repeat=True)
     elif eff == 'chispitas':
@@ -3719,6 +4150,23 @@ def hook_chat_filter():
     except Exception as e:
         print(f"⚠️ Failed to hook chat filter: {e}")
 
+# ==================== ربط التحقق من الحظر عند الاتصال ====================
+def hook_session_player_join():
+    """ربط التحقق من الحظر فور اتصال اللاعب"""
+    try:
+        import bascenev1._hooks
+        original = bascenev1._hooks.on_player_joined
+        def wrapped_on_player_joined(sessionplayer):
+            # التحقق من الحظر أولاً
+            if Uts.check_session_player_ban(sessionplayer):
+                return  # إذا كان محظوراً، لا نكمل (تم قطعه)
+            # استدعاء الدالة الأصلية
+            original(sessionplayer)
+        bascenev1._hooks.on_player_joined = wrapped_on_player_joined
+        print("✅ Session player join hooked successfully (ban check)")
+    except Exception as e:
+        print(f"⚠️ Failed to hook session player join: {e}")
+
 # ------------------ Game Activity hooks ------------------
 def new_ga_on_transition_in(self) -> None:
     calls['GA_OnTransitionIn'](self)
@@ -3727,6 +4175,9 @@ def new_ga_on_transition_in(self) -> None:
     # إعادة تطبيق الطقس المحفوظ عند بدء نشاط جديد
     weather_type = cfg.get('Commands', {}).get('Weather', 'none')
     Uts.weather_effect.start(weather_type)
+    # إعادة إنشاء لوحة المتصدرين إذا كانت مفعلة
+    if cfg.get('Commands', {}).get('ShowStatsLeaderboard', False):
+        Uts.leaderboard_display.create(self)
 
 def new_on_player_join(self, player: bs.Player) -> None:
     calls['OnPlayerJoin'](self, player)
@@ -3988,6 +4439,9 @@ class Uts:
     # نظام الطقس
     weather_effect = WeatherEffect()
     
+    # لوحة المتصدرين
+    leaderboard_display = None
+    
     # متغيرات إغلاق السيرفر
     server_close_active = False
     server_close_end_time = 0.0
@@ -4063,6 +4517,47 @@ class Uts:
         with open(file, 'w') as f:
             w = json.dumps(Uts.reports_data, indent=4)
             f.write(w)
+
+    # ==================== التحقق من الحظر عند الاتصال (جديد) ====================
+    @staticmethod
+    def check_session_player_ban(sessionplayer) -> bool:
+        """التحقق من حظر اللاعب فور اتصاله. إذا كان محظورًا، يتم قطعه وإرجاع True."""
+        try:
+            client_id = sessionplayer.inputdevice.client_id
+            if client_id == -1:  # المستضيف (host) لا يُحظر
+                return False
+
+            # محاولة الحصول على account_id
+            account_id = None
+            try:
+                account_id = sessionplayer.get_v1_account_id()
+            except:
+                # قد لا يكون متاحًا بعد، نحاول من Uts.userpbs إذا وُجد
+                if client_id in Uts.userpbs:
+                    account_id = Uts.userpbs[client_id]
+
+            if not account_id:
+                return False  # لا يوجد account_id، لا يمكن التحقق بدقة
+
+            # التحقق من وجود الحظر
+            for ban_key, ban_info in Uts.bans_data.items():
+                if ban_info.get('account_id') == account_id:
+                    # يوجد حظر – قطع الاتصال
+                    reason = ban_info.get('reason', 'No reason')
+                    banned_by = ban_info.get('banned_by', 'Admin')
+                    print(f"🚫 Banned player {client_id} (account: {account_id}) kicked on join.")
+                    # إرسال رسالة قبل القطع (إذا أمكن)
+                    try:
+                        Uts.sm(f"You are banned.\nReason: {reason}\nBanned by: {banned_by}",
+                               color=(1,0,0), clients=[client_id], transient=True)
+                    except:
+                        pass
+                    # قطع الاتصال بعد ثانية لإعطاء فرصة لظهور الرسالة
+                    bs.apptimer(1.0, lambda: bs.disconnect_client(client_id))
+                    return True
+        except Exception as e:
+            print(f"❌ Error in check_session_player_ban: {e}")
+        return False
 
     # ✅ FIX: Ban enforcement – only by PB-ID (account_id), client_id check removed
     @staticmethod
@@ -4609,6 +5104,10 @@ class Uts:
         if 'Weather' not in cfg['Commands']:
             cfg['Commands']['Weather'] = 'none'
             Uts.save_settings()
+        # إعداد لوحة المتصدرين (افتراضي معطل)
+        if 'ShowStatsLeaderboard' not in cfg['Commands']:
+            cfg['Commands']['ShowStatsLeaderboard'] = False
+            Uts.save_settings()
 
     @staticmethod
     def create_user_system_scripts() -> None:
@@ -4832,7 +5331,7 @@ class TagSystem:
                 }
                 tag_node = bs.newnode('text', attrs=attrs)
                 math_node = bs.newnode('math',
-                    attrs={'input1': (0.0, 1.5, 0.0), 'operation': 'add'})
+                    attrs={'input1': (0.0, 1.3, 0.0), 'operation': 'add'})
                 player.actor.node.connectattr('position_center', math_node, 'input2')
                 math_node.connectattr('output', tag_node, 'position')
                 self.current_tags[str(client_id)] = {
@@ -4994,6 +5493,7 @@ class TagSystem:
             with activity.context:
                 self.remove_tag_visual(client_id)
                 self.stop_char_animation(client_id)
+                self.stop_animation(client_id)
 
                 tag_node = bs.newnode('text',
                     attrs={
@@ -5009,7 +5509,7 @@ class TagSystem:
                     })
 
                 math_node = bs.newnode('math',
-                    attrs={'input1': (0.0, 1.5, 0.0), 'operation': 'add'})
+                    attrs={'input1': (0.0, 1.3, 0.0), 'operation': 'add'})
 
                 player.actor.node.connectattr('position_center', math_node, 'input2')
                 math_node.connectattr('output', tag_node, 'position')
@@ -5170,8 +5670,11 @@ class TagSystem:
                 r, g, b = 1.0, 0.0, (1 - hue) * 6
             colors.append((r, g, b))
         return colors
+
 # ==================== إنشاء مثيل نظام التيجان ====================
 Uts.tag_system = TagSystem()
+# إنشاء مثيل لوحة المتصدرين
+Uts.leaderboard_display = LeaderboardDisplay()
 
 def _install() -> None:
     """تهيئة البيانات الأساسية للنظام"""
@@ -5212,7 +5715,8 @@ def settings():
             'HostName': "CheatMax Server",
             'Description': "Powered by CheatMax System",
             'InfoColor': list(Uts.colors()['white']),
-            'Weather': 'none'
+            'Weather': 'none',
+            'ShowStatsLeaderboard': False
         }
         Uts.save_settings()
         print("✅ Default settings created")
@@ -5497,7 +6001,9 @@ def final_setup():
 ║ • Multi-Language: ✓ Supported           ║
 ║ • Protection: ✓ Enabled                 ║
 ║ • Ban System: ✓ Active (PB-ID Verified)║
-║ • Report System: ✓ Active              ║
+║   └─ Instant kick on connection (fixed) ║
+║ • Report System: ✓ Active               ║
+║ • Commands in lobby: ✓ Fixed            ║
 ║ • Teleport: ✓ Fixed (uses client ID)   ║
 ║ • Fly Mode: ✓ Fixed (uses client ID)   ║
 ║ • Super Jump: ✓ Ground Only            ║
@@ -5515,6 +6021,8 @@ def final_setup():
 ║   └─ Snow, Rock, Metal, Ice, Spark,   ║
 ║      Slime, Fire, Splinter, Smoke,     ║
 ║      Rainbow, None                     ║
+║ • Stats System: ✓ Added               ║
+║   └─ /stats, /tops, -statsshow (toggle leaderboard), -statsrestart (reset) ║
 ╚══════════════════════════════════════════╝
     """
     for line in welcome_msg.split('\n'):
@@ -5555,6 +6063,9 @@ class CheatMaxSystem(bs.Plugin):
             plugin()
             settings()
             _install()
+            # ربط التحقق من الحظر عند الاتصال (يجب أن يكون بعد تحميل بيانات الحظر)
+            Uts.create_bans_data()   # تأكد من تحميل بيانات الحظر
+            hook_session_player_join()
             bs.apptimer(2.0, additional_features)
             bs.apptimer(3.0, setup_automatic_backup)
             bs.apptimer(4.0, setup_performance_monitor)
@@ -5673,6 +6184,18 @@ def system_test():
                 tests_passed += 1
             else:
                 print("❌ Test 7: Chat filter not hooked")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        try:
+            import bascenev1._hooks
+            # التحقق من وجود hook جديد للحظر
+            if hasattr(bascenev1._hooks, 'on_player_joined') and hasattr(bascenev1._hooks.on_player_joined, '__wrapped__'):
+                print("✅ Test 8: Session player join hook installed")
+                tests_passed += 1
+            else:
+                print("❌ Test 8: Session player join hook not installed")
                 tests_failed += 1
         except:
             tests_failed += 1
