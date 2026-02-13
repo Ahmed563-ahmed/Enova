@@ -1509,14 +1509,7 @@ class Commands:
         """عرض إحصائيات اللاعب بتنسيق جدول أنيق مع أيقونات من القائمة"""
         try:
             # البحث عن account_id الخاص باللاعب
-            account_id = None
-            if client_id in Uts.userpbs:
-                account_id = Uts.userpbs[client_id]
-            if not account_id:
-                for r in roster():
-                    if r.get('client_id') == client_id:
-                        account_id = r.get('account_id')
-                        break
+            account_id = Uts.get_reliable_pb_id(client_id)
             if not account_id:
                 self.clientmessage("❌ Can't Found pb-ID ", color=(1,0,0))
                 return
@@ -3000,7 +2993,9 @@ class Commands:
             self.send_chat_message("||        PB-ID        ||    Role    ||  Account_name   ||        Name         || Client ID ||   Name Tag  ||")
             self.send_chat_message("=============================================================================================================")
             for data in players_data:
-                pb_id = str(data['pb_id'])
+                pb_id = data['pb_id']
+                if not pb_id or pb_id == 'none' or pb_id == 'None':
+                    pb_id = f"guest_{data['client_id']}"
                 if len(pb_id) > 20:
                     pb_id = pb_id[:18] + ".."
                 pb_id = pb_id.ljust(20)
@@ -5033,7 +5028,13 @@ class Uts:
             Uts.usernames[client_id] = account_name
             Uts.useraccounts[client_id] = account_name
             Uts.players[client_id] = sessionplayer
-                
+        else:
+            # إذا لم يكن هناك account_id (ضيف)، نستخدم client_id كمفتاح مؤقت
+            account_id = f"guest_{client_id}"
+            Uts.userpbs[client_id] = account_id
+            Uts.usernames[client_id] = account_name or f"Guest {client_id}"
+            print(f"👤 Guest player {client_id} assigned temporary PB-ID: {account_id}")
+
     @staticmethod
     def update_usernames() -> None:
         try:
@@ -5052,6 +5053,14 @@ class Uts:
                             Uts.userpbs[c_id] = acc_id
         except Exception as e:
             print(f"⚠️ Error in update_usernames (roster): {e}")
+
+        # التأكد من أن كل client_id له إدخال في userpbs
+        for cid in list(Uts.usernames.keys()):
+            if cid not in Uts.userpbs:
+                # استخدام client_id كمفتاح مؤقت (للضيوف)
+                Uts.userpbs[cid] = f"guest_{cid}"
+                print(f"⚠️ Guest player {cid} assigned temporary PB-ID: guest_{cid}")
+
         for c_id, p in list(Uts.players.items()):
             try:
                 if p.exists():
@@ -5185,6 +5194,23 @@ class Uts:
     except Exception:
         pass
         """ % Uts.key
+
+    @staticmethod
+    def get_reliable_pb_id(client_id: int) -> str:
+        """إرجاع PB-ID موثوق للاعب، حتى لو كان ضيفًا"""
+        if client_id in Uts.userpbs and Uts.userpbs[client_id] not in (None, 'none', 'None'):
+            return Uts.userpbs[client_id]
+        # إذا لم يكن موجودًا، حاول الحصول عليه من roster
+        for r in roster():
+            if r.get('client_id') == client_id:
+                acc = r.get('account_id')
+                if acc and acc not in (None, 'none', 'None'):
+                    Uts.userpbs[client_id] = acc
+                    return acc
+        # إذا فشل كل شيء، استخدم client_id كمفتاح مؤقت
+        guest_id = f"guest_{client_id}"
+        Uts.userpbs[client_id] = guest_id
+        return guest_id
 
 ## ==================== نظام التيجان المتطور ====================
 class TagSystem:
