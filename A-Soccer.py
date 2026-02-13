@@ -33,9 +33,114 @@ def debug_print(*args, **kwargs):
     if DEBUG_MODE:
         print(*args, **kwargs)
 
-# ==================== مسار ملف الإعدادات ====================
+# ==================== مسار ملف إعدادات A-Soccer ====================
 CONFIG_DIR = os.path.join(_babase.app.env.python_directory_user, 'Configs')
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'A-SoccerConfig.json')
+
+# ==================== مسار ملف بيانات CheatMax ====================
+CHEATMAX_PLAYERS_FILE = os.path.join(CONFIG_DIR, 'CheatMaxPlayersData.json')
+
+# ---------- وظائف مساعدة للتعامل مع إحصائيات CheatMax ----------
+def _load_cheatmax_data() -> dict:
+    """تحميل بيانات جميع اللاعبين من CheatMaxPlayersData.json"""
+    if not os.path.exists(CHEATMAX_PLAYERS_FILE):
+        return {}
+    try:
+        with open(CHEATMAX_PLAYERS_FILE, 'r') as f:
+            return json.load(f)
+    except:
+        return {}
+
+def _save_cheatmax_data(data: dict):
+    """حفظ بيانات جميع اللاعبين إلى CheatMaxPlayersData.json"""
+    try:
+        if not os.path.exists(CONFIG_DIR):
+            os.makedirs(CONFIG_DIR)
+        with open(CHEATMAX_PLAYERS_FILE, 'w') as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        debug_print(f"⚠️ Failed to save CheatMax data: {e}")
+
+def _ensure_player_stats(account_id: str) -> dict:
+    """تأكد من وجود قسم Stats للاعب – مع إضافة Draws"""
+    data = _load_cheatmax_data()
+    if account_id not in data:
+        data[account_id] = {
+            'Mute': False,
+            'Effect': 'none',
+            'Admin': False,
+            'Owner': False,
+            'Accounts': [],
+            'Stats': {
+                'goals': 0,
+                'assists': 0,
+                'wins': 0,
+                'losses': 0,
+                'draws': 0,
+                'games': 0,
+                'score': 0.0,
+                'rank': 0
+            }
+        }
+    elif 'Stats' not in data[account_id]:
+        data[account_id]['Stats'] = {
+            'goals': 0,
+            'assists': 0,
+            'wins': 0,
+            'losses': 0,
+            'draws': 0,
+            'games': 0,
+            'score': 0.0,
+            'rank': 0
+        }
+    elif 'draws' not in data[account_id]['Stats']:
+        # ترقية للاعبين القدامى
+        data[account_id]['Stats']['draws'] = 0
+    _save_cheatmax_data(data)
+    return data[account_id]['Stats']
+
+def _update_player_stats(account_id: str, goals=0, assists=0, win=False, loss=False, draw=False):
+    """تحديث إحصائيات لاعب – مع دعم التعادل"""
+    data = _load_cheatmax_data()
+    _ensure_player_stats(account_id)
+    stats = data[account_id]['Stats']
+    stats['goals'] += goals
+    stats['assists'] += assists
+    if win:
+        stats['wins'] += 1
+    if loss:
+        stats['losses'] += 1
+    if draw:
+        stats['draws'] += 1
+    stats['games'] = stats['wins'] + stats['losses'] + stats['draws']
+    # النقاط: أهداف*3 + تمريرات*2 + فوز*10 - خسارة*5 + تعادل*3
+    stats['score'] = stats['goals']*3 + stats['assists']*2 + stats['wins']*10 - stats['losses']*5 + stats['draws']*3
+    _save_cheatmax_data(data)
+
+def _recalculate_all_ranks():
+    """إعادة ترتيب جميع اللاعبين حسب score – يحفظ الرتبة"""
+    data = _load_cheatmax_data()
+    players_with_stats = []
+    for acc_id, pdata in data.items():
+        if 'Stats' in pdata:
+            players_with_stats.append((acc_id, pdata['Stats']['score']))
+    players_with_stats.sort(key=lambda x: x[1], reverse=True)
+    for idx, (acc_id, _) in enumerate(players_with_stats, start=1):
+        data[acc_id]['Stats']['rank'] = idx
+    _save_cheatmax_data(data)
+
+def _get_rank_icon(rank: int) -> tuple[str, tuple]:
+    """إرجاع (رمز_الأيقونة, اللون) – أيقونات من قائمة CheatMax"""
+    if rank == 1:
+        return '\ue02f', (1.0, 0.84, 0.0)   
+    elif rank == 2 or rank == 3:
+        return '\ue02c', (0.75, 0.75, 0.75) 
+    elif 4 <= rank <= 15:
+        return '\ue02b', (0.8, 0.5, 0.2)    
+    else:
+        return '', (1,1,1)
+
+# -------------------------------------------------------------
 
 NormalPlayerSpaz = playerspaz.PlayerSpaz
 
@@ -47,6 +152,9 @@ class NewPlayerSpaz(playerspaz.PlayerSpaz):
                         character=character, powerups_expire=powerups_expire)
         self.equip_boxing_gloves()
         self.player = player
+        # أيقونة الرتبة (تحفظ كمرجع)
+        self.rank_icon = None
+        self.rank_icon_math = None
     
     def handlemessage(self, msg: Any) -> Any:
         if isinstance(msg, bs.HitMessage):
@@ -366,7 +474,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         self.foghorn_sound = bui.getsound('foghorn')
         self.swipsound = bui.getsound('swip')
         self.whistle_sound = bui.getsound('refWhistle')
-        self.ding_sound = bui.getsound('ding')  # تم إضافة هذا السطر
+        self.ding_sound = bui.getsound('ding')
         
         self.ball_textures = {
             1: bs.gettexture('ouyaUButton'),
@@ -496,6 +604,101 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         except Exception as e:
             print(f"⚠️ Error saving default A-Soccer config: {e}")
 
+    # ==================== نظام الإحصائيات والرتب – جديد ====================
+    def _update_stats_goal(self, scorer_player: bs.Player, assister_player: bs.Player = None):
+        """تحديث إحصائيات الهدف والتمريرة الحاسمة"""
+        try:
+            scorer_account = scorer_player.sessionplayer.get_v1_account_id()
+            if scorer_account:
+                _update_player_stats(scorer_account, goals=1)
+            if assister_player:
+                assister_account = assister_player.sessionplayer.get_v1_account_id()
+                if assister_account:
+                    _update_player_stats(assister_account, assists=1)
+            _recalculate_all_ranks()
+            self._update_all_rank_icons()
+        except Exception as e:
+            debug_print(f"Error updating goal stats: {e}")
+
+    def _update_stats_game_end(self, winning_team: Team = None, losing_team: Team = None, draw: bool = False):
+        """تحديث إحصائيات الفوز / الخسارة / التعادل"""
+        try:
+            if draw:
+                for team in (self.teams[0], self.teams[1]):
+                    for player in team.players:
+                        acc = player.sessionplayer.get_v1_account_id()
+                        if acc:
+                            _update_player_stats(acc, draw=True)
+            else:
+                if winning_team:
+                    for player in winning_team.players:
+                        acc = player.sessionplayer.get_v1_account_id()
+                        if acc:
+                            _update_player_stats(acc, win=True)
+                if losing_team:
+                    for player in losing_team.players:
+                        acc = player.sessionplayer.get_v1_account_id()
+                        if acc:
+                            _update_player_stats(acc, loss=True)
+            _recalculate_all_ranks()
+        except Exception as e:
+            debug_print(f"Error updating end game stats: {e}")
+
+    def _create_rank_icon(self, player: bs.Player, account_id: str):
+        """إنشاء أيقونة الرتبة فوق رأس اللاعب (مرتفعة y=2.2)"""
+        spaz = player.actor
+        if not spaz or not spaz.node:
+            return
+        self._remove_rank_icon(spaz)
+        data = _load_cheatmax_data()
+        rank = data.get(account_id, {}).get('Stats', {}).get('rank', 0)
+        icon, color = _get_rank_icon(rank)
+        if not icon:
+            return
+        with self.context:
+            math_node = bs.newnode('math',
+                attrs={'input1': (0.0, 1.6, 0.0), 'operation': 'add'})
+            spaz.node.connectattr('position_center', math_node, 'input2')
+            icon_node = bs.newnode('text',
+                attrs={
+                    'text': icon,
+                    'in_world': True,
+                    'shadow': 1.0,
+                    'flatness': 1.0,
+                    'h_align': 'center',
+                    'v_align': 'bottom',
+                    'scale': 0.009,
+                    'color': color,
+                    'opacity': 1.0
+                })
+            math_node.connectattr('output', icon_node, 'position')
+            spaz.rank_icon = icon_node
+            spaz.rank_icon_math = math_node
+
+    def _remove_rank_icon(self, spaz):
+        try:
+            if hasattr(spaz, 'rank_icon') and spaz.rank_icon:
+                if spaz.rank_icon.exists():
+                    spaz.rank_icon.delete()
+                spaz.rank_icon = None
+            if hasattr(spaz, 'rank_icon_math') and spaz.rank_icon_math:
+                if spaz.rank_icon_math.exists():
+                    spaz.rank_icon_math.delete()
+                spaz.rank_icon_math = None
+        except:
+            pass
+
+    def _update_all_rank_icons(self):
+        """تحديث أيقونات الرتب لجميع اللاعبين الأحياء"""
+        for player in self.players:
+            if player.is_alive() and player.actor:
+                try:
+                    acc = player.sessionplayer.get_v1_account_id()
+                    if acc:
+                        self._create_rank_icon(player, acc)
+                except:
+                    pass
+
     # ==================== باقي دوال اللعبة ====================
     def handle_ball_player_collide(self) -> None:
         """تصادم الكرة مع اللاعب"""
@@ -510,14 +713,10 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
     def handle_ball_wall_collide(self) -> None:
         """تصادم الكرة مع الحائط (بما في ذلك الحائط المخفي)"""
         collision = bs.getcollision()
-        
-        # إذا كان الاصطدام مع الحائط المخفي (السقف)
         try:
             if hasattr(self, 'roof_wall') and collision.sourcenode == self.roof_wall:
-                # جعل الكرة تنزل للأسفل
                 ball = collision.opposingnode.getdelegate(Ball, True)
                 if ball and ball.node:
-                    # عكس حركة الكرة الرأسية
                     current_velocity = ball.node.velocity
                     new_velocity = (
                         current_velocity[0] * 0.8,
@@ -528,8 +727,6 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                     return
         except:
             pass
-        
-        # المعالجة الأصلية للحائط العادي
         if not self.gk_mode:
             return
         if hasattr(self, 'gk_saves_num_txt'):
@@ -589,8 +786,6 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                             if time_diff <= 3.0:
                                 assister = player
                                 break
-                    
-                    
                 
                 if scorer is None:
                     for player in scoring_team.players:
@@ -603,7 +798,9 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                                 print(f"Error in fallback scorer: {e}")
                             break
                 
-               
+                # ⭐ تحديث الإحصائيات – هدف + تمريرة حاسمة
+                if scorer is not None:
+                    self._update_stats_goal(scorer, assister)
                 
                 try:
                     pos = bs.getcollision().position
@@ -782,7 +979,6 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                     
                     self.ding_sound.play()  
                     
-                    
                 except Exception as e:
                     print(f"Error showing scorer UI: {e}")
 
@@ -923,7 +1119,6 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                         bs.timer(display_time + 0.1, assist_node.delete)
                         
                         self.ding_sound.play()  
-                        
                         
                     except Exception as e:
                         print(f"Error showing assister UI: {e}")
@@ -1111,6 +1306,8 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
 
     def on_player_leave(self, player: Player) -> None:
         """عند خروج لاعب من السيرفر"""
+        if player.actor:
+            self._remove_rank_icon(player.actor)
         super().on_player_leave(player)
         
         try:
@@ -1138,10 +1335,25 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
             pass
 
     def end_game(self) -> None:
-        """إنهاء المباراة"""
-        
-        self.cleanup_team_references()
-        
+        """إنهاء المباراة – تحديث إحصائيات الفوز/الخسارة/التعادل"""
+        # ⭐ تحديد الفائز والخاسر أو التعادل
+        winner = None
+        loser = None
+        draw = False
+        if self.teams[0].score > self.teams[1].score:
+            winner = self.teams[0]
+            loser = self.teams[1]
+        elif self.teams[1].score > self.teams[0].score:
+            winner = self.teams[1]
+            loser = self.teams[0]
+        else:
+            draw = True
+
+        # تحديث الإحصائيات
+        self._update_stats_game_end(winner, loser, draw)
+        # تحديث أيقونات الرتب بعد انتهاء اللعبة
+        bs.timer(0.5, self._update_all_rank_icons)
+
         self.wall_timer_running = False
         
         if hasattr(self, 'roof_wall') and self.roof_wall:
@@ -1155,7 +1367,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         for team in self.teams:
             results.set_team_score(team, team.score)
         
-        bs.timer(3.0, lambda: self.end(results=results))
+        bs.timer(1.5, lambda: self.end(results=results))
 
     def apply_weather(self):
         """تطبيق تأثيرات الطقس - النهاري فقط بدون ثلج"""
@@ -1205,7 +1417,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         """تطبيق تيكستشر الأرضية - أرضية خضراء مع انعكاس عالي"""
         try:
             texture = bs.gettexture('reflectionSoft_+z')
-            color = self.floor_color  # استخدام اللون المحفوظ
+            color = self.floor_color
             
             for node in bs.getnodes():
                 try:
@@ -1233,7 +1445,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         """تطبيق تيكستشر الحيطان السفلية"""
         try:
             wall_textures = {
-                0: (bs.gettexture('doomShroomBGColor'), self.wall_down_color),  # استخدام اللون المحفوظ
+                0: (bs.gettexture('doomShroomBGColor'), self.wall_down_color),
             }
             
             texture_key = self.wall_down_texture_setting
@@ -1264,7 +1476,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         """تطبيق تيكستشر الحيطان العلوية"""
         try:
             wall_textures = {
-                0: (bs.gettexture('doomShroomBGColor'), self.wall_up_color),  # استخدام اللون المحفوظ
+                0: (bs.gettexture('doomShroomBGColor'), self.wall_up_color),
             }
             
             texture_key = self.wall_up_texture_setting
@@ -1380,7 +1592,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
             pass
 
     def spawn_player(self, player: Player) -> bs.Actor:
-        """إضافة لاعب"""
+        """إضافة لاعب – مع إنشاء أيقونة الرتبة"""
         try:
             if hasattr(player, 'team_light') and player.team_light:
                 try:
@@ -1405,6 +1617,15 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                 spaz.connect_controls_to_player(enable_pickup=False)
             
             self.add_player_light(player)
+            
+            # ⭐ تأكد من وجود إحصائيات اللاعب وأنشئ أيقونة الرتبة
+            try:
+                acc = player.sessionplayer.get_v1_account_id()
+                if acc:
+                    _ensure_player_stats(acc)
+                    bs.timer(0.3, lambda: self._create_rank_icon(player, acc))
+            except:
+                pass
             
             return spaz
         except Exception as e:
@@ -1845,7 +2066,6 @@ class SoccerMap(maps.HockeyStadium):
     
     def __init__(self) -> None:
         super().__init__()
-
         pass
 
 # ba_meta export babase.Plugin
