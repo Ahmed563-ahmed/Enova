@@ -2519,38 +2519,91 @@ class Commands:
                 self.clientmessage("❌ Invalid help page. Use 1-4", color=(1,0,0))
 
     def process_list_players(self):
-        """عرض قائمة اللاعبين مع PB-ID"""
         try:
-            txts = []
-            txts.append("=" * 80)
-            txts.append("🎮 Player List | ID | Client ID | PB-ID")
-            txts.append("=" * 80)
             activity = bs.get_foreground_host_activity()
-            if activity:
-                for idx, p in enumerate(activity.players):
-                    try:
-                        s = p.sessionplayer
-                        client_id = s.inputdevice.client_id
-                        name = s.getname(full=False)
-                        pb_id = s.get_v1_account_id() or "No PB-ID"
-                        txts.append(f"{name[:20]:<20} | {idx:<2} | {client_id:<6} | {pb_id}")
-                    except:
-                        continue
-            else:
-                # من الروستر
-                for r in roster():
+            if not activity:
+                self.clientmessage("❌ No active game found", color=(1,0,0))
+                return
+            self.util.update_usernames()
+            players_data = []
+            roster_data = roster()
+            if roster_data:
+                for r in roster_data:
                     try:
                         client_id = r.get('client_id')
-                        name = r.get('display_string', 'Unknown')
-                        pb_id = r.get('account_id', 'No PB-ID')
-                        txts.append(f"{name[:20]:<20} | ??? | {client_id:<6} | {pb_id}")
+                        if client_id is None:
+                            continue
+                        account_id = r.get('account_id', 'Unknown')
+                        account_name = r.get('display_string', 'Unknown')
+                        player_name = account_name
+                        players_list = r.get('players', [])
+                        if players_list:
+                            player_name = players_list[0].get('name_full', player_name)
+                        role = "Player"
+                        if client_id == -1:
+                            role = "Owner"
+                        elif account_id in self.util.pdata:
+                            if self.util.pdata[account_id].get('Admin', False):
+                                role = "Admin"
+                        tag_text = "None"
+                        if account_id in self.util.pdata:
+                            if 'Tag' in self.util.pdata[account_id]:
+                                tag_data = self.util.pdata[account_id]['Tag']
+                                tag_text = tag_data.get('text', 'None')
+                        players_data.append({
+                            'pb_id': account_id,
+                            'role': role,
+                            'account_name': account_name,
+                            'player_name': player_name,
+                            'client_id': client_id,
+                            'tag': tag_text
+                        })
                     except:
                         continue
-            txts.append("=" * 80)
-            full_txt = "\n".join(txts)
-            bs.screenmessage(full_txt, clients=[self.client_id])
+            if not players_data:
+                self.clientmessage("❌ No players found", color=(1,0,0))  
+                return
+            players_data.sort(key=lambda x: x['client_id'])
+            self.send_chat_message("=============================================[Players_list]==================================================")
+            self.send_chat_message("||        PB-ID        ||    Role    ||  Account_name   ||        Name         || Client ID ||   Name Tag  ||")
+            self.send_chat_message("=============================================================================================================")
+            for data in players_data:
+                pb_id = str(data['pb_id'])
+                if len(pb_id) > 20:
+                    pb_id = pb_id[:18] + ".."
+                pb_id = pb_id.ljust(20)
+                role = data['role']
+                if role == "Owner":
+                    role = "👑 Owner"
+                elif role == "Admin":
+                    role = "⭐ Admin"
+                else:
+                    role = "👤 Player"
+                role = role.ljust(12)
+                account_name = str(data['account_name'])
+                if len(account_name) > 15:
+                    account_name = account_name[:13] + ".."
+                account_name = account_name.ljust(15)
+                player_name = str(data['player_name'])
+                if len(player_name) > 18:
+                    player_name = player_name[:16] + ".."
+                player_name = player_name.ljust(18)
+                client_id = str(data['client_id'])
+                if data['client_id'] == -1:
+                    client_id = "👑 Host"
+                client_id = client_id.center(10)
+                tag = str(data['tag'])
+                if len(tag) > 10:
+                    tag = tag[:8] + ".."
+                tag = tag.ljust(10)
+                row = f"|| {pb_id} || {role} || {account_name} || {player_name} || {client_id} || {tag} ||"
+                self.send_chat_message(row)
+            self.send_chat_message("==========================[Players_list]=============================")
+            self.send_chat_message(f"👥 Total Players: {len(players_data)}")
+            self.send_chat_message("👑 = Owner/Host | ⭐ = Admin | 👤 = Player")
         except Exception as e:
-            self.clientmessage(f"❌ Error listing players: {e}")
+            print(f"❌ Error in process_list_players: {e}")
+            self.clientmessage("❌ Error showing players list", color=(1,0,0))
 
 class CommandFunctions:
     @staticmethod
