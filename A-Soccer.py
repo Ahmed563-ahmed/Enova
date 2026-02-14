@@ -657,7 +657,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
             return
         with self.context:
             math_node = bs.newnode('math',
-                attrs={'input1': (0.0, 1.6, 0.0), 'operation': 'add'})
+                attrs={'input1': (0.0, 2.025, 0.0), 'operation': 'add'})
             spaz.node.connectattr('position_center', math_node, 'input2')
             icon_node = bs.newnode('text',
                 attrs={
@@ -667,7 +667,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                     'flatness': 1.0,
                     'h_align': 'center',
                     'v_align': 'bottom',
-                    'scale': 0.009,
+                    'scale': 0.0095,
                     'color': color,
                     'opacity': 1.0
                 })
@@ -1156,7 +1156,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
     def on_begin(self) -> None:
         super().on_begin()
         shared = SharedObjects.get()
-        self.title_text = Text('Enova Soccer', 0.04, (-3.06, 0.66, -8.5), (0.6,0.8,1,0.6), 1.0, in_world=True)
+        self.title_text = Text('Enova Soccer', 0.04, (-3.06, 0.66, -8.5), (0.6,0.8,1,0.6), 1.0, in_world=True,)
         self.title_text = Text('Enova Soccer', 0.04, (-3, 0.7, -8.5), (1,1,1,0.6), 1.0, in_world=True)
         bs.newnode('text',
                                             attrs={
