@@ -441,7 +441,7 @@ class CMBall(bs.Actor):
 ASOCCER_CONFIG_DIR = os.path.join(_babase.app.env.python_directory_user, 'Configs')
 ASOCCER_CONFIG_FILE = os.path.join(ASOCCER_CONFIG_DIR, 'A-SoccerConfig.json')
 
-# ==================== نظام الطقس العالمي (معدل بالكامل – بدون أخطاء) ====================
+# ==================== نظام الطقس العالمي ====================
 class WeatherEffect:
     """يدير تأثيرات الطقس العالمية (emitfx على الخريطة كلها)"""
     def __init__(self):
@@ -513,7 +513,832 @@ class WeatherEffect:
 
         bs.emitfx(**kwargs)
 
-# ==================== نظام لوحة المتصدرين (Leaderboard) ====================
+
+# ==================== كلاس Uts (يُعرف قبل LeaderboardDisplay و TagSystem و ClubsSystem) ====================
+class Uts:
+    directory_user: str = _babase.app.env.python_directory_user
+    directory_sys: str = directory_user + '/sys/' + _babase.app.env.engine_version + '_' + str(_babase.app.env.engine_build_number)
+    sm: Callable = bs.broadcastmessage
+    cm: Callable = bs.chatmessage
+    key: str = '#CheatMax'
+    mod: Any
+    accounts: dict[int, Any] = {}
+    usernames: dict[int, str] = {}
+    shortnames: dict[int, str] = {}
+    useraccounts: dict[int, str] = {}
+    userpbs: dict[int, str] = {}
+    players: dict[int, bs.SessionPlayer] = {}
+    tags: dict[str, dict] = {}
+    tag_system = None
+    
+    # نظام الطقس
+    weather_effect = WeatherEffect()
+    
+    # لوحة المتصدرين
+    leaderboard_display = None
+    
+    # متغيرات إغلاق السيرفر
+    server_close_active = False
+    server_close_end_time = 0.0
+    server_close_tag_name = ""
+    server_close_countdown_text = None
+    server_close_original_players = []
+    server_close_last_update = 0.0
+    
+    # بيانات الحظر والإبلاغات
+    bans_data = {}
+    reports_data = {"reports": []}
+    # بيانات التحذيرات
+    warns_data = {}
+    # نظام الأندية (سيتم إنشاؤه لاحقاً)
+    clubs_system = None
+
+    @staticmethod
+    def create_bans_data():
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxBansData.json'
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+        if not os.path.exists(file):
+            with open(file, 'w') as f:
+                f.write('{}')
+        try:
+            with open(file) as f:
+                r = f.read()
+                if r.strip():
+                    Uts.bans_data = json.loads(r)
+                else:
+                    Uts.bans_data = {}
+            print(f"✅ Bans data loaded: {len(Uts.bans_data)} bans")
+            for k, v in Uts.bans_data.items():
+                print(f"   - {k}: {v.get('account_id')} | {v.get('client_id')} | {v.get('name')}")
+        except Exception as e:
+            print(f"⚠️ Error loading bans data: {e}")
+            Uts.bans_data = {}
+    
+    @staticmethod
+    def save_bans_data():
+        try:
+            folder = Uts.directory_user + '/Configs'
+            file = folder + '/CheatMaxBansData.json'
+            with open(file, 'w') as f:
+                w = json.dumps(Uts.bans_data, indent=4)
+                f.write(w)
+            print(f"✅ Bans data saved: {len(Uts.bans_data)} bans")
+        except Exception as e:
+            print(f"❌ Error saving bans data: {e}")
+    
+    @staticmethod
+    def create_reports_data():
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxReportsData.json'
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+        if not os.path.exists(file):
+            with open(file, 'w') as f:
+                f.write('{"reports": []}')
+        try:
+            with open(file) as f:
+                r = f.read()
+                if r.strip():
+                    Uts.reports_data = json.loads(r)
+                else:
+                    Uts.reports_data = {"reports": []}
+        except:
+            Uts.reports_data = {"reports": []}
+    
+    @staticmethod
+    def save_reports_data():
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxReportsData.json'
+        with open(file, 'w') as f:
+            w = json.dumps(Uts.reports_data, indent=4)
+            f.write(w)
+
+    # ==================== التحقق من الحظر عند الاتصال (جديد) ====================
+    @staticmethod
+    def check_session_player_ban(sessionplayer) -> bool:
+        """التحقق من حظر اللاعب فور اتصاله. إذا كان محظورًا، يتم قطعه وإرجاع True."""
+        try:
+            client_id = sessionplayer.inputdevice.client_id
+            if client_id == -1:  # المستضيف (host) لا يُحظر
+                return False
+
+            # محاولة الحصول على account_id
+            account_id = None
+            try:
+                account_id = sessionplayer.get_v1_account_id()
+            except:
+                # قد لا يكون متاحًا بعد، نحاول من Uts.userpbs إذا وُجد
+                if client_id in Uts.userpbs:
+                    account_id = Uts.userpbs[client_id]
+
+            if not account_id:
+                return False  # لا يوجد account_id، لا يمكن التحقق بدقة
+
+            # التحقق من وجود الحظر
+            for ban_key, ban_info in Uts.bans_data.items():
+                if ban_info.get('account_id') == account_id:
+                    # يوجد حظر – قطع الاتصال
+                    reason = ban_info.get('reason', 'No reason')
+                    banned_by = ban_info.get('banned_by', 'Admin')
+                    print(f"🚫 Banned player {client_id} (account: {account_id}) kicked on join.")
+                    # إرسال رسالة قبل القطع (إذا أمكن)
+                    try:
+                        Uts.sm(f"You are banned.\nReason: {reason}\nBanned by: {banned_by}",
+                               color=(1,0,0), clients=[client_id], transient=True)
+                    except:
+                        pass
+                    # قطع الاتصال بعد ثانية لإعطاء فرصة لظهور الرسالة
+                    bs.apptimer(1.0, lambda: bs.disconnect_client(client_id))
+                    return True
+        except Exception as e:
+            print(f"❌ Error in check_session_player_ban: {e}")
+        return False
+
+    # ✅ FIX: Ban enforcement – only by PB-ID (account_id), client_id check removed
+    @staticmethod
+    def check_player_ban_on_join(player: bs.Player) -> bool:
+        try:
+            sessionplayer = player.sessionplayer
+            client_id = sessionplayer.inputdevice.client_id
+            if client_id == -1:
+                print("👑 Host is joining - skip ban check.")
+                return False
+
+            account_id = None
+            try:
+                account_id = sessionplayer.get_v1_account_id()
+            except:
+                if client_id in Uts.userpbs:
+                    account_id = Uts.userpbs[client_id]
+
+            player_name = None
+            try:
+                player_name = sessionplayer.getname(full=True)
+            except:
+                if client_id in Uts.usernames:
+                    player_name = Uts.usernames[client_id]
+
+            print(f"🔍 Checking ban for: {player_name} (Client: {client_id}, PB-ID: {account_id})")
+            Uts.create_bans_data()
+
+            # ✅ ONLY check by account_id (pb‑ID) – client_id check removed
+            if account_id:
+                for ban_key, ban_info in Uts.bans_data.items():
+                    if ban_info.get('account_id') == account_id:
+                        print(f"🚫 Ban match (PB-ID): {ban_key}")
+                        Uts.kick_banned_player(client_id, ban_info)
+                        return True
+
+            # Optional: still check by exact name match (only if no account_id)
+            if player_name and not account_id:
+                player_name_lower = player_name.lower()
+                for ban_key, ban_info in Uts.bans_data.items():
+                    banned_name = ban_info.get('name', '').lower()
+                    if banned_name and banned_name == player_name_lower:
+                        print(f"🚫 Ban match (Name – no PB-ID): {ban_key}")
+                        Uts.kick_banned_player(client_id, ban_info)
+                        return True
+
+            print(f"✅ Player is not banned: {player_name}")
+            return False
+        except Exception as e:
+            print(f"❌ Error in check_player_ban_on_join: {e}")
+            return False
+    
+    @staticmethod
+    def kick_banned_player(client_id: int, ban_data: dict):
+        try:
+            reason = ban_data.get('reason', 'No reason provided')
+            banned_by = ban_data.get('banned_by', 'Admin')
+            player_name = ban_data.get('name', f'Player {client_id}')
+            message = getlanguage("BannedMessage", subs=[reason, banned_by])
+            # إضافة transient=True لإرسال الرسالة لعميل محدد
+            Uts.sm(message, color=(1,0,0), clients=[client_id], transient=True)
+            def kick():
+                try:
+                    bs.disconnect_client(client_id)
+                    print(f"✅ Kicked banned player: {player_name} (Client: {client_id})")
+                except Exception as e:
+                    print(f"❌ Error kicking player {client_id}: {e}")
+            bs.apptimer(2.0, lambda: bs.pushcall(kick))
+        except Exception as e:
+            print(f"❌ Error in kick_banned_player: {e}")
+
+    @staticmethod
+    def start_server_closure(hours: float, tag_name: str, admin_client_id: int) -> bool:
+        try:
+            current_time = time.time()
+            if Uts.server_close_active:
+                return False
+            Uts.server_close_active = True
+            Uts.server_close_end_time = current_time + (hours * 3600)
+            Uts.server_close_tag_name = tag_name
+            Uts.server_close_original_players = []
+            Uts.server_close_last_update = current_time
+            print(f"✅ Server closure started at {current_time}. End time: {Uts.server_close_end_time} for tag: {tag_name}")
+            activity = bs.get_foreground_host_activity()
+            if activity:
+                for player in activity.players:
+                    try:
+                        client_id = player.sessionplayer.inputdevice.client_id
+                        Uts.server_close_original_players.append(client_id)
+                    except:
+                        continue
+            Uts.start_close_server_countdown()
+            Uts.cm(f"Server closed for {hours} hours for '{tag_name}' tag training")
+            return True
+        except Exception as e:
+            print(f"❌ Error starting server closure: {e}")
+            return False
+
+    @staticmethod
+    def create_warns_data():
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxWarnsData.json'
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+        if not os.path.exists(file):
+            with open(file, 'w') as f:
+                f.write('{}')
+        try:
+            with open(file) as f:
+                r = f.read()
+                if r.strip():
+                    Uts.warns_data = json.loads(r)
+                else:
+                    Uts.warns_data = {}
+            print(f"✅ Warns data loaded: {sum(len(v) for v in Uts.warns_data.values())} warnings")
+        except Exception as e:
+            print(f"⚠️ Error loading warns data: {e}")
+            Uts.warns_data = {}
+
+    @staticmethod
+    def save_warns_data():
+        try:
+            folder = Uts.directory_user + '/Configs'
+            file = folder + '/CheatMaxWarnsData.json'
+            with open(file, 'w') as f:
+                w = json.dumps(Uts.warns_data, indent=4)
+                f.write(w)
+        except Exception as e:
+            print(f"❌ Error saving warns data: {e}")
+
+    @staticmethod
+    def add_warning(account_id: str, warner_name: str, warner_account: str, reason: str):
+        """إضافة تحذير لحساب معين"""
+        if account_id not in Uts.warns_data:
+            Uts.warns_data[account_id] = []
+        warning = {
+            'warner_name': warner_name,
+            'warner_account': warner_account,
+            'reason': reason,
+            'timestamp': time.time(),
+            'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        Uts.warns_data[account_id].append(warning)
+        Uts.save_warns_data()
+        return len(Uts.warns_data[account_id])  # عدد التحذيرات بعد الإضافة
+
+    @staticmethod
+    def get_warnings(account_id: str):
+        """استرجاع قائمة التحذيرات لحساب"""
+        return Uts.warns_data.get(account_id, [])
+
+    @staticmethod
+    def clear_warnings(account_id: str):
+        """مسح كل التحذيرات لحساب"""
+        if account_id in Uts.warns_data:
+            del Uts.warns_data[account_id]
+            Uts.save_warns_data()
+            return True
+        return False
+
+    @staticmethod
+    def is_player_allowed_during_closure(client_id: int, tag_name: str) -> bool:
+        try:
+            if client_id == -1 or CommandFunctions.user_is_admin(client_id):
+                return True
+            player_name = Uts.usernames.get(client_id, None)
+            if not player_name:
+                for r in roster():
+                    if r['client_id'] == client_id:
+                        player_name = r['display_string']
+                        break
+            if not player_name:
+                return False
+            account_id = None
+            for acc_id, acc_data in Uts.pdata.items():
+                if 'Accounts' in acc_data:
+                    for acc_name in acc_data['Accounts']:
+                        if player_name == acc_name:
+                            account_id = acc_id
+                            break
+                if account_id:
+                    break
+            if account_id and account_id in Uts.pdata:
+                player_data = Uts.pdata[account_id]
+                if 'Tag' in player_data:
+                    tag_data = player_data['Tag']
+                    player_tag = tag_data.get('text', '').strip().lower()
+                    required_tag = tag_name.strip().lower()
+                    if player_tag == required_tag:
+                        return True
+            if client_id in Uts.server_close_original_players:
+                return True
+            return False
+        except Exception as e:
+            print(f"❌ Error checking player allowance: {e}")
+            return False
+    
+    @staticmethod
+    def start_close_server_countdown():
+        try:
+            def update_countdown():
+                try:
+                    if not Uts.server_close_active:
+                        if Uts.server_close_countdown_text and Uts.server_close_countdown_text.exists():
+                            Uts.server_close_countdown_text.delete()
+                            Uts.server_close_countdown_text = None
+                        return
+                    activity = bs.get_foreground_host_activity()
+                    if not activity:
+                        bs.apptimer(1.0, update_countdown)
+                        return
+                    current_time = time.time()
+                    remaining_time = Uts.server_close_end_time - current_time
+                    if remaining_time <= 0:
+                        Uts.stop_server_closure()
+                        Uts.cm("✅ Server closure ended. Everyone can join now.")
+                        return
+                    hours = int(remaining_time // 3600)
+                    minutes = int((remaining_time % 3600) // 60)
+                    seconds = int(remaining_time % 60)
+                    time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                    if hasattr(activity, 'context'):
+                        with activity.context:
+                            if Uts.server_close_countdown_text is None or not Uts.server_close_countdown_text.exists():
+                                Uts.server_close_countdown_text = text.Text(
+                                    f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}",
+                                    position=(0, 250),
+                                    scale=1.0,
+                                    color=(1, 0, 0),
+                                    h_align=text.Text.HAlign.CENTER,
+                                    v_align=text.Text.VAlign.CENTER
+                                )
+                                Uts.server_close_countdown_text.node.opacity = 0.7
+                            else:
+                                try:
+                                    Uts.server_close_countdown_text.node.text = f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}"
+                                except:
+                                    Uts.server_close_countdown_text = text.Text(
+                                        f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}",
+                                        position=(0, 250),
+                                        scale=1.0,
+                                        color=(1, 0, 0),
+                                        h_align=text.Text.HAlign.CENTER,
+                                        v_align=text.Text.VAlign.CENTER
+                                    )
+                                    Uts.server_close_countdown_text.node.opacity = 0.7
+                    bs.apptimer(1.0, update_countdown)
+                except Exception as e:
+                    print(f"❌ Error in countdown update: {e}")
+                    bs.apptimer(2.0, update_countdown)
+            bs.apptimer(0.5, update_countdown)
+            print(f"✅ Countdown started for server closure")
+        except Exception as e:
+            print(f"❌ Error starting countdown: {e}")
+    
+    @staticmethod
+    def stop_server_closure():
+        try:
+            Uts.server_close_active = False
+            Uts.server_close_end_time = 0.0
+            Uts.server_close_tag_name = ""
+            Uts.server_close_original_players = []
+            if Uts.server_close_countdown_text and Uts.server_close_countdown_text.exists():
+                Uts.server_close_countdown_text.delete()
+                Uts.server_close_countdown_text = None
+            print("✅ Server closure stopped.")
+        except Exception as e:
+            print(f"❌ Error stopping server closure: {e}")
+    
+    @staticmethod
+    def check_player_allowed_on_join(player: bs.Player):
+        try:
+            if not Uts.server_close_active:
+                return
+            client_id = player.sessionplayer.inputdevice.client_id
+            if not Uts.is_player_allowed_during_closure(client_id, Uts.server_close_tag_name):
+                current_time = time.time()
+                remaining_time = Uts.server_close_end_time - current_time
+                if remaining_time <= 0:
+                    Uts.stop_server_closure()
+                    return
+                hours = int(remaining_time // 3600)
+                minutes = int((remaining_time % 3600) // 60)
+                seconds = int(remaining_time % 60)
+                time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                message = f"There's a training match for {Uts.server_close_tag_name}. Please try to join again after {time_str}"
+                Uts.sm(message, color=(1, 0, 0), clients=[client_id])
+                def kick_player():
+                    try:
+                        bs.disconnect_client(client_id)
+                    except:
+                        pass
+                bs.apptimer(2.0, kick_player)
+        except Exception as e:
+            print(f"❌ Error checking player on join: {e}")
+
+    @staticmethod
+    def get_user_name(c_id: int) -> str:
+        try:
+            for r in roster():
+                if r['client_id'] == c_id:
+                    if r['players'] == []:
+                        return r['display_string']
+                    else:
+                        return r['players'][0]['name_full']
+        except:
+            pass
+        return 'UNNAMED'
+
+    @staticmethod
+    def sort_list(vals: list, count: int = 3) -> list:
+        vals_dict = dict(r=[])
+        for n in range(len(vals)):
+            vals_dict[n] = list()
+            for c in vals:
+                if len(vals_dict[n]) == count:
+                    break
+                else:
+                    if c not in vals_dict['r']:
+                        vals_dict['r'].append(c)
+                        vals_dict[n].append(c)
+            if len(vals_dict['r']) == len(vals):
+                vals_dict.pop('r')
+                break
+        return list(vals_dict.values())
+
+    @staticmethod
+    def colors() -> dict[str, Sequence[float]]:
+        return dict(
+                yellow=(1.0, 1.0, 0.0),
+                red=(1.0, 0.0, 0.0),
+                green=(0.0, 1.0, 0.0),
+                blue=(0.2, 1.0, 1.0),
+                pink=(1, 0.3, 0.5),
+                orange=(1.0, 0.5, 0.0),
+                violet=(0.5, 0.25, 1.0),
+                white=(1.0, 1.0, 1.0),
+                black=(0.25, 0.25, 0.25))
+
+    @staticmethod
+    def get_admins() -> list[str]:
+        admins = []
+        if not hasattr(Uts, 'pdata'): 
+            Uts.create_players_data()
+        if len(Uts.pdata) > 0:
+            for p, d in getattr(Uts, 'pdata', {}).items():
+                if d['Admin']:
+                    admins.append(p)
+        return admins
+        
+    @staticmethod
+    def get_owners() -> list[str]:
+        owners = []
+        if not hasattr(Uts, 'pdata'): 
+            Uts.create_players_data()
+        if len(Uts.pdata) > 0:
+            for p, d in getattr(Uts, 'pdata', {}).items():
+                if d.get('Owner', False):
+                    owners.append(p)
+        return owners
+
+    @staticmethod
+    def add_or_del_user(c_id: int, add: bool = True) -> None:
+        if c_id == -1:
+            return Uts.sm("You Are Amazing!!", color=(0.5, 0, 1), clients=[c_id], transient=True)
+        if c_id not in Uts.userpbs:
+            Uts.sm(f"'{c_id}' Does not belong to any player.", clients=[c_id], transient=True)
+        else:
+            user = Uts.userpbs[c_id]
+            if add:
+                if not hasattr(Uts, 'pdata'): 
+                    Uts.create_players_data()
+                if user in Uts.pdata:
+                    if not Uts.pdata[user]['Admin']:
+                        Uts.pdata[user]['Admin'] = add
+                        Uts.cm(f"'{Uts.usernames[c_id]}' Added to Admins list")
+            else:
+                if not hasattr(Uts, 'pdata'): 
+                    Uts.create_players_data()
+                if user in Uts.pdata:
+                    if Uts.pdata[user]['Admin']:
+                        Uts.pdata[user]['Admin'] = add
+                        Uts.cm(f"'{Uts.usernames[c_id]}' was removed from the Admins list")
+            Uts.save_players_data()
+            
+    @staticmethod
+    def add_owner(account_id: str) -> None:
+        if not hasattr(Uts, 'pdata'): 
+            Uts.create_players_data()
+        if account_id not in Uts.pdata:
+            Uts.pdata[account_id] = {
+                'Mute': False,
+                'Effect': 'none',
+                'Admin': True,
+                'Owner': True,
+                'Accounts': []
+            }
+        else:
+            Uts.pdata[account_id]['Admin'] = True
+            Uts.pdata[account_id]['Owner'] = True
+        Uts.save_players_data()
+        print(f"Added owner: {account_id}")
+
+    @staticmethod
+    def create_players_data() -> None:
+        if hasattr(Uts, 'pdata'):
+            return
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxPlayersData.json'
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+        if not os.path.exists(file):
+            with open(file, 'w') as f:
+                f.write('{}')
+        with open(file) as f:
+            r = f.read()
+            Uts.pdata = json.loads(r)
+            
+    @staticmethod
+    def create_tags_data() -> None:
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxTagsData.json'
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+        if not os.path.exists(file):
+            with open(file, 'w') as f:
+                f.write('{}')
+        with open(file) as f:
+            r = f.read()
+            Uts.tags = json.loads(r)
+
+    @staticmethod
+    def save_players_data() -> None:
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxPlayersData.json'
+        with open(file, 'w') as f:
+            w = json.dumps(Uts.pdata, indent=4)
+            f.write(w)
+            
+    @staticmethod
+    def save_tags_data() -> None:
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxTagsData.json'
+        with open(file, 'w') as f:
+            w = json.dumps(Uts.tags, indent=4)
+            f.write(w)
+
+    @staticmethod
+    def player_join(player: bs.Player) -> None:
+        if not hasattr(Uts, "pdata"):
+            Uts.create_players_data()
+        try:
+            sessionplayer = player.sessionplayer
+            account_id = sessionplayer.get_v1_account_id()
+            client_id = sessionplayer.inputdevice.client_id
+            account_name = sessionplayer.inputdevice.get_v1_account_name(True)
+        except Exception as e:
+            if "account" not in str(e).lower():
+                bs.chatmessage(f"Error in player_join: {e}")
+            account_id = None
+
+        if account_id and account_id.startswith('pb'):
+            if account_id not in Uts.pdata:
+                Uts.add_player_data(account_id)
+                Uts.sm("Saving user data...", color=(0.35, 0.7, 0.1), transient=True, clients=[client_id])
+            accounts = Uts.pdata[account_id]['Accounts']
+            if account_name not in accounts:
+                accounts.append(account_name)
+                Uts.save_players_data()
+            Uts.accounts[client_id] = Uts.pdata[account_id]
+            if Uts.pdata[account_id].get('Owner', False):
+                Uts.sm("You are the owner!", color=(1.0, 0.5, 0.0), transient=True, clients=[client_id])
+            # تخزين PB-ID الحقيقي
+            Uts.userpbs[client_id] = account_id
+        else:
+            # إذا لم يكن هناك account_id صالح (ضيف)، نستخدم client_id كمفتاح مؤقت
+            account_id = f"guest_{client_id}"
+            Uts.userpbs[client_id] = account_id
+            print(f"👤 Guest player {client_id} assigned temporary PB-ID: {account_id}")
+
+        Uts.usernames[client_id] = account_name or f"Player {client_id}"
+        Uts.useraccounts[client_id] = account_name or f"Player {client_id}"
+        Uts.players[client_id] = sessionplayer
+
+    @staticmethod
+    def update_usernames() -> None:
+        try:
+            # التحديث من roster
+            for r in roster():
+                c_id = r.get('client_id')
+                if c_id is None:
+                    continue
+                acc_id = r.get('account_id')
+                if acc_id and acc_id.startswith('pb'):
+                    Uts.userpbs[c_id] = acc_id
+                if c_id not in Uts.usernames:
+                    Uts.usernames[c_id] = r.get('display_string', 'Unknown')
+                # تحديث accounts
+                if acc_id and acc_id in Uts.pdata:
+                    Uts.accounts[c_id] = Uts.pdata[acc_id]
+        except Exception as e:
+            print(f"⚠️ Error in update_usernames (roster): {e}")
+
+        # التأكد من أن كل client_id له إدخال في userpbs
+        for cid in list(Uts.usernames.keys()):
+            if cid not in Uts.userpbs:
+                # حاول الحصول على PB-ID من بيانات الجلسة
+                if cid in Uts.players and Uts.players[cid].exists():
+                    try:
+                        acc = Uts.players[cid].get_v1_account_id()
+                        if acc and acc.startswith('pb'):
+                            Uts.userpbs[cid] = acc
+                            continue
+                    except:
+                        pass
+                # استخدام guest_ مؤقت
+                Uts.userpbs[cid] = f"guest_{cid}"
+                print(f"⚠️ Guest player {cid} assigned temporary PB-ID: guest_{cid}")
+
+        # تحديث من players dict
+        for c_id, p in list(Uts.players.items()):
+            try:
+                if p.exists():
+                    Uts.usernames[c_id] = p.getname(full=True)
+                    Uts.shortnames[c_id] = p.getname(full=False)
+                    acc = p.get_v1_account_id()
+                    if acc and acc.startswith('pb'):
+                        Uts.userpbs[c_id] = acc
+            except:
+                if c_id in Uts.players:
+                    del Uts.players[c_id]
+
+    @staticmethod
+    def add_player_data(account_id: str) -> None:
+        if not hasattr(Uts, 'pdata'):
+            Uts.create_players_data()
+        if account_id not in Uts.pdata:
+            Uts.pdata[account_id] = {
+                'Mute': False,
+                'Effect': 'none',
+                'Admin': False,
+                'Owner': False,
+                'Accounts': []}
+            Uts.save_players_data()
+
+    @staticmethod
+    def save_settings() -> None:
+        global cfg
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxSettings.json'
+        with open(file, 'w') as f:
+            w = json.dumps(cfg, indent=4)
+            f.write(w)
+
+    @staticmethod
+    def create_settings() -> None:
+        global cfg
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxSettings.json'
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+        if not os.path.exists(file):
+            with open(file, 'w') as f:
+                f.write('{}')
+        with open(file) as f:
+            r = f.read()
+            cfg = json.loads(r)
+        # إضافة إعداد الطقس الافتراضي
+        if 'Commands' not in cfg:
+            cfg['Commands'] = {}
+        if 'Weather' not in cfg['Commands']:
+            cfg['Commands']['Weather'] = 'none'
+            Uts.save_settings()
+        # إعداد لوحة المتصدرين (افتراضي معطل)
+        if 'ShowStatsLeaderboard' not in cfg['Commands']:
+            cfg['Commands']['ShowStatsLeaderboard'] = False
+            Uts.save_settings()
+
+    @staticmethod
+    def create_user_system_scripts() -> None:
+        import shutil
+        app = _babase.app.env
+        if app.python_directory_user is None:
+            raise RuntimeError('user python dir unset')
+        if app.python_directory_app is None:
+            raise RuntimeError('app python dir unset')
+        path = app.python_directory_user + '/sys/' + app.engine_version + '_' + str(_babase.app.env.engine_build_number)
+        if os.path.exists(path):
+            print(f"System scripts already exist at: '{path}'")
+            return
+        try:
+            print(f'COPYING "{app.python_directory_app}" -> "{path}".')
+            shutil.copytree(app.python_directory_app, path, 
+                           ignore=shutil.ignore_patterns('__pycache__'))
+            print(f"Created system scripts at: '{path}'")
+            print(f"Restart {bui.appname()} to use them.")
+            print("(use babase.quit() to exit the game)")
+        except Exception as e:
+            print(f"Error creating system scripts: {e}")
+
+    @staticmethod
+    def create_data_text(self) -> None:
+        if isinstance(self, MainMenuActivity):
+            return
+        if getattr(self, '_text_data', None):
+            self._text_data.node.delete()
+        if cfg['Commands'].get('ShowInfo'):
+            info = f"\ue043|Host: {cfg['Commands'].get('HostName', '???')}\n\ue01e|Description: {cfg['Commands'].get('Description', '???')}\n\ue01e|Version: {_babase.app.env.engine_version}"
+            color = tuple(list(cfg['Commands'].get('InfoColor', Uts.colors()['white'])) + [1])
+            self._text_data = text.Text(info,
+                position=(-650.0, -200.0), color=color)
+
+    @staticmethod
+    def create_live_chat(self,
+                         live: bool = True,
+                         chat: list[int, str] = None,
+                         admin: bool = False) -> None:
+        if isinstance(self, MainMenuActivity):
+            return
+        if getattr(self, '_live_chat', None):
+            self._live_chat.node.delete()
+        if cfg['Commands'].get('ChatLive'):
+            max_chats = 6
+            chats = list()
+            txt = str()
+            icon = bui.charstr(bui.SpecialChar.STEAM_LOGO) if admin else ''
+            if any(bs.get_chat_messages()):
+                if len(Chats) == max_chats:
+                    Chats.pop(0)
+                if live:
+                    name = Uts.shortnames.get(chat[0], chat[0])
+                    msg = chat[1]
+                    Chats.append(f'{icon}{name}: {msg}')
+                for msg in Chats:
+                    if len(chats) != max_chats:
+                        chats.append(msg)
+                    else: break
+                txt = '\n'.join(chats)
+            livetext = "\ue043 CHAT LIVE \ue043"
+            txt = (livetext + '\n' + ''.join(['=' for s 
+                in range(len(livetext))]) + '\n') + txt
+            self._live_chat = text.Text(txt, position=(650.0, 200.0),
+                color=(1, 1, 1, 1), h_align=text.Text.HAlign.RIGHT)
+
+    @staticmethod
+    def funtion() -> str:
+        return """    %s
+    try:
+        cm = babase.app.cheatmax_filter_chat(msg, client_id)
+        if cm == '@':
+            return None
+    except Exception:
+        pass
+        """ % Uts.key
+
+    @staticmethod
+    def get_reliable_pb_id(client_id: int) -> str:
+        """إرجاع PB-ID موثوق للاعب، حتى لو كان ضيفًا"""
+        # التحقق أولاً من userpbs
+        if client_id in Uts.userpbs and Uts.userpbs[client_id] not in (None, 'none', 'None'):
+            return Uts.userpbs[client_id]
+        # إذا لم يكن موجودًا، حاول الحصول عليه من roster
+        for r in roster():
+            if r.get('client_id') == client_id:
+                acc = r.get('account_id')
+                if acc and acc not in (None, 'none', 'None') and acc.startswith('pb'):
+                    Uts.userpbs[client_id] = acc
+                    return acc
+        # حاول من players dict
+        if client_id in Uts.players and Uts.players[client_id].exists():
+            try:
+                acc = Uts.players[client_id].get_v1_account_id()
+                if acc and acc.startswith('pb'):
+                    Uts.userpbs[client_id] = acc
+                    return acc
+            except:
+                pass
+        # إذا فشل كل شيء، استخدم client_id كمفتاح مؤقت
+        guest_id = f"guest_{client_id}"
+        Uts.userpbs[client_id] = guest_id
+        return guest_id
+
+
+# ==================== LeaderboardDisplay (يُعرف بعد Uts) ====================
 class LeaderboardDisplay:
     """عرض أفضل اللاعبين على الشاشة مع تأثيرات انتقال"""
     def __init__(self):
@@ -655,6 +1480,1316 @@ class LeaderboardDisplay:
         except:
             return {}
 
+
+# ==================== نظام التيجان المتطور ====================
+class TagSystem:
+    def __init__(self):
+        self.current_tags = {}
+        self.animated_tags = {}
+        self.char_animations = {}
+        self.animation_states = {}
+        self.saved_tag_templates = {}
+        self.icons = {
+            'left': '\ue001', 'right': '\ue002', 'up': '\ue003', 'down': '\ue004',
+            'dleft': '\ue005', 'dup': '\ue006', 'dright': '\ue007', 'ddown': '\ue008',
+            'back': '\ue009', 'joystick': '\ue010', 'circles': '\ue019',
+            'android': '\ue020', 'rbyp': '\ue021',
+            'dice1': '\ue022', 'dice2': '\ue023', 'dice3': '\ue024', 'dice4': '\ue025',
+            'volley': '\ue026', 'gather': '\ue027', 't': '\ue028', 'ticket': '\ue029',
+            'pc': '\ue030', 'rbyp2': '\ue031',
+            'us': '\ue032', 'italy': '\ue033', 'germany': '\ue034', 'brazil': '\ue035',
+            'russia': '\ue036', 'china': '\ue037', 'uk': '\ue038', 'canada': '\ue039',
+            'rwb': '\ue040', 'hat': '\ue041', 'fire': '\ue042', 'crown': '\ue043',
+            'zen': '\ue044', 'eye': '\ue045', 'skull': '\ue046', 'heart': '\ue047',
+            'dragon': '\ue048', 'helmet': '\ue049', 'rgwb': '\ue050', 'mw': '\ue051',
+            'syria': '\ue052', 'bgwr': '\ue053', 'gwl': '\ue054', 'saudi': '\ue055',
+            'malaysia': '\ue056', 'bwr': '\ue057', 'australia': '\ue058', 'rws': '\ue059',
+            'up2': '\ue00a', 'down2': '\ue00b', 'bslogo': '\ue00c', 'back2': '\ue00d',
+            'pause': '\ue00e', 'forward': '\ue00f', 'u': '\ue01a', 'y': '\ue01b',
+            'a': '\ue01c', 'usmall': '\ue01d', 'logo': '\ue01e', 'ticket2': '\ue01f',
+            'bronze': '\ue02a', 'silver': '\ue02b', 'gold': '\ue02c', 'badge1': '\ue02d',
+            'badge2': '\ue02e', 'trophy': '\ue02f',
+            'india': '\ue03a', 'japan': '\ue03b', 'france': '\ue03c', 'rw': '\ue03d',
+            'gwr': '\ue03e', 'korea': '\ue03f',
+            'mushroom': '\ue04a', 'nstar': '\ue04b', 'bull': '\ue04c', 'moon': '\ue04d',
+            'spider': '\ue04e', 'fireball': '\ue04f', 'rect': '\ue05a', 'steam': '\ue05b',
+            'nvidia': '\ue05c',
+            'ns': '\ue04b', 'dr': '\ue048', 'fb': '\ue04f', 'cr': '\ue043', 'sk': '\ue046',
+            'ht': '\ue047', 'hl': '\ue049', 'ms': '\ue04a', 'bl': '\ue04c', 'mn': '\ue04d',
+            'sp': '\ue04e', 'la': '\ue001', 'ra': '\ue002', 'ua': '\ue003', 'da': '\ue004'
+        }
+        self.colors = {
+            'red': (1.0, 0.0, 0.0),
+            'green': (0.0, 1.0, 0.0),
+            'blue': (0.0, 0.0, 1.0),
+            'yellow': (1.0, 1.0, 0.0),
+            'gold': (1.0, 0.84, 0.0),
+            'pink': (1.0, 0.3, 0.5),
+            'orange': (1.0, 0.5, 0.0),
+            'purple': (0.5, 0.0, 0.5),
+            'white': (1.0, 1.0, 1.0),
+            'black': (0.1, 0.1, 0.1),
+            'cyan': (0.0, 1.0, 1.0),
+            'lime': (0.5, 1.0, 0.0),
+            'rainbow': 'rainbow'
+        }
+        self.positions = {
+            'top': (0, 2.0, 0),
+            'down': (0, -2.0, 0),
+            'right': (2.0, 1.0, 0),
+            'left': (-2.0, 1.0, 0),
+            'center': (0, 2.0, 0),
+            'head': (0, 2.5, 0),
+            'feet': (0, -1.0, 0)
+        }
+        print("🎮 TagMaster Advanced System Loading...")
+        self.templates_file = Uts.directory_user + '/Configs/tag_templates.json'
+        self.load_templates()
+        bs.apptimer(3.0, lambda: self.start_game_monitoring())
+
+    def start_game_monitoring(self):
+        def game_monitor():
+            try:
+                activity = bs.get_foreground_host_activity()
+                if activity and hasattr(activity, 'players'):
+                    try:
+                        self.quick_apply_tags(activity)
+                        self.cleanup_dead_players(activity)
+                        self.check_player_respawns(activity)
+                    except Exception as e:
+                        print(f"⚠️ Tag monitor error: {e}")
+                bs.apptimer(2.0, game_monitor)
+            except Exception as e:
+                print(f"❌ Game monitor error: {e}")
+                bs.apptimer(5.0, game_monitor)
+        bs.apptimer(1.0, game_monitor)
+        print("🎮 Tag monitoring started (server optimized)")
+
+    def quick_apply_tags(self, activity):
+        try:
+            if not activity or not hasattr(activity, 'players'):
+                return
+            for player in activity.players:
+                try:
+                    if not player.is_alive() or not player.actor or not player.actor.node:
+                        continue
+                    client_id = player.sessionplayer.inputdevice.client_id
+                    account_id = None
+                    if client_id in Uts.userpbs:
+                        account_id = Uts.userpbs[client_id]
+                    if account_id and account_id in Uts.pdata:
+                        player_data = Uts.pdata[account_id]
+                        if 'Tag' in player_data:
+                            tag_data = player_data['Tag']
+                            if str(client_id) not in self.current_tags:
+                                if tag_data.get('type') == 'animated':
+                                    self.create_animated_tag_gradual(player, client_id, tag_data, activity)
+                                else:
+                                    self.create_tag_with_char_animation(player, client_id, tag_data['text'],
+                                                                      tuple(tag_data.get('color', (1,1,1))),
+                                                                      tag_data.get('scale', 0.03),
+                                                                      activity)
+                except Exception as e:
+                    continue
+        except Exception as e:
+            print(f"❌ Quick apply tags error: {e}")
+
+    def apply_normal_tag(self, player, client_id, tag_data, activity):
+        try:
+            if str(client_id) in self.current_tags:
+                self.remove_tag_visual(client_id)
+                self.stop_char_animation(client_id)
+            self.create_tag_with_char_animation(player, client_id, tag_data['text'],
+                                              tuple(tag_data.get('color', (1,1,1))),
+                                              tag_data.get('scale', 0.03), activity)
+        except Exception as e:
+            print(f"❌ Error applying normal tag: {e}")
+
+    def create_animated_tag_gradual(self, player, client_id, tag_data, activity):
+        try:
+            player_name = player.getname()
+            if not player.actor or not player.actor.node:
+                return False
+            with activity.context:
+                colors = tag_data.get('colors', [(1, 1, 1)])
+                first_color = colors[0] if colors else (1, 1, 1)
+                attrs = {
+                    'text': tag_data['text'],
+                    'in_world': True,
+                    'shadow': 1.0,
+                    'flatness': 1.0,
+                    'h_align': 'center',
+                    'v_align': 'center',
+                    'scale': tag_data['scale'],
+                    'color': first_color,
+                    'opacity': 0.0
+                }
+                tag_node = bs.newnode('text', attrs=attrs)
+                math_node = bs.newnode('math',
+                    attrs={'input1': (0.0, 1.3, 0.0), 'operation': 'add'})
+                player.actor.node.connectattr('position_center', math_node, 'input2')
+                math_node.connectattr('output', tag_node, 'position')
+                self.current_tags[str(client_id)] = {
+                    'type': 'animated_gradual',
+                    'tag_node': tag_node,
+                    'math_node': math_node,
+                    'text': tag_data['text'],
+                    'colors': colors,
+                    'scale': tag_data['scale'],
+                    'speed': tag_data['speed']
+                }
+                animation_data = {
+                    'tag_node': tag_node,
+                    'text': tag_data['text'],
+                    'current_char_index': 0,
+                    'start_time': bs.time(),
+                    'duration': 0.5,
+                    'original_opacity': 1.0
+                }
+                self.char_animations[str(client_id)] = animation_data
+
+                def animate_text_display():
+                    try:
+                        if str(client_id) not in self.char_animations:
+                            return
+                        data = self.char_animations[str(client_id)]
+                        current_idx = data['current_char_index']
+                        if current_idx > len(data['text']):
+                            data['tag_node'].opacity = data['original_opacity']
+                            self.start_gradual_animation(client_id)
+                            return
+                        partial_text = data['text'][:current_idx]
+                        data['tag_node'].text = partial_text
+                        progress = min(1.0, current_idx / len(data['text']))
+                        opacity = progress
+                        if progress < 0.5:
+                            opacity = progress * 2
+                        else:
+                            opacity = 1.0
+                        data['tag_node'].opacity = opacity
+                        data['current_char_index'] += 1
+                        if current_idx <= len(data['text']):
+                            bs.apptimer(0.08, animate_text_display)
+                    except:
+                        pass
+
+                bs.apptimer(0.1, animate_text_display)
+                print(f"🌈 Animated tag '{tag_data['text']}' created for {player_name}")
+                return True
+        except Exception as e:
+            print(f"❌ Failed to create animated tag: {e}")
+            return False
+
+    def start_gradual_animation(self, client_id):
+        try:
+            if str(client_id) not in self.current_tags:
+                return
+            tag_data = self.current_tags[str(client_id)]
+            colors = tag_data['colors']
+            if len(colors) < 2:
+                return
+            self.animation_states[str(client_id)] = {
+                'current_index': 0,
+                'next_index': 1,
+                'transition': 0.0
+            }
+
+            def animate_gradual():
+                try:
+                    if str(client_id) not in self.current_tags or str(client_id) not in self.animation_states:
+                        return
+                    tag_data = self.current_tags[str(client_id)]
+                    tag_node = tag_data['tag_node']
+                    if not tag_node.exists():
+                        if str(client_id) in self.animation_states:
+                            del self.animation_states[str(client_id)]
+                        return
+                    state = self.animation_states[str(client_id)]
+                    colors = tag_data['colors']
+                    color1 = colors[state['current_index']]
+                    color2 = colors[state['next_index']]
+                    t = state['transition']
+                    r = color1[0] + (color2[0] - color1[0]) * t
+                    g = color1[1] + (color2[1] - color1[1]) * t
+                    b = color1[2] + (color2[2] - color1[2]) * t
+                    tag_node.color = (r, g, b)
+                    state['transition'] += 0.05 * tag_data['speed']
+                    if state['transition'] >= 1.0:
+                        state['transition'] = 0.0
+                        state['current_index'] = state['next_index']
+                        state['next_index'] = (state['next_index'] + 1) % len(colors)
+                    bs.apptimer(0.05, animate_gradual)
+                except:
+                    if str(client_id) in self.animation_states:
+                        del self.animation_states[str(client_id)]
+
+            bs.apptimer(0.05, animate_gradual)
+        except Exception as e:
+            print(f"❌ Error starting gradual animation: {e}")
+
+    def cleanup_dead_players(self, activity):
+        try:
+            for client_id_str in list(self.current_tags.keys()):
+                player_found = False
+                player_alive = False
+                for player in activity.players:
+                    try:
+                        if str(player.sessionplayer.inputdevice.client_id) == client_id_str:
+                            player_found = True
+                            if player.is_alive():
+                                player_alive = True
+                            break
+                    except:
+                        continue
+                if not player_found or not player_alive:
+                    try:
+                        client_id = int(client_id_str)
+                        self.remove_tag_visual(client_id)
+                        self.stop_char_animation(client_id)
+                    except:
+                        pass
+        except:
+            pass
+
+    def check_player_respawns(self, activity):
+        try:
+            for player in activity.players:
+                try:
+                    client_id = player.sessionplayer.inputdevice.client_id
+                    account_id = None
+                    for acc_id, acc_data in Uts.pdata.items():
+                        if client_id in Uts.userpbs and Uts.userpbs[client_id] == acc_id:
+                            account_id = acc_id
+                            break
+                    if account_id and account_id in Uts.pdata:
+                        player_data = Uts.pdata[account_id]
+                        if 'Tag' in player_data:
+                            tag_data = player_data['Tag']
+                            if player.is_alive() and player.actor and player.actor.node:
+                                if str(client_id) not in self.current_tags:
+                                    if tag_data.get('type') == 'animated':
+                                        self.create_animated_tag_gradual(player, client_id, tag_data, activity)
+                                    else:
+                                        self.create_tag_with_char_animation(player, client_id, tag_data['text'],
+                                                                          tuple(tag_data['color']),
+                                                                          tag_data['scale'], activity)
+                except:
+                    pass
+        except:
+            pass
+
+    # ✅ الدالة الأساسية لإنشاء تاج عادي مع كتابة حرف حرف (معدلة بالكامل – بدون أخطاء)
+    def create_tag_with_char_animation(self, player, client_id, text: str, color, scale: float, activity) -> bool:
+        try:
+            player_name = player.getname()
+            if not player.actor or not player.actor.node:
+                return False
+
+            with activity.context:
+                self.remove_tag_visual(client_id)
+                self.stop_char_animation(client_id)
+                self.stop_animation(client_id)
+
+                tag_node = bs.newnode('text',
+                    attrs={
+                        'text': '',
+                        'in_world': True,
+                        'shadow': 1.0,
+                        'flatness': 1.0,
+                        'h_align': 'center',
+                        'v_align': 'center',
+                        'scale': scale,
+                        'color': color,
+                        'opacity': 0.0
+                    })
+
+                math_node = bs.newnode('math',
+                    attrs={'input1': (0.0, 1.3, 0.0), 'operation': 'add'})
+
+                player.actor.node.connectattr('position_center', math_node, 'input2')
+                math_node.connectattr('output', tag_node, 'position')
+
+                self.current_tags[str(client_id)] = {
+                    'type': 'normal',
+                    'tag_node': tag_node,
+                    'math_node': math_node,
+                    'text': text,
+                    'color': color,
+                    'scale': scale
+                }
+
+                # دالة كتابة النص حرفاً حرفاً
+                def animate_text():
+                    try:
+                        if str(client_id) not in self.current_tags:
+                            return
+                        tag_node = self.current_tags[str(client_id)]['tag_node']
+                        if not tag_node.exists():
+                            return
+                        if not text:
+                            tag_node.text = ''
+                            tag_node.opacity = 1.0
+                            return
+
+                        # جدولة تحديث النص كل 0.05 ثانية
+                        for i in range(len(text) + 1):
+                            bs.apptimer(i * 0.05, lambda idx=i: self._update_text_animation(client_id, text, idx, color))
+
+                        # دالة إنهاء (تثبيت الشفافية)
+                        def finalize():
+                            if str(client_id) in self.current_tags:
+                                tag_node = self.current_tags[str(client_id)]['tag_node']
+                                if tag_node.exists():
+                                    tag_node.opacity = 1.0
+
+                        bs.apptimer(len(text) * 0.05 + 0.5, finalize)
+
+                    except Exception as e:
+                        print(f"Error in animate_text: {e}")
+
+                # بدأ الكتابة بعد 0.1 ثانية
+                bs.apptimer(0.1, animate_text)
+                print(f"Created tag '{text}' for {player_name}")
+                return True
+
+        except Exception as e:
+            print(f"Error creating tag with char animation: {e}")
+            return False
+
+    def _update_text_animation(self, client_id, full_text, index, color):
+        try:
+            if str(client_id) not in self.current_tags:
+                return
+            tag_node = self.current_tags[str(client_id)]['tag_node']
+            if not tag_node.exists():
+                return
+            partial_text = full_text[:index]
+            tag_node.text = partial_text
+            tag_node.color = color
+            opacity = min(1.0, index / len(full_text))
+            tag_node.opacity = opacity
+        except Exception as e:
+            print(f"Error in _update_text_animation: {e}")
+
+    def remove_tag_visual(self, client_id):
+        try:
+            client_id_str = str(client_id)
+            if client_id_str in self.current_tags:
+                tag_data = self.current_tags[client_id_str]
+                if 'tag_node' in tag_data and tag_data['tag_node'] and tag_data['tag_node'].exists():
+                    tag_data['tag_node'].delete()
+                if 'math_node' in tag_data and tag_data['math_node'] and tag_data['math_node'].exists():
+                    tag_data['math_node'].delete()
+                del self.current_tags[client_id_str]
+        except Exception as e:
+            print(f"Error removing tag visual: {e}")
+
+    def stop_char_animation(self, client_id):
+        try:
+            client_id_str = str(client_id)
+            if client_id_str in self.char_animations:
+                del self.char_animations[client_id_str]
+        except:
+            pass
+
+    def stop_animation(self, client_id):
+        try:
+            client_id_str = str(client_id)
+            if client_id_str in self.animation_states:
+                del self.animation_states[client_id_str]
+        except:
+            pass
+
+    def load_templates(self):
+        try:
+            if os.path.exists(self.templates_file):
+                with open(self.templates_file, 'r') as f:
+                    self.saved_tag_templates = json.load(f)
+            else:
+                self.saved_tag_templates = {}
+        except:
+            self.saved_tag_templates = {}
+
+    def save_templates(self):
+        try:
+            with open(self.templates_file, 'w') as f:
+                json.dump(self.saved_tag_templates, f, indent=4)
+        except:
+            pass
+
+    def send_client_message(self, client_id, message, color=(1,1,1)):
+        try:
+            bs.screenmessage(message, color=color, clients=[client_id])
+        except:
+            pass
+
+    def parse_color(self, color_str: str):
+        color_str = color_str.lower()
+        if color_str in self.colors:
+            return self.colors[color_str]
+        if ',' in color_str:
+            try:
+                parts = color_str.split(',')
+                if len(parts) == 3:
+                    r = float(parts[0].strip())
+                    g = float(parts[1].strip())
+                    b = float(parts[2].strip())
+                    return (r, g, b)
+            except:
+                pass
+        if color_str.startswith('#') and len(color_str) == 7:
+            try:
+                r = int(color_str[1:3], 16) / 255.0
+                g = int(color_str[3:5], 16) / 255.0
+                b = int(color_str[5:7], 16) / 255.0
+                return (r, g, b)
+            except:
+                pass
+        return (1.0, 1.0, 1.0)
+
+    def generate_rainbow_colors(self, count: int):
+        colors = []
+        for i in range(count):
+            hue = i / count
+            if hue < 1/6:
+                r, g, b = 1.0, hue * 6, 0.0
+            elif hue < 2/6:
+                r, g, b = (2/6 - hue) * 6, 1.0, 0.0
+            elif hue < 3/6:
+                r, g, b = 0.0, 1.0, (hue - 2/6) * 6
+            elif hue < 4/6:
+                r, g, b = 0.0, (4/6 - hue) * 6, 1.0
+            elif hue < 5/6:
+                r, g, b = (hue - 4/6) * 6, 0.0, 1.0
+            else:
+                r, g, b = 1.0, 0.0, (1 - hue) * 6
+            colors.append((r, g, b))
+        return colors
+
+
+# ==================== أيقونات الأندية المدعومة ====================
+CLUB_ICONS = {
+    'left': '\ue001', 'right': '\ue002', 'up': '\ue003', 'down': '\ue004',
+    'dleft': '\ue005', 'dup': '\ue006', 'dright': '\ue007', 'ddown': '\ue008',
+    'back': '\ue009', 'joystick': '\ue010', 'circles': '\ue019',
+    'android': '\ue020', 'rbyp': '\ue021',
+    'dice1': '\ue022', 'dice2': '\ue023', 'dice3': '\ue024', 'dice4': '\ue025',
+    'volley': '\ue026', 'gather': '\ue027', 't': '\ue028', 'ticket': '\ue029',
+    'pc': '\ue030', 'rbyp2': '\ue031',
+    'us': '\ue032', 'italy': '\ue033', 'germany': '\ue034', 'brazil': '\ue035',
+    'russia': '\ue036', 'china': '\ue037', 'uk': '\ue038', 'canada': '\ue039',
+    'rwb': '\ue040', 'hat': '\ue041', 'fire': '\ue042', 'crown': '\ue043',
+    'zen': '\ue044', 'eye': '\ue045', 'skull': '\ue046', 'heart': '\ue047',
+    'dragon': '\ue048', 'helmet': '\ue049', 'rgwb': '\ue050', 'mw': '\ue051',
+    'syria': '\ue052', 'bgwr': '\ue053', 'gwl': '\ue054', 'saudi': '\ue055',
+    'malaysia': '\ue056', 'bwr': '\ue057', 'australia': '\ue058', 'rws': '\ue059',
+    'up2': '\ue00a', 'down2': '\ue00b', 'bslogo': '\ue00c', 'back2': '\ue00d',
+    'pause': '\ue00e', 'forward': '\ue00f', 'u': '\ue01a', 'y': '\ue01b',
+    'a': '\ue01c', 'usmall': '\ue01d', 'logo': '\ue01e', 'ticket2': '\ue01f',
+    'bronze': '\ue02a', 'silver': '\ue02b', 'gold': '\ue02c', 'badge1': '\ue02d',
+    'badge2': '\ue02e', 'trophy': '\ue02f',
+    'india': '\ue03a', 'japan': '\ue03b', 'france': '\ue03c', 'rw': '\ue03d',
+    'gwr': '\ue03e', 'korea': '\ue03f',
+    'mushroom': '\ue04a', 'nstar': '\ue04b', 'bull': '\ue04c', 'moon': '\ue04d',
+    'spider': '\ue04e', 'fireball': '\ue04f', 'rect': '\ue05a', 'steam': '\ue05b',
+    'nvidia': '\ue05c',
+    'ns': '\ue04b', 'dr': '\ue048', 'fb': '\ue04f', 'cr': '\ue043', 'sk': '\ue046',
+    'ht': '\ue047', 'hl': '\ue049', 'ms': '\ue04a', 'bl': '\ue04c', 'mn': '\ue04d',
+    'sp': '\ue04e', 'la': '\ue001', 'ra': '\ue002', 'ua': '\ue003', 'da': '\ue004'
+}
+
+# ==================== نظام الأندية (يُعرف بعد Uts) ====================
+class ClubsSystem:
+    """إدارة الأندية واللاعبين والعقود والعروض"""
+    def __init__(self):
+        self.clubs_file = os.path.join(Uts.directory_user, 'Configs', 'CheatMaxClubsData.json')
+        self.offers_file = os.path.join(Uts.directory_user, 'Configs', 'CheatMaxOffersData.json')
+        self.clubs_data = {}
+        self.offers_data = {}  # مفتاح: pb-ID اللاعب، القيمة: قائمة بالعروض
+        self.club_tags = {}    # تخزين تاجات الأندية (client_id -> tag_node)
+        self.load_data()
+
+    def load_data(self):
+        """تحميل بيانات الأندية والعروض"""
+        # الأندية
+        if os.path.exists(self.clubs_file):
+            try:
+                with open(self.clubs_file, 'r') as f:
+                    self.clubs_data = json.load(f)
+            except:
+                self.clubs_data = {}
+        else:
+            self.clubs_data = {}
+        # العروض
+        if os.path.exists(self.offers_file):
+            try:
+                with open(self.offers_file, 'r') as f:
+                    self.offers_data = json.load(f)
+            except:
+                self.offers_data = {}
+        else:
+            self.offers_data = {}
+        print(f"✅ Clubs system loaded: {len(self.clubs_data)} clubs, {sum(len(v) for v in self.offers_data.values())} offers")
+
+    def save_clubs(self):
+        """حفظ بيانات الأندية"""
+        try:
+            with open(self.clubs_file, 'w') as f:
+                json.dump(self.clubs_data, f, indent=4)
+        except Exception as e:
+            print(f"❌ Error saving clubs data: {e}")
+
+    def save_offers(self):
+        """حفظ بيانات العروض"""
+        try:
+            with open(self.offers_file, 'w') as f:
+                json.dump(self.offers_data, f, indent=4)
+        except Exception as e:
+            print(f"❌ Error saving offers data: {e}")
+
+    def generate_club_id(self) -> str:
+        """توليد ID عشوائي مكون من 4 أرقام (كـ string)"""
+        while True:
+            cid = str(random.randint(1000, 9999))
+            if cid not in self.clubs_data:
+                return cid
+
+    def create_club(self, club_name: str, club_color: tuple, icon_name: str, captain1_pb: str, captain2_pb: str, creator_name: str) -> str:
+        """إنشاء نادي جديد وإرجاع ID النادي"""
+        club_id = self.generate_club_id()
+        icon_code = CLUB_ICONS.get(icon_name.lower(), icon_name)  # إذا لم يجد الأيقونة يستخدم النص كما هو
+        created_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # captains: سنخزنهم كقائمة من pb-IDs
+        # players: قائمة من الكائنات تحتوي pb-id, contract_expire, role, joined_timestamp
+        # سنقوم بإضافة الكابتن كأول عضوين
+        players_list = []
+        # نضيف الكابتن الأول
+        players_list.append({
+            "pb-id": captain1_pb,
+            "contract_expire": "permanent",  # الكابتن ليس له عقد
+            "role": "captain",
+            "joined": time.time()
+        })
+        # نضيف الكابتن الثاني
+        players_list.append({
+            "pb-id": captain2_pb,
+            "contract_expire": "permanent",
+            "role": "captain",
+            "joined": time.time()
+        })
+        self.clubs_data[club_id] = {
+            "club-name": club_name,
+            "club-color": [club_color[0], club_color[1], club_color[2]],
+            "club-icon": icon_code,
+            "club-created-in": created_date,
+            "players": players_list,
+            "max-players": 20
+        }
+        self.save_clubs()
+        # تحديث بيانات اللاعبين (Uts.pdata) لتخزين club ID و role (يمكن استخدامها عند الدخول)
+        self._update_player_club_info(captain1_pb, club_id, "captain", "permanent")
+        self._update_player_club_info(captain2_pb, club_id, "captain", "permanent")
+        return club_id
+
+    def _update_player_club_info(self, pb_id: str, club_id: str, role: str, contract_expire):
+        """تحديث معلومات النادي في بيانات اللاعب (Uts.pdata)"""
+        if pb_id not in Uts.pdata:
+            Uts.add_player_data(pb_id)
+        Uts.pdata[pb_id]["club"] = {
+            "club-id": club_id,
+            "role": role,
+            "contract_expire": contract_expire
+        }
+        Uts.save_players_data()
+
+    def delete_club(self, club_id: str):
+        """حذف نادي بالكامل"""
+        if club_id in self.clubs_data:
+            # إزالة معلومات النادي من جميع الأعضاء
+            for player in self.clubs_data[club_id].get("players", []):
+                pb = player["pb-id"]
+                if pb in Uts.pdata and "club" in Uts.pdata[pb]:
+                    del Uts.pdata[pb]["club"]
+            Uts.save_players_data()
+            del self.clubs_data[club_id]
+            self.save_clubs()
+            return True
+        return False
+
+    def get_club_by_id(self, club_id: str) -> dict:
+        return self.clubs_data.get(club_id)
+
+    def get_club_by_player(self, pb_id: str) -> tuple:
+        """إرجاع (club_id, club_data, player_data) إذا كان اللاعب في نادي، وإلا None"""
+        if pb_id not in Uts.pdata or "club" not in Uts.pdata[pb_id]:
+            return None
+        club_info = Uts.pdata[pb_id]["club"]
+        club_id = club_info["club-id"]
+        if club_id not in self.clubs_data:
+            # بيانات غير متطابقة، نصلحها
+            del Uts.pdata[pb_id]["club"]
+            Uts.save_players_data()
+            return None
+        club_data = self.clubs_data[club_id]
+        # نبحث عن اللاعب في قائمة players
+        player_data = None
+        for p in club_data.get("players", []):
+            if p["pb-id"] == pb_id:
+                player_data = p
+                break
+        if not player_data:
+            # غير موجود، نصلح
+            del Uts.pdata[pb_id]["club"]
+            Uts.save_players_data()
+            return None
+        return club_id, club_data, player_data
+
+    def is_captain(self, pb_id: str) -> bool:
+        """التحقق مما إذا كان اللاعب كابتن في ناديه"""
+        result = self.get_club_by_player(pb_id)
+        if not result:
+            return False
+        _, _, player_data = result
+        return player_data.get("role") == "captain"
+
+    def is_club_member(self, pb_id: str) -> bool:
+        return self.get_club_by_player(pb_id) is not None
+
+    def add_offer(self, player_pb: str, club_id: str, club_name: str, months: int, sender_name: str, captain_pb: str):
+        """إضافة عرض للاعب"""
+        if player_pb not in self.offers_data:
+            self.offers_data[player_pb] = []
+        expire_date = (datetime.now() + timedelta(days=30*months)).strftime("%Y-%m-%d")
+        offer = {
+            "club-id": club_id,
+            "club-name": club_name,
+            "months": months,
+            "contract-expire": expire_date,
+            "sender": sender_name,
+            "sender-pb": captain_pb,
+            "sent-time": time.time()
+        }
+        self.offers_data[player_pb].append(offer)
+        self.save_offers()
+
+    def remove_offer(self, player_pb: str, club_id: str):
+        """إزالة عرض معين للاعب"""
+        if player_pb in self.offers_data:
+            self.offers_data[player_pb] = [o for o in self.offers_data[player_pb] if o["club-id"] != club_id]
+            if not self.offers_data[player_pb]:
+                del self.offers_data[player_pb]
+            self.save_offers()
+
+    def get_player_offers(self, player_pb: str) -> list:
+        return self.offers_data.get(player_pb, [])
+
+    def accept_offer(self, player_pb: str, club_id: str) -> bool:
+        """قبول عرض: إضافة اللاعب للنادي وإزالة العرض"""
+        # التحقق من وجود العرض
+        offers = self.get_player_offers(player_pb)
+        offer = None
+        for o in offers:
+            if o["club-id"] == club_id:
+                offer = o
+                break
+        if not offer:
+            return False
+        # التحقق من وجود النادي
+        club_data = self.get_club_by_id(club_id)
+        if not club_data:
+            return False
+        # التحقق من عدم تجاوز العدد الأقصى
+        if len(club_data.get("players", [])) >= club_data.get("max-players", 20):
+            return False
+        # إضافة اللاعب
+        players = club_data.setdefault("players", [])
+        # التحقق من عدم وجوده بالفعل
+        for p in players:
+            if p["pb-id"] == player_pb:
+                return False  # موجود بالفعل
+        # حساب تاريخ انتهاء العقد
+        months = offer["months"]
+        expire_str = (datetime.now() + timedelta(days=30*months)).strftime("%Y-%m-%d")
+        players.append({
+            "pb-id": player_pb,
+            "contract_expire": expire_str,
+            "role": "player",
+            "joined": time.time()
+        })
+        # تحديث Uts.pdata
+        self._update_player_club_info(player_pb, club_id, "player", expire_str)
+        self.save_clubs()
+        # إزالة العرض
+        self.remove_offer(player_pb, club_id)
+        return True
+
+    def promote_to_captain(self, captain_pb: str, target_pb: str) -> bool:
+        """ترقية عضو إلى كابتن (بواسطة كابتن)"""
+        result = self.get_club_by_player(captain_pb)
+        if not result:
+            return False
+        club_id, club_data, _ = result
+        # التحقق من أن target_pb عضو في نفس النادي
+        target_player_data = None
+        for p in club_data["players"]:
+            if p["pb-id"] == target_pb:
+                target_player_data = p
+                break
+        if not target_player_data:
+            return False
+        # تغيير الدور إلى captain
+        target_player_data["role"] = "captain"
+        # تحديث Uts.pdata
+        if target_pb in Uts.pdata:
+            if "club" not in Uts.pdata[target_pb]:
+                Uts.pdata[target_pb]["club"] = {}
+            Uts.pdata[target_pb]["club"]["role"] = "captain"
+        self.save_clubs()
+        Uts.save_players_data()
+        return True
+
+    def check_expired_contracts(self):
+        """فحص العقود المنتهية وإزالة اللاعبين المنتهية عقودهم"""
+        now = datetime.now().date()
+        for club_id, club_data in list(self.clubs_data.items()):
+            players = club_data.get("players", [])
+            changed = False
+            for player in list(players):
+                expire = player.get("contract_expire")
+                if expire == "permanent":
+                    continue
+                try:
+                    expire_date = datetime.strptime(expire, "%Y-%m-%d").date()
+                    if expire_date < now:
+                        # انتهى العقد
+                        pb = player["pb-id"]
+                        players.remove(player)
+                        if pb in Uts.pdata and "club" in Uts.pdata[pb]:
+                            del Uts.pdata[pb]["club"]
+                        changed = True
+                except:
+                    continue
+            if changed:
+                self.save_clubs()
+                Uts.save_players_data()
+
+    def get_club_members_sorted(self, club_id: str) -> list:
+        """إرجاع قائمة الأعضاء مرتبة حسب تاريخ الانضمام (الأقدم أولاً)"""
+        club_data = self.get_club_by_id(club_id)
+        if not club_data:
+            return []
+        players = club_data.get("players", [])
+        # نرتب حسب joined (time.time())
+        players.sort(key=lambda p: p.get("joined", 0))
+        return players
+
+    def get_club_info_text(self, club_id: str) -> str:
+        """نص معلومات النادي للعرض (للكابتن)"""
+        club = self.get_club_by_id(club_id)
+        if not club:
+            return "Club not found."
+        members = self.get_club_members_sorted(club_id)
+        captains = [p for p in members if p["role"] == "captain"]
+        cap_names = []
+        for cap in captains[:2]:
+            pb = cap["pb-id"]
+            # نحاول الحصول على الاسم من Uts.usernames (أصعب شوية)
+            name = "Unknown"
+            for cid, acc in Uts.userpbs.items():
+                if acc == pb:
+                    name = Uts.usernames.get(cid, "Unknown")
+                    break
+            cap_names.append(name)
+        while len(cap_names) < 2:
+            cap_names.append("-")
+        total = len(members)
+        max_players = club.get("max-players", 20)
+        lines = []
+        lines.append(f"Club name : {club['club-name']}")
+        lines.append(f"Club first Captain : {cap_names[0]}")
+        lines.append(f"Club second Captain : {cap_names[1]}")
+        lines.append(f"Club created in : {club.get('club-created-in', 'Unknown')}")
+        lines.append(f"members : {max_players}/{total}")
+        # قائمة الأعضاء
+        for p in members:
+            pb = p["pb-id"]
+            name = "Unknown"
+            for cid, acc in Uts.userpbs.items():
+                if acc == pb:
+                    name = Uts.usernames.get(cid, "Unknown")
+                    break
+            expire = p.get("contract_expire", "permanent")
+            lines.append(f"{name} : {expire}")
+        return "\n".join(lines)
+
+    def get_club_list_text(self, club_id: str) -> str:
+        """نص قائمة النادي (للكابتن) مشابه ولكن بدون تاريخ الإنشاء"""
+        club = self.get_club_by_id(club_id)
+        if not club:
+            return "Club not found."
+        members = self.get_club_members_sorted(club_id)
+        captains = [p for p in members if p["role"] == "captain"]
+        cap_names = []
+        for cap in captains[:2]:
+            pb = cap["pb-id"]
+            name = "Unknown"
+            for cid, acc in Uts.userpbs.items():
+                if acc == pb:
+                    name = Uts.usernames.get(cid, "Unknown")
+                    break
+            cap_names.append(name)
+        while len(cap_names) < 2:
+            cap_names.append("-")
+        total = len(members)
+        max_players = club.get("max-players", 20)
+        lines = []
+        lines.append(f"Club name : {club['club-name']}")
+        lines.append(f"Club first Captain : {cap_names[0]}")
+        lines.append(f"Club second Captain : {cap_names[1]}")
+        lines.append(f"members : {max_players}/{total}")
+        for p in members:
+            pb = p["pb-id"]
+            name = "Unknown"
+            for cid, acc in Uts.userpbs.items():
+                if acc == pb:
+                    name = Uts.usernames.get(cid, "Unknown")
+                    break
+            expire = p.get("contract_expire", "permanent")
+            lines.append(f"{name} : {expire}")
+        return "\n".join(lines)
+
+    def get_myclub_text(self, pb_id: str) -> str:
+        """نص معلومات نادي العضو"""
+        res = self.get_club_by_player(pb_id)
+        if not res:
+            return "You are not in any club."
+        club_id, club_data, player_data = res
+        club_name = club_data["club-name"]
+        icon = club_data["club-icon"]
+        expire = player_data.get("contract_expire", "permanent")
+        return f"My club : {club_name}\nMy club icon : {icon}\nContract Expire : {expire}"
+
+    def create_club_tag(self, spaz, client_id: int, club_data: dict, role: str, activity):
+        """إنشاء تاج النادي فوق اللاعب (يُستدعى عند spawn)"""
+        if not spaz or not spaz.node or not spaz.node.exists():
+            return
+        club_name = club_data["club-name"]
+        icon = club_data.get("club-icon", "")
+        color = club_data.get("club-color", [1,1,1])
+        color_tuple = (color[0], color[1], color[2])
+        # تنسيق التاج: أيقونة || اسم النادي (مع لون)
+        if role == "captain":
+            tag_text = f"{icon} || \ue041{club_name}"
+        else:
+            tag_text = f"{icon} || {club_name}"
+        with activity.context:
+            # إزالة أي تاج سابق لهذا اللاعب
+            if client_id in self.club_tags:
+                old_tag = self.club_tags[client_id]
+                if old_tag and old_tag.exists():
+                    old_tag.delete()
+                del self.club_tags[client_id]
+
+            tag_node = bs.newnode('text',
+                attrs={
+                    'text': tag_text,
+                    'in_world': True,
+                    'shadow': 1.0,
+                    'flatness': 1.0,
+                    'h_align': 'center',
+                    'v_align': 'center',
+                    'scale': 0.03,
+                    'color': color_tuple
+                })
+            math_node = bs.newnode('math',
+                attrs={'input1': (0.0, 1.8, 0.0), 'operation': 'add'})
+            spaz.node.connectattr('position_center', math_node, 'input2')
+            math_node.connectattr('output', tag_node, 'position')
+            self.club_tags[client_id] = tag_node
+
+    def remove_club_tag(self, client_id: int):
+        """إزالة تاج النادي للاعب"""
+        if client_id in self.club_tags:
+            tag = self.club_tags[client_id]
+            if tag and tag.exists():
+                tag.delete()
+            del self.club_tags[client_id]
+
+
+# ==================== Commands و CommandFunctions ====================
+class CommandFunctions:
+    @staticmethod
+    def all_cmd() -> list[str]:
+        return [
+            '-pan', '-ceb', '-colors', '-mp', '-pb', '-effects', 
+            '/list', 'test', 'help', 'party', 'stats', '/report', '/stats', '-statsshow',
+            '/offers', '/offer', '/myclub'
+            ]
+            
+    @staticmethod
+    def admins_cmd() -> list[str]:
+        return [
+            '/name', '/imp', '/box', '/addAdmin',
+            '/delAdmin', '/kill', '-pause', '/infoHost',
+            '/infoDes', '-info', '/infoColor', '-end',
+            '/kick', '-chatLive', '/freeze', '/playerColor',
+            '/maxPlayers', '-showMessages', '/sleep',
+            '/mute', '/unmute', '/gm', '-slow', '/speed',
+            '/effect', '/punch', '/mbox', '/drop', '/gift',
+            '/curse', '/superjump', '/list', '/customtag', '/animationtag',
+            '/removetag', '/savetag', '/tagdata', '/listtags', '/sharedaccounts',
+            '/closeserver', '/stopcloseserver', '/closestatus', '/testclosure',
+            '/ban', '/unban', '/reports', '/banlist', '/reportdone',
+            '/teleport', '/fly','/warn', '/warns', '/clearwarns', '/ride', '/invisible',
+            '/tint', '/upwall', '/downwall', '/floor', '/spawnball', '/explosion', '/locator', '/ping',
+            '/weather', '/tops', '-statsrestart',
+            '/club'
+        ]
+
+    @staticmethod
+    def effects() -> list[str]:
+        return ['none', 'footprint', 'fire', 'darkmagic',
+                'spark', 'stars', 'aure', 'chispitas', 'rainbow', 'metal',
+                'rock', 'ice', 'slime', 'splinter', 'stickers_rock', 
+                'stickers_slime', 'stickers_metal', 'stickers_spark', 
+                'stickers_splinter', 'tendrils', 'tendrils_smoke', 
+                'tendrils_ice', 'distortion', 'flag_stand', 
+                'tendrils_splinter', 'stickers_sweat', 'stickers_ice']
+
+    @staticmethod
+    def get_my_pb(client_id: int) -> None:
+        if Uts.userpbs.get(client_id):
+            pb = Uts.userpbs[client_id]
+            Uts.sm(pb, transient=True, clients=[client_id])
+    
+    @staticmethod
+    def spaz_sjump(node: bs.Node) -> None:
+        actor = node.source_player.actor
+        del node
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                if getattr(actor, 'cm_superjump', None):
+                    actor.cm_superjump = False
+                else:
+                    actor.cm_superjump = True
+    
+    @staticmethod
+    def spaz_curse(node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                node.handlemessage(bs.PowerupMessage('curse', node))
+    
+    @staticmethod
+    def spaz_gift(node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                ExplosiveGift(owner=node)
+    
+    @staticmethod
+    def spaz_mgb(node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                MagicBox(pos=node.position).autoretain()
+            
+    @staticmethod
+    def spaz_punch(node: bs.Node) -> None:
+        actor = node.source_player.actor
+        del node
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                actor._punch_power_scale = 8.0
+            
+    @staticmethod
+    def spaz_speed(node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                if node.hockey:
+                    node.hockey = False
+                else:
+                    node.hockey = True
+
+    @staticmethod
+    def slow() -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                gnode = current_act.globalsnode
+                if gnode.slow_motion:
+                    gnode.slow_motion = False
+                else:
+                    gnode.slow_motion = True
+            
+    @staticmethod
+    def spaz_gm(node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                if node.invincible:
+                    node.invincible = False
+                else:
+                    node.invincible = True
+            
+    @staticmethod
+    def spaz_sleep(node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                for x in range(5):
+                    bs.timer(x, bs.CallStrict(node.handlemessage, 'knockout', 5000.0))
+            
+    @staticmethod
+    def player_color(color: str, node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                node.color = Uts.colors()[color]
+            
+    @staticmethod
+    def freeze_spaz(node: bs.Node) -> None:
+        actor = node.source_player.actor
+        del node
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                if actor.shield:
+                    actor.shield.delete()
+                actor.handlemessage(bs.FreezeMessage())
+
+    @staticmethod
+    def pause() -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                globs = current_act.globalsnode
+                if globs.paused:
+                    globs.paused = False
+                else:
+                    globs.paused = True
+
+    @staticmethod
+    def kill_spaz(node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                node.handlemessage(bs.DieMessage())
+
+    @staticmethod
+    def spaz_box(node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                node.torso_mesh = bs.getmesh('tnt')
+                node.head_mesh = None
+                node.pelvis_mesh = None
+                node.forearm_mesh = None
+                node.color_texture = node.color_mask_texture = bs.gettexture('tnt')
+                node.color = node.highlight = (1,1,1)
+                node.style = 'cyborg'
+
+    @staticmethod
+    def spaz_visible(node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                node.torso_mesh = None
+                node.head_mesh = None
+                node.pelvis_mesh = None
+                node.forearm_mesh = None
+                node.color_texture = node.color_mask_texture = None
+                node.color = None
+                node.style = None
+
+    @staticmethod
+    def impulse(node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                msg = bs.HitMessage(pos=node.position,
+                                    velocity=node.velocity,
+                                    magnitude=500 * 4,
+                                    hit_subtype='imp',
+                                    radius=7840)
+                if isinstance(msg, bs.HitMessage):
+                    for i in range(2):
+                        with current_act.context:
+                            node.handlemessage(
+                                'impulse', msg.pos[0], msg.pos[1], msg.pos[2],
+                                msg.velocity[0], msg.velocity[1]+2.0, msg.velocity[2], msg.magnitude,
+                                msg.velocity_magnitude, msg.radius, 0, msg.force_direction[0],
+                                msg.force_direction[1], msg.force_direction[2])
+
+    @staticmethod
+    def actor_name(name: str, node: bs.Node) -> None:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is not None:
+            with current_act.context:
+                node.name = name
+
+    @staticmethod
+    def actor_command(
+            ms: list[str],
+            call: Callable,
+            attrs: dict[str, Any]) -> None:
+        ClientMessage = attrs['ClientMessage']
+        current_act = bs.get_foreground_host_activity()
+        if current_act is None:
+            ClientMessage("No active game found", color=(1,0,0))
+            return
+        def new_call(node: bs.Node):
+            ClientMessage("Command Executed", color=(0, 1, 0))
+            with current_act.context:
+                call(node)
+        if len(ms) == 1:
+            if attrs['Actor'] is None:
+                ClientMessage("You're not in the game")
+            else:
+                actor = attrs['Actor']
+                new_call(actor.node)
+        else:
+            if ms[1] == 'all':
+                for p in current_act.players:
+                    if p.actor and p.actor.node:
+                        node = p.actor.node
+                        new_call(node)
+            else:
+                try:
+                    p_id = int(ms[1])
+                    if p_id >= 0 and p_id < len(current_act.players):
+                        node = current_act.players[p_id].actor.node
+                        new_call(node)
+                    else:
+                        ClientMessage(f"Player ID {p_id} not found", color=(1,0,0))
+                except Exception as exc:
+                    color = Uts.colors()['orange']
+                    type_error = type(exc)
+                    if type_error is ValueError:
+                        ClientMessage(f"'{ms[1]}' is invalid. \n Add the player ID. use the '/list' command for more information.", color=color)
+                    elif type_error is IndexError:
+                        ClientMessage(f"'{p_id}' Does not belong to any player.", color=color)
+                    else:
+                        ClientMessage(f'{type(exc).__name__}: {exc}')
+                    ClientMessage(f"Example: {ms[0]} 0 | {ms[0]} all")
+
+    @staticmethod
+    def spaz_drop(node: bs.Node) -> None:
+        self = node.source_player.actor
+        del node
+        current_act = bs.get_foreground_host_activity()
+        if current_act is None:
+            return
+        def drop():
+            pos = self.node.position
+            psts = [
+                (pos[0]-1,pos[1]+4,pos[2]+1),
+                (pos[0]+1,pos[1]+4,pos[2]+1),
+                (pos[0],pos[1]+4,pos[2]-1),
+                (pos[0]-2,pos[1]+4,pos[2]),
+                (pos[0]+2,pos[1]+4,pos[2]),
+                (pos[0]+2,pos[1]+4,pos[2]-1),
+                (pos[0]-2,pos[1]+4,pos[2]-1),
+                (pos[0],pos[1]+4,pos[2]+2)]
+            for p in psts:
+                bomb = Bomb(
+                    position=p,
+                    bomb_scale=1.3,
+                    bomb_type='sticky').autoretain()
+                bomb.node.gravity_scale = 4.0
+                bomb.node.color_texture = bs.gettexture('bombStickyColor')
+        for x in range(2):
+            with current_act.context:
+                bs.timer(x * 0.308, drop)
+
+    @staticmethod
+    def get_user_list(c_id: int) -> None:
+        current_act = bs.get_foreground_host_activity()
+        def delete_text(t_id: int):
+            if current_act and hasattr(current_act, '_ids') and current_act._ids.node.exists():
+                if t_id == id(current_act._ids.node):
+                    current_act._ids.node.opacity = 0.0
+        def gText(txt: str):
+            if current_act is None:
+                bs.screenmessage(txt, clients=[c_id])
+                return
+            with current_act.context:
+                current_act._ids = text.Text(txt, position=(-0.0, 270.0),
+                    h_align=text.Text.HAlign.CENTER, scale=1.1,
+                    transition=text.Text.Transition.FADE_IN).autoretain()
+                current_act._ids.node.opacity = 0.5
+                t_id = id(current_act._ids.node)
+                bs.timer(8.0, bs.CallStrict(delete_text, t_id))
+        txt = str()
+        txts = ["Name | Player ID | Client ID",
+                "______________________"]
+        try:
+            if current_act is not None:
+                players = current_act.players
+                for idx, p in enumerate(players):
+                    if p.is_alive():
+                        s = p.sessionplayer
+                        txts.append(f"{s.getname(False)} | {idx} | {s.inputdevice.client_id}")
+        except Exception:
+            players = []
+        txt = '\n'.join(txts)
+        bs.screenmessage(txt, clients=[c_id])
+        try:
+            if current_act is not None:
+                with current_act.context:
+                    try:
+                        if current_act._ids.node.exists():
+                            current_act._ids.node.delete()
+                            gText(txt)
+                    except AttributeError:
+                        gText(txt)
+        except:
+            pass
+    
+    @staticmethod
+    def get_characters() -> list[str]:
+        return bs.app.spaz_appearances
+    
+    @staticmethod
+    def user_is_admin(c_id: int) -> bool:
+        if c_id == -1:
+            return True
+        if c_id in Uts.accounts:
+            return Uts.accounts[c_id]['Admin']
+        else:
+            return False
+            
+    @staticmethod
+    def user_is_owner(c_id: int) -> bool:
+        if c_id == -1:
+            return True
+        if c_id in Uts.accounts:
+            account_id = None
+            for acc_id, data in Uts.pdata.items():
+                if data.get('Owner', False):
+                    if c_id in Uts.userpbs and Uts.userpbs[c_id] == acc_id:
+                        return True
+            return Uts.accounts[c_id].get('Owner', False)
+        else:
+            return False
+    
+    @staticmethod
+    def get_actor(c_id: int) -> spaz.Spaz:
+        current_act = bs.get_foreground_host_activity()
+        if current_act is None:
+            return None
+        for player in current_act.players:
+            try:
+                if c_id == player.sessionplayer.inputdevice.client_id:
+                    return player.actor
+            except:
+                continue
+        return None
+
+
 class Commands:
     """Usa los distintos comandos dependiendo tu rango (All, Admins)."""
     fct: Any
@@ -690,6 +2825,8 @@ class Commands:
                 self.admin_commands()
             if self.fct.user_is_owner(self.client_id):
                 self.owner_commands()
+            # أوامر الأندية (للكباتن والأعضاء)
+            self.club_commands()
         except Exception as e:
             print(f"❌ Error in process_commands: {e}")
             self.value = None
@@ -1657,6 +3794,219 @@ class Commands:
         except Exception as e:
             self.clientmessage(f"❌ Error resetting stats: {str(e)[:50]}", color=(1,0,0))
 
+    # ========== أوامر الأندية (للكباتن والأعضاء) ==========
+    def club_commands(self):
+        """معالجة أوامر الأندية"""
+        msg = self.msg.strip()
+        ms = self.arguments
+        if not ms:
+            return
+        cmd = ms[0].lower()
+        ClientMessage = self.clientmessage
+        client_id = self.client_id
+        pb_id = Uts.get_reliable_pb_id(client_id)
+
+        # أوامر عامة (لأي لاعب)
+        if cmd == '/offers':
+            self.process_offers_command(pb_id)
+            self.value = '@'
+        elif cmd == '/offer':
+            if len(ms) >= 3:
+                subcmd = ms[1].lower()
+                club_id = ms[2]
+                if subcmd == 'yes':
+                    self.process_offer_yes(pb_id, club_id)
+                elif subcmd == 'no':
+                    self.process_offer_no(pb_id, club_id)
+                else:
+                    ClientMessage("❌ Use: /offer yes <club-id> or /offer no <club-id>", color=(1,0,0))
+            else:
+                ClientMessage("❌ Use: /offer yes <club-id> or /offer no <club-id>", color=(1,0,0))
+            self.value = '@'
+        elif cmd == '/myclub':
+            self.process_myclub(pb_id)
+            self.value = '@'
+
+        # أوامر تتطلب صلاحية الكابتن (أو أعضاء النادي لبعضها)
+        # نتحقق أولاً ما إذا كان اللاعب كابتن
+        is_captain = Uts.clubs_system.is_captain(pb_id)
+        is_member = Uts.clubs_system.is_club_member(pb_id)
+
+        if cmd == '/club':
+            if len(ms) < 2:
+                ClientMessage("❌ Use: /club add|delete|list|info", color=(1,0,0))
+                self.value = '@'
+                return
+            subcmd = ms[1].lower()
+            if subcmd == 'add':
+                # صلاحية المشرف/المالك فقط
+                if not (self.fct.user_is_admin(client_id) or self.fct.user_is_owner(client_id)):
+                    ClientMessage(getlanguage("AdminOnly"), color=(1,0,0))
+                    self.value = '@'
+                    return
+                # /club add <club_name> <club_color> <club_icon> <pb-ID captain-1> <pb-ID captain-2>
+                if len(ms) < 7:
+                    ClientMessage("❌ Use: /club add <name> <r,g,b> <icon> <captain1-pb> <captain2-pb>", color=(1,0,0))
+                    ClientMessage("📝 Example: /club add Heros 0.2,0.5,0.8 cr pb-XXXX pb-YYYY", color=(1,1,0))
+                    self.value = '@'
+                    return
+                club_name = ms[2]
+                color_str = ms[3]
+                icon_name = ms[4]
+                cap1_pb = ms[5]
+                cap2_pb = ms[6]
+                # تحليل اللون
+                try:
+                    r, g, b = map(float, color_str.split(','))
+                    color = (r, g, b)
+                except:
+                    ClientMessage("❌ Invalid color format. Use r,g,b (e.g., 0.2,0.5,0.8)", color=(1,0,0))
+                    self.value = '@'
+                    return
+                # التحقق من وجود PB-ID (بشكل بسيط)
+                # يمكن إضافة تحقق من وجود اللاعبين لاحقاً
+                club_id = Uts.clubs_system.create_club(club_name, color, icon_name, cap1_pb, cap2_pb, Uts.usernames.get(client_id, "Unknown"))
+                ClientMessage(f"✅ Club created with ID: {club_id}", color=(0,1,0))
+                self.value = '@'
+
+            elif subcmd == 'delete':
+                # صلاحية المشرف/المالك فقط
+                if not (self.fct.user_is_admin(client_id) or self.fct.user_is_owner(client_id)):
+                    ClientMessage(getlanguage("AdminOnly"), color=(1,0,0))
+                    self.value = '@'
+                    return
+                if len(ms) < 3:
+                    ClientMessage("❌ Use: /club delete <club-id>", color=(1,0,0))
+                    self.value = '@'
+                    return
+                club_id = ms[2]
+                if Uts.clubs_system.delete_club(club_id):
+                    ClientMessage(f"✅ Club {club_id} deleted", color=(0,1,0))
+                else:
+                    ClientMessage("❌ Club not found", color=(1,0,0))
+                self.value = '@'
+
+            elif subcmd == 'list':
+                if not is_captain:
+                    ClientMessage("❌ Only captains can use /club list", color=(1,0,0))
+                    self.value = '@'
+                    return
+                # الحصول على نادي الكابتن
+                res = Uts.clubs_system.get_club_by_player(pb_id)
+                if not res:
+                    ClientMessage("❌ You are not in any club", color=(1,0,0))
+                    self.value = '@'
+                    return
+                club_id, _, _ = res
+                text = Uts.clubs_system.get_club_list_text(club_id)
+                # إرسال النص كرسائل دردشة (قد يكون طويلاً)
+                for line in text.split('\n'):
+                    self.send_chat_message(line)
+                self.value = '@'
+
+            elif subcmd == 'info':
+                if not is_captain:
+                    ClientMessage("❌ Only captains can use /club info", color=(1,0,0))
+                    self.value = '@'
+                    return
+                res = Uts.clubs_system.get_club_by_player(pb_id)
+                if not res:
+                    ClientMessage("❌ You are not in any club", color=(1,0,0))
+                    self.value = '@'
+                    return
+                club_id, _, _ = res
+                text = Uts.clubs_system.get_club_info_text(club_id)
+                for line in text.split('\n'):
+                    self.send_chat_message(line)
+                self.value = '@'
+
+        elif cmd == '/sign':
+            # أوامر الكابتن
+            if not is_captain:
+                ClientMessage("❌ Only captains can use /sign commands", color=(1,0,0))
+                self.value = '@'
+                return
+            if len(ms) < 2:
+                ClientMessage("❌ Use: /sign player <pb-id> <months> or /sign captain <pb-id>", color=(1,0,0))
+                self.value = '@'
+                return
+            subcmd = ms[1].lower()
+            if subcmd == 'player':
+                # /sign player <pb-id> <months>
+                if len(ms) < 4:
+                    ClientMessage("❌ Use: /sign player <pb-id> <months>", color=(1,0,0))
+                    self.value = '@'
+                    return
+                target_pb = ms[2]
+                try:
+                    months = int(ms[3])
+                    if months <= 0:
+                        raise ValueError
+                except:
+                    ClientMessage("❌ Months must be a positive integer", color=(1,0,0))
+                    self.value = '@'
+                    return
+                # الحصول على نادي الكابتن
+                res = Uts.clubs_system.get_club_by_player(pb_id)
+                if not res:
+                    ClientMessage("❌ You are not in any club", color=(1,0,0))
+                    self.value = '@'
+                    return
+                club_id, club_data, _ = res
+                club_name = club_data["club-name"]
+                captain_name = Uts.usernames.get(client_id, "Captain")
+                # إرسال العرض
+                Uts.clubs_system.add_offer(target_pb, club_id, club_name, months, captain_name, pb_id)
+                ClientMessage(f"✅ Offer sent to {target_pb}", color=(0,1,0))
+                self.value = '@'
+            elif subcmd == 'captain':
+                # /sign captain <pb-id>
+                if len(ms) < 3:
+                    ClientMessage("❌ Use: /sign captain <pb-id>", color=(1,0,0))
+                    self.value = '@'
+                    return
+                target_pb = ms[2]
+                if Uts.clubs_system.promote_to_captain(pb_id, target_pb):
+                    ClientMessage(f"✅ {target_pb} promoted to captain", color=(0,1,0))
+                else:
+                    ClientMessage("❌ Promotion failed. Make sure target is a member of your club.", color=(1,0,0))
+                self.value = '@'
+
+    def process_offers_command(self, pb_id: str):
+        """عرض العروض الحالية للاعب"""
+        offers = Uts.clubs_system.get_player_offers(pb_id)
+        if not offers:
+            self.clientmessage("📭 No offers received.", color=(0.5,0.5,1))
+            return
+        self.clientmessage("📋 Your offers:", color=(1,1,0))
+        for o in offers:
+            msg = (f"Club name : {o['club-name']}\n"
+                   f"Months : {o['months']}\n"
+                   f"Contract expire : {o['contract-expire']}\n"
+                   f"sender : {o['sender']}\n"
+                   f"To accept: /offer yes {o['club-id']}\n"
+                   f"To reject: /offer no {o['club-id']}")
+            self.send_chat_message(msg)
+
+    def process_offer_yes(self, pb_id: str, club_id: str):
+        """قبول عرض والانضمام للنادي"""
+        if Uts.clubs_system.accept_offer(pb_id, club_id):
+            self.clientmessage(f"✅ You have joined the club!", color=(0,1,0))
+            # سيتم إنشاء التاج عند spawn
+        else:
+            self.clientmessage("❌ Failed to accept offer. It may be expired or club full.", color=(1,0,0))
+
+    def process_offer_no(self, pb_id: str, club_id: str):
+        """رفض عرض"""
+        Uts.clubs_system.remove_offer(pb_id, club_id)
+        self.clientmessage("❌ Offer rejected and removed.", color=(1,1,0))
+
+    def process_myclub(self, pb_id: str):
+        """عرض معلومات نادي العضو"""
+        text = Uts.clubs_system.get_myclub_text(pb_id)
+        for line in text.split('\n'):
+            self.send_chat_message(line)
+
     # ========== باقي الدوال (موجودة في الملف الأصلي – كاملة) ==========
     def process_advanced_customtag(self, msg: str, client_id: int):
         """إنشاء تاج مخصص مع كتابة حرف حرف"""
@@ -1910,6 +4260,7 @@ class Commands:
                 self.clientmessage("❌ Client ID must be a number", color=(1,0,0))
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+
     def process_locator_command(self, msg: str, client_id: int):
         """وضع علامة مضيئة في الموقع المحدد"""
         try:
@@ -1957,6 +4308,7 @@ class Commands:
             self.clientmessage(f"✅ Placed {color_str} {shape} at ({x},{y},{z})", color=(0,1,0))
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+
     def process_spawnball_command(self, msg: str, client_id: int):
         """إنشاء كرة قدم قابلة للضرب"""
         try:
@@ -1975,6 +4327,7 @@ class Commands:
             self.clientmessage(f"✅ Spawned ball at ({x}, {y}, {z})", color=(0,1,0))
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+
     def process_explosion_command(self, msg: str, client_id: int):
         """انفجار كبير يقتل جميع اللاعبين"""
         try:
@@ -1992,6 +4345,7 @@ class Commands:
             self.clientmessage("💥 Massive explosion!", color=(1,0.5,0))
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+
     def process_savetag(self, msg: str, client_id: int):
         """حفظ تاج كقالب"""
         try:
@@ -2023,6 +4377,7 @@ class Commands:
             self.clientmessage(f"💾 Saved tag template '{tag_name}' with text '{text}'", color=(0,0,1))
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1, 0, 0))
+
     def process_ping_command(self, client_id: int):
         """عرض زمن الاستجابة (ping) للاعب"""
         try:
@@ -2031,6 +4386,7 @@ class Commands:
             self.clientmessage(f"🏓 Pong! (Ping simulation)", color=(0,1,1))
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+
     def process_tagdata(self, msg: str, client_id: int):
         """تطبيق قالب تاج على لاعب"""
         try:
@@ -2840,6 +5196,10 @@ class Commands:
                     "/report   : Report a player",
                     "/stats    : Show your personal statistics",   # ⭐ NEW
                     "-statsshow : Toggle leaderboard on/right side",  # NEW
+                    "/offers   : List club offers",                 # NEW
+                    "/offer yes <club-id> : Accept club offer",     # NEW
+                    "/offer no <club-id>  : Reject club offer",     # NEW
+                    "/myclub   : Show your club info",              # NEW
                     "test      : Test if CheatMax works",
                     "help      : This menu"
                 ]
@@ -2906,6 +5266,10 @@ class Commands:
                     "",
                     "🌦️ **WEATHER SYSTEM**",
                     "/weather <type>      : Set global weather (snow, rock, metal, ice, spark, slime, fire, splinter, smoke, rainbow, none)",
+                    "",
+                    "🏆 **CLUB COMMANDS (Admins only)**",
+                    "/club add <name> <r,g,b> <icon> <cap1-pb> <cap2-pb> : Create club",
+                    "/club delete <club-id> : Delete club",
                 ]
                 for cmd in cmds:
                     self.send_chat_message(cmd)
@@ -2993,9 +5357,7 @@ class Commands:
             self.send_chat_message("||        PB-ID        ||    Role    ||  Account_name   ||        Name         || Client ID ||   Name Tag  ||")
             self.send_chat_message("=============================================================================================================")
             for data in players_data:
-                pb_id = data['pb_id']
-                if not pb_id or pb_id == 'none' or pb_id == 'None':
-                    pb_id = f"guest_{data['client_id']}"
+                pb_id = Uts.get_reliable_pb_id(data['client_id'])
                 if len(pb_id) > 20:
                     pb_id = pb_id[:18] + ".."
                 pb_id = pb_id.ljust(20)
@@ -3032,376 +5394,7 @@ class Commands:
             print(f"❌ Error in process_list_players: {e}")
             self.clientmessage("❌ Error showing players list", color=(1,0,0))
 
-class CommandFunctions:
-    @staticmethod
-    def all_cmd() -> list[str]:
-        return [
-            '-pan', '-ceb', '-colors', '-mp', '-pb', '-effects', 
-            '/list', 'test', 'help', 'party', 'stats', '/report', '/stats', '-statsshow'  # ⭐ NEW (added -statsshow)
-            ]
-            
-    @staticmethod
-    def admins_cmd() -> list[str]:
-        return [
-            '/name', '/imp', '/box', '/addAdmin',
-            '/delAdmin', '/kill', '-pause', '/infoHost',
-            '/infoDes', '-info', '/infoColor', '-end',
-            '/kick', '-chatLive', '/freeze', '/playerColor',
-            '/maxPlayers', '-showMessages', '/sleep',
-            '/mute', '/unmute', '/gm', '-slow', '/speed',
-            '/effect', '/punch', '/mbox', '/drop', '/gift',
-            '/curse', '/superjump', '/list', '/customtag', '/animationtag',
-            '/removetag', '/savetag', '/tagdata', '/listtags', '/sharedaccounts',
-            '/closeserver', '/stopcloseserver', '/closestatus', '/testclosure',
-            '/ban', '/unban', '/reports', '/banlist', '/reportdone',
-            '/teleport', '/fly','/warn', '/warns', '/clearwarns', '/ride', '/invisible',
-            '/tint', '/upwall', '/downwall', '/floor', '/spawnball', '/explosion', '/locator', '/ping',
-            '/weather', '/tops', '-statsrestart'   # ⭐ NEW (added -statsrestart)
-        ]
 
-    @staticmethod
-    def effects() -> list[str]:
-        return ['none', 'footprint', 'fire', 'darkmagic',
-                'spark', 'stars', 'aure', 'chispitas', 'rainbow', 'metal',
-                'rock', 'ice', 'slime', 'splinter', 'stickers_rock', 
-                'stickers_slime', 'stickers_metal', 'stickers_spark', 
-                'stickers_splinter', 'tendrils', 'tendrils_smoke', 
-                'tendrils_ice', 'distortion', 'flag_stand', 
-                'tendrils_splinter', 'stickers_sweat', 'stickers_ice']
-
-    @staticmethod
-    def get_my_pb(client_id: int) -> None:
-        if Uts.userpbs.get(client_id):
-            pb = Uts.userpbs[client_id]
-            Uts.sm(pb, transient=True, clients=[client_id])
-    
-    @staticmethod
-    def spaz_sjump(node: bs.Node) -> None:
-        actor = node.source_player.actor
-        del node
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                if getattr(actor, 'cm_superjump', None):
-                    actor.cm_superjump = False
-                else:
-                    actor.cm_superjump = True
-    
-    @staticmethod
-    def spaz_curse(node: bs.Node) -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                node.handlemessage(bs.PowerupMessage('curse', node))
-    
-    @staticmethod
-    def spaz_gift(node: bs.Node) -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                ExplosiveGift(owner=node)
-    
-    @staticmethod
-    def spaz_mgb(node: bs.Node) -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                MagicBox(pos=node.position).autoretain()
-            
-    @staticmethod
-    def spaz_punch(node: bs.Node) -> None:
-        actor = node.source_player.actor
-        del node
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                actor._punch_power_scale = 8.0
-            
-    @staticmethod
-    def spaz_speed(node: bs.Node) -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                if node.hockey:
-                    node.hockey = False
-                else:
-                    node.hockey = True
-
-    @staticmethod
-    def slow() -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                gnode = current_act.globalsnode
-                if gnode.slow_motion:
-                    gnode.slow_motion = False
-                else:
-                    gnode.slow_motion = True
-            
-    @staticmethod
-    def spaz_gm(node: bs.Node) -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                if node.invincible:
-                    node.invincible = False
-                else:
-                    node.invincible = True
-            
-    @staticmethod
-    def spaz_sleep(node: bs.Node) -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                for x in range(5):
-                    bs.timer(x, bs.CallStrict(node.handlemessage, 'knockout', 5000.0))
-            
-    @staticmethod
-    def player_color(color: str, node: bs.Node) -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                node.color = Uts.colors()[color]
-            
-    @staticmethod
-    def freeze_spaz(node: bs.Node) -> None:
-        actor = node.source_player.actor
-        del node
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                if actor.shield:
-                    actor.shield.delete()
-                actor.handlemessage(bs.FreezeMessage())
-
-    @staticmethod
-    def pause() -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                globs = current_act.globalsnode
-                if globs.paused:
-                    globs.paused = False
-                else:
-                    globs.paused = True
-
-    @staticmethod
-    def kill_spaz(node: bs.Node) -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                node.handlemessage(bs.DieMessage())
-
-    @staticmethod
-    def spaz_box(node: bs.Node) -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                node.torso_mesh = bs.getmesh('tnt')
-                node.head_mesh = None
-                node.pelvis_mesh = None
-                node.forearm_mesh = None
-                node.color_texture = node.color_mask_texture = bs.gettexture('tnt')
-                node.color = node.highlight = (1,1,1)
-                node.style = 'cyborg'
-
-    @staticmethod
-    def spaz_visible(node: bs.Node) -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                node.torso_mesh = None
-                node.head_mesh = None
-                node.pelvis_mesh = None
-                node.forearm_mesh = None
-                node.color_texture = node.color_mask_texture = None
-                node.color = None
-                node.style = None
-
-    @staticmethod
-    def impulse(node: bs.Node) -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                msg = bs.HitMessage(pos=node.position,
-                                    velocity=node.velocity,
-                                    magnitude=500 * 4,
-                                    hit_subtype='imp',
-                                    radius=7840)
-                if isinstance(msg, bs.HitMessage):
-                    for i in range(2):
-                        with current_act.context:
-                            node.handlemessage(
-                                'impulse', msg.pos[0], msg.pos[1], msg.pos[2],
-                                msg.velocity[0], msg.velocity[1]+2.0, msg.velocity[2], msg.magnitude,
-                                msg.velocity_magnitude, msg.radius, 0, msg.force_direction[0],
-                                msg.force_direction[1], msg.force_direction[2])
-
-    @staticmethod
-    def actor_name(name: str, node: bs.Node) -> None:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is not None:
-            with current_act.context:
-                node.name = name
-
-    @staticmethod
-    def actor_command(
-            ms: list[str],
-            call: Callable,
-            attrs: dict[str, Any]) -> None:
-        ClientMessage = attrs['ClientMessage']
-        current_act = bs.get_foreground_host_activity()
-        if current_act is None:
-            ClientMessage("No active game found", color=(1,0,0))
-            return
-        def new_call(node: bs.Node):
-            ClientMessage("Command Executed", color=(0, 1, 0))
-            with current_act.context:
-                call(node)
-        if len(ms) == 1:
-            if attrs['Actor'] is None:
-                ClientMessage("You're not in the game")
-            else:
-                actor = attrs['Actor']
-                new_call(actor.node)
-        else:
-            if ms[1] == 'all':
-                for p in current_act.players:
-                    if p.actor and p.actor.node:
-                        node = p.actor.node
-                        new_call(node)
-            else:
-                try:
-                    p_id = int(ms[1])
-                    if p_id >= 0 and p_id < len(current_act.players):
-                        node = current_act.players[p_id].actor.node
-                        new_call(node)
-                    else:
-                        ClientMessage(f"Player ID {p_id} not found", color=(1,0,0))
-                except Exception as exc:
-                    color = Uts.colors()['orange']
-                    type_error = type(exc)
-                    if type_error is ValueError:
-                        ClientMessage(f"'{ms[1]}' is invalid. \n Add the player ID. use the '/list' command for more information.", color=color)
-                    elif type_error is IndexError:
-                        ClientMessage(f"'{p_id}' Does not belong to any player.", color=color)
-                    else:
-                        ClientMessage(f'{type(exc).__name__}: {exc}')
-                    ClientMessage(f"Example: {ms[0]} 0 | {ms[0]} all")
-
-    @staticmethod
-    def spaz_drop(node: bs.Node) -> None:
-        self = node.source_player.actor
-        del node
-        current_act = bs.get_foreground_host_activity()
-        if current_act is None:
-            return
-        def drop():
-            pos = self.node.position
-            psts = [
-                (pos[0]-1,pos[1]+4,pos[2]+1),
-                (pos[0]+1,pos[1]+4,pos[2]+1),
-                (pos[0],pos[1]+4,pos[2]-1),
-                (pos[0]-2,pos[1]+4,pos[2]),
-                (pos[0]+2,pos[1]+4,pos[2]),
-                (pos[0]+2,pos[1]+4,pos[2]-1),
-                (pos[0]-2,pos[1]+4,pos[2]-1),
-                (pos[0],pos[1]+4,pos[2]+2)]
-            for p in psts:
-                bomb = Bomb(
-                    position=p,
-                    bomb_scale=1.3,
-                    bomb_type='sticky').autoretain()
-                bomb.node.gravity_scale = 4.0
-                bomb.node.color_texture = bs.gettexture('bombStickyColor')
-        for x in range(2):
-            with current_act.context:
-                bs.timer(x * 0.308, drop)
-
-    @staticmethod
-    def get_user_list(c_id: int) -> None:
-        current_act = bs.get_foreground_host_activity()
-        def delete_text(t_id: int):
-            if current_act and hasattr(current_act, '_ids') and current_act._ids.node.exists():
-                if t_id == id(current_act._ids.node):
-                    current_act._ids.node.opacity = 0.0
-        def gText(txt: str):
-            if current_act is None:
-                bs.screenmessage(txt, clients=[c_id])
-                return
-            with current_act.context:
-                current_act._ids = text.Text(txt, position=(-0.0, 270.0),
-                    h_align=text.Text.HAlign.CENTER, scale=1.1,
-                    transition=text.Text.Transition.FADE_IN).autoretain()
-                current_act._ids.node.opacity = 0.5
-                t_id = id(current_act._ids.node)
-                bs.timer(8.0, bs.CallStrict(delete_text, t_id))
-        txt = str()
-        txts = ["Name | Player ID | Client ID",
-                "______________________"]
-        try:
-            if current_act is not None:
-                players = current_act.players
-                for idx, p in enumerate(players):
-                    if p.is_alive():
-                        s = p.sessionplayer
-                        txts.append(f"{s.getname(False)} | {idx} | {s.inputdevice.client_id}")
-        except Exception:
-            players = []
-        txt = '\n'.join(txts)
-        bs.screenmessage(txt, clients=[c_id])
-        try:
-            if current_act is not None:
-                with current_act.context:
-                    try:
-                        if current_act._ids.node.exists():
-                            current_act._ids.node.delete()
-                            gText(txt)
-                    except AttributeError:
-                        gText(txt)
-        except:
-            pass
-    
-    @staticmethod
-    def get_characters() -> list[str]:
-        return bs.app.spaz_appearances
-    
-    @staticmethod
-    def user_is_admin(c_id: int) -> bool:
-        if c_id == -1:
-            return True
-        if c_id in Uts.accounts:
-            return Uts.accounts[c_id]['Admin']
-        else:
-            return False
-            
-    @staticmethod
-    def user_is_owner(c_id: int) -> bool:
-        if c_id == -1:
-            return True
-        if c_id in Uts.accounts:
-            account_id = None
-            for acc_id, data in Uts.pdata.items():
-                if data.get('Owner', False):
-                    if c_id in Uts.userpbs and Uts.userpbs[c_id] == acc_id:
-                        return True
-            return Uts.accounts[c_id].get('Owner', False)
-        else:
-            return False
-    
-    @staticmethod
-    def get_actor(c_id: int) -> spaz.Spaz:
-        current_act = bs.get_foreground_host_activity()
-        if current_act is None:
-            return None
-        for player in current_act.players:
-            try:
-                if c_id == player.sessionplayer.inputdevice.client_id:
-                    return player.actor
-            except:
-                continue
-        return None
-        
 def ActorMessage(msg: str, actor: spaz.Spaz):
     current_act = bs.get_foreground_host_activity()
     if current_act is None:
@@ -3449,11 +5442,12 @@ def footprint(self) -> None:
                      'position': self.node.position,
                      'shape': 'circle',
                      'color': self.node.color,
-                     'size': 0.2,   # ✅ قبل كانت [0.2] (قائمة)، الآن أصبحت 0.2 (رقم)
+                     'size': 0.2,
                      'draw_beauty': False,
                      'additive': False})
         bs.animate(loc, 'opacity', {0: 1.0, 1.9: 0.0})
         bs.apptimer(2.0, loc.delete)
+
 def aure(self) -> None:
     def anim(node: bs.Node) -> None:
         bs.animate_array(node, 'color', 3,
@@ -4145,23 +6139,6 @@ def hook_chat_filter():
     except Exception as e:
         print(f"⚠️ Failed to hook chat filter: {e}")
 
-# ==================== ربط التحقق من الحظر عند الاتصال ====================
-def hook_session_player_join():
-    """ربط التحقق من الحظر فور اتصال اللاعب"""
-    try:
-        import bascenev1._hooks
-        original = bascenev1._hooks.on_player_joined
-        def wrapped_on_player_joined(sessionplayer):
-            # التحقق من الحظر أولاً
-            if Uts.check_session_player_ban(sessionplayer):
-                return  # إذا كان محظوراً، لا نكمل (تم قطعه)
-            # استدعاء الدالة الأصلية
-            original(sessionplayer)
-        bascenev1._hooks.on_player_joined = wrapped_on_player_joined
-        print("✅ Session player join hooked successfully (ban check)")
-    except Exception as e:
-        print(f"⚠️ Failed to hook session player join: {e}")
-
 # ------------------ Game Activity hooks ------------------
 def new_ga_on_transition_in(self) -> None:
     calls['GA_OnTransitionIn'](self)
@@ -4194,6 +6171,19 @@ def new_playerspaz_init_(self, *args, **kwargs) -> None:
     if user and user in Uts.pdata:
         eff = Uts.pdata[user]['Effect']
         apply_effect(self, eff)
+    # إضافة تاج النادي إذا كان اللاعب عضواً في نادي
+    if user and user in Uts.pdata and "club" in Uts.pdata[user]:
+        club_info = Uts.pdata[user]["club"]
+        club_id = club_info["club-id"]
+        role = club_info["role"]
+        club_data = Uts.clubs_system.get_club_by_id(club_id)
+        if club_data:
+            # تأجيل إنشاء التاج حتى يتم إعداد اللاعب بالكامل
+            current_act = bs.get_foreground_host_activity()
+            if current_act:
+                client_id = self._player.sessionplayer.inputdevice.client_id
+                bs.timer(0.5, lambda: Uts.clubs_system.create_club_tag(self, client_id, club_data, role, current_act))
+    # تاج مخصص
     if user and user in Uts.tags:
         tag_data = Uts.tags[user]
         text = tag_data.get('text', '')
@@ -4415,1293 +6405,13 @@ class MagicBox(bs.Actor):
         else:
             return super().handlemessage(msg)
 
-class Uts:
-    directory_user: str = _babase.app.env.python_directory_user
-    directory_sys: str = directory_user + '/sys/' + _babase.app.env.engine_version + '_' + str(_babase.app.env.engine_build_number)
-    sm: Callable = bs.broadcastmessage
-    cm: Callable = bs.chatmessage
-    key: str = '#CheatMax'
-    mod: Any
-    accounts: dict[int, Any] = {}
-    usernames: dict[int, str] = {}
-    shortnames: dict[int, str] = {}
-    useraccounts: dict[int, str] = {}
-    userpbs: dict[int, str] = {}
-    players: dict[int, bs.SessionPlayer] = {}
-    tags: dict[str, dict] = {}
-    tag_system = None
-    
-    # نظام الطقس
-    weather_effect = WeatherEffect()
-    
-    # لوحة المتصدرين
-    leaderboard_display = None
-    
-    # متغيرات إغلاق السيرفر
-    server_close_active = False
-    server_close_end_time = 0.0
-    server_close_tag_name = ""
-    server_close_countdown_text = None
-    server_close_original_players = []
-    server_close_last_update = 0.0
-    
-    # بيانات الحظر والإبلاغات
-    bans_data = {}
-    reports_data = {"reports": []}
-    # بيانات التحذيرات
-    warns_data = {}
 
-    @staticmethod
-    def create_bans_data():
-        folder = Uts.directory_user + '/Configs'
-        file = folder + '/CheatMaxBansData.json'
-        if not os.path.exists(folder):
-            os.mkdir(folder)
-        if not os.path.exists(file):
-            with open(file, 'w') as f:
-                f.write('{}')
-        try:
-            with open(file) as f:
-                r = f.read()
-                if r.strip():
-                    Uts.bans_data = json.loads(r)
-                else:
-                    Uts.bans_data = {}
-            print(f"✅ Bans data loaded: {len(Uts.bans_data)} bans")
-            for k, v in Uts.bans_data.items():
-                print(f"   - {k}: {v.get('account_id')} | {v.get('client_id')} | {v.get('name')}")
-        except Exception as e:
-            print(f"⚠️ Error loading bans data: {e}")
-            Uts.bans_data = {}
-    
-    @staticmethod
-    def save_bans_data():
-        try:
-            folder = Uts.directory_user + '/Configs'
-            file = folder + '/CheatMaxBansData.json'
-            with open(file, 'w') as f:
-                w = json.dumps(Uts.bans_data, indent=4)
-                f.write(w)
-            print(f"✅ Bans data saved: {len(Uts.bans_data)} bans")
-        except Exception as e:
-            print(f"❌ Error saving bans data: {e}")
-    
-    @staticmethod
-    def create_reports_data():
-        folder = Uts.directory_user + '/Configs'
-        file = folder + '/CheatMaxReportsData.json'
-        if not os.path.exists(folder):
-            os.mkdir(folder)
-        if not os.path.exists(file):
-            with open(file, 'w') as f:
-                f.write('{"reports": []}')
-        try:
-            with open(file) as f:
-                r = f.read()
-                if r.strip():
-                    Uts.reports_data = json.loads(r)
-                else:
-                    Uts.reports_data = {"reports": []}
-        except:
-            Uts.reports_data = {"reports": []}
-    
-    @staticmethod
-    def save_reports_data():
-        folder = Uts.directory_user + '/Configs'
-        file = folder + '/CheatMaxReportsData.json'
-        with open(file, 'w') as f:
-            w = json.dumps(Uts.reports_data, indent=4)
-            f.write(w)
-
-    # ==================== التحقق من الحظر عند الاتصال (جديد) ====================
-    @staticmethod
-    def check_session_player_ban(sessionplayer) -> bool:
-        """التحقق من حظر اللاعب فور اتصاله. إذا كان محظورًا، يتم قطعه وإرجاع True."""
-        try:
-            client_id = sessionplayer.inputdevice.client_id
-            if client_id == -1:  # المستضيف (host) لا يُحظر
-                return False
-
-            # محاولة الحصول على account_id
-            account_id = None
-            try:
-                account_id = sessionplayer.get_v1_account_id()
-            except:
-                # قد لا يكون متاحًا بعد، نحاول من Uts.userpbs إذا وُجد
-                if client_id in Uts.userpbs:
-                    account_id = Uts.userpbs[client_id]
-
-            if not account_id:
-                return False  # لا يوجد account_id، لا يمكن التحقق بدقة
-
-            # التحقق من وجود الحظر
-            for ban_key, ban_info in Uts.bans_data.items():
-                if ban_info.get('account_id') == account_id:
-                    # يوجد حظر – قطع الاتصال
-                    reason = ban_info.get('reason', 'No reason')
-                    banned_by = ban_info.get('banned_by', 'Admin')
-                    print(f"🚫 Banned player {client_id} (account: {account_id}) kicked on join.")
-                    # إرسال رسالة قبل القطع (إذا أمكن)
-                    try:
-                        Uts.sm(f"You are banned.\nReason: {reason}\nBanned by: {banned_by}",
-                               color=(1,0,0), clients=[client_id], transient=True)
-                    except:
-                        pass
-                    # قطع الاتصال بعد ثانية لإعطاء فرصة لظهور الرسالة
-                    bs.apptimer(1.0, lambda: bs.disconnect_client(client_id))
-                    return True
-        except Exception as e:
-            print(f"❌ Error in check_session_player_ban: {e}")
-        return False
-
-    # ✅ FIX: Ban enforcement – only by PB-ID (account_id), client_id check removed
-    @staticmethod
-    def check_player_ban_on_join(player: bs.Player) -> bool:
-        try:
-            sessionplayer = player.sessionplayer
-            client_id = sessionplayer.inputdevice.client_id
-            if client_id == -1:
-                print("👑 Host is joining - skip ban check.")
-                return False
-
-            account_id = None
-            try:
-                account_id = sessionplayer.get_v1_account_id()
-            except:
-                if client_id in Uts.userpbs:
-                    account_id = Uts.userpbs[client_id]
-
-            player_name = None
-            try:
-                player_name = sessionplayer.getname(full=True)
-            except:
-                if client_id in Uts.usernames:
-                    player_name = Uts.usernames[client_id]
-
-            print(f"🔍 Checking ban for: {player_name} (Client: {client_id}, PB-ID: {account_id})")
-            Uts.create_bans_data()
-
-            # ✅ ONLY check by account_id (pb‑ID) – client_id check removed
-            if account_id:
-                for ban_key, ban_info in Uts.bans_data.items():
-                    if ban_info.get('account_id') == account_id:
-                        print(f"🚫 Ban match (PB-ID): {ban_key}")
-                        Uts.kick_banned_player(client_id, ban_info)
-                        return True
-
-            # Optional: still check by exact name match (only if no account_id)
-            if player_name and not account_id:
-                player_name_lower = player_name.lower()
-                for ban_key, ban_info in Uts.bans_data.items():
-                    banned_name = ban_info.get('name', '').lower()
-                    if banned_name and banned_name == player_name_lower:
-                        print(f"🚫 Ban match (Name – no PB-ID): {ban_key}")
-                        Uts.kick_banned_player(client_id, ban_info)
-                        return True
-
-            print(f"✅ Player is not banned: {player_name}")
-            return False
-        except Exception as e:
-            print(f"❌ Error in check_player_ban_on_join: {e}")
-            return False
-    
-    @staticmethod
-    def kick_banned_player(client_id: int, ban_data: dict):
-        try:
-            reason = ban_data.get('reason', 'No reason provided')
-            banned_by = ban_data.get('banned_by', 'Admin')
-            player_name = ban_data.get('name', f'Player {client_id}')
-            message = getlanguage("BannedMessage", subs=[reason, banned_by])
-            # إضافة transient=True لإرسال الرسالة لعميل محدد
-            Uts.sm(message, color=(1,0,0), clients=[client_id], transient=True)
-            def kick():
-                try:
-                    bs.disconnect_client(client_id)
-                    print(f"✅ Kicked banned player: {player_name} (Client: {client_id})")
-                except Exception as e:
-                    print(f"❌ Error kicking player {client_id}: {e}")
-            bs.apptimer(2.0, lambda: bs.pushcall(kick))
-        except Exception as e:
-            print(f"❌ Error in kick_banned_player: {e}")
-
-    @staticmethod
-    def start_server_closure(hours: float, tag_name: str, admin_client_id: int) -> bool:
-        try:
-            current_time = time.time()
-            if Uts.server_close_active:
-                return False
-            Uts.server_close_active = True
-            Uts.server_close_end_time = current_time + (hours * 3600)
-            Uts.server_close_tag_name = tag_name
-            Uts.server_close_original_players = []
-            Uts.server_close_last_update = current_time
-            print(f"✅ Server closure started at {current_time}. End time: {Uts.server_close_end_time} for tag: {tag_name}")
-            activity = bs.get_foreground_host_activity()
-            if activity:
-                for player in activity.players:
-                    try:
-                        client_id = player.sessionplayer.inputdevice.client_id
-                        Uts.server_close_original_players.append(client_id)
-                    except:
-                        continue
-            Uts.start_close_server_countdown()
-            Uts.cm(f"Server closed for {hours} hours for '{tag_name}' tag training")
-            return True
-        except Exception as e:
-            print(f"❌ Error starting server closure: {e}")
-            return False
-
-    @staticmethod
-    def create_warns_data():
-        folder = Uts.directory_user + '/Configs'
-        file = folder + '/CheatMaxWarnsData.json'
-        if not os.path.exists(folder):
-            os.mkdir(folder)
-        if not os.path.exists(file):
-            with open(file, 'w') as f:
-                f.write('{}')
-        try:
-            with open(file) as f:
-                r = f.read()
-                if r.strip():
-                    Uts.warns_data = json.loads(r)
-                else:
-                    Uts.warns_data = {}
-            print(f"✅ Warns data loaded: {sum(len(v) for v in Uts.warns_data.values())} warnings")
-        except Exception as e:
-            print(f"⚠️ Error loading warns data: {e}")
-            Uts.warns_data = {}
-
-    @staticmethod
-    def save_warns_data():
-        try:
-            folder = Uts.directory_user + '/Configs'
-            file = folder + '/CheatMaxWarnsData.json'
-            with open(file, 'w') as f:
-                w = json.dumps(Uts.warns_data, indent=4)
-                f.write(w)
-        except Exception as e:
-            print(f"❌ Error saving warns data: {e}")
-
-    @staticmethod
-    def add_warning(account_id: str, warner_name: str, warner_account: str, reason: str):
-        """إضافة تحذير لحساب معين"""
-        if account_id not in Uts.warns_data:
-            Uts.warns_data[account_id] = []
-        warning = {
-            'warner_name': warner_name,
-            'warner_account': warner_account,
-            'reason': reason,
-            'timestamp': time.time(),
-            'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        Uts.warns_data[account_id].append(warning)
-        Uts.save_warns_data()
-        return len(Uts.warns_data[account_id])  # عدد التحذيرات بعد الإضافة
-
-    @staticmethod
-    def get_warnings(account_id: str):
-        """استرجاع قائمة التحذيرات لحساب"""
-        return Uts.warns_data.get(account_id, [])
-
-    @staticmethod
-    def clear_warnings(account_id: str):
-        """مسح كل التحذيرات لحساب"""
-        if account_id in Uts.warns_data:
-            del Uts.warns_data[account_id]
-            Uts.save_warns_data()
-            return True
-        return False
-
-    @staticmethod
-    def is_player_allowed_during_closure(client_id: int, tag_name: str) -> bool:
-        try:
-            if client_id == -1 or CommandFunctions.user_is_admin(client_id):
-                return True
-            player_name = Uts.usernames.get(client_id, None)
-            if not player_name:
-                for r in roster():
-                    if r['client_id'] == client_id:
-                        player_name = r['display_string']
-                        break
-            if not player_name:
-                return False
-            account_id = None
-            for acc_id, acc_data in Uts.pdata.items():
-                if 'Accounts' in acc_data:
-                    for acc_name in acc_data['Accounts']:
-                        if player_name == acc_name:
-                            account_id = acc_id
-                            break
-                if account_id:
-                    break
-            if account_id and account_id in Uts.pdata:
-                player_data = Uts.pdata[account_id]
-                if 'Tag' in player_data:
-                    tag_data = player_data['Tag']
-                    player_tag = tag_data.get('text', '').strip().lower()
-                    required_tag = tag_name.strip().lower()
-                    if player_tag == required_tag:
-                        return True
-            if client_id in Uts.server_close_original_players:
-                return True
-            return False
-        except Exception as e:
-            print(f"❌ Error checking player allowance: {e}")
-            return False
-    
-    @staticmethod
-    def start_close_server_countdown():
-        try:
-            def update_countdown():
-                try:
-                    if not Uts.server_close_active:
-                        if Uts.server_close_countdown_text and Uts.server_close_countdown_text.exists():
-                            Uts.server_close_countdown_text.delete()
-                            Uts.server_close_countdown_text = None
-                        return
-                    activity = bs.get_foreground_host_activity()
-                    if not activity:
-                        bs.apptimer(1.0, update_countdown)
-                        return
-                    current_time = time.time()
-                    remaining_time = Uts.server_close_end_time - current_time
-                    if remaining_time <= 0:
-                        Uts.stop_server_closure()
-                        Uts.cm("✅ Server closure ended. Everyone can join now.")
-                        return
-                    hours = int(remaining_time // 3600)
-                    minutes = int((remaining_time % 3600) // 60)
-                    seconds = int(remaining_time % 60)
-                    time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-                    if hasattr(activity, 'context'):
-                        with activity.context:
-                            if Uts.server_close_countdown_text is None or not Uts.server_close_countdown_text.exists():
-                                Uts.server_close_countdown_text = text.Text(
-                                    f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}",
-                                    position=(0, 250),
-                                    scale=1.0,
-                                    color=(1, 0, 0),
-                                    h_align=text.Text.HAlign.CENTER,
-                                    v_align=text.Text.VAlign.CENTER
-                                )
-                                Uts.server_close_countdown_text.node.opacity = 0.7
-                            else:
-                                try:
-                                    Uts.server_close_countdown_text.node.text = f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}"
-                                except:
-                                    Uts.server_close_countdown_text = text.Text(
-                                        f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}",
-                                        position=(0, 250),
-                                        scale=1.0,
-                                        color=(1, 0, 0),
-                                        h_align=text.Text.HAlign.CENTER,
-                                        v_align=text.Text.VAlign.CENTER
-                                    )
-                                    Uts.server_close_countdown_text.node.opacity = 0.7
-                    bs.apptimer(1.0, update_countdown)
-                except Exception as e:
-                    print(f"❌ Error in countdown update: {e}")
-                    bs.apptimer(2.0, update_countdown)
-            bs.apptimer(0.5, update_countdown)
-            print(f"✅ Countdown started for server closure")
-        except Exception as e:
-            print(f"❌ Error starting countdown: {e}")
-    
-    @staticmethod
-    def stop_server_closure():
-        try:
-            Uts.server_close_active = False
-            Uts.server_close_end_time = 0.0
-            Uts.server_close_tag_name = ""
-            Uts.server_close_original_players = []
-            if Uts.server_close_countdown_text and Uts.server_close_countdown_text.exists():
-                Uts.server_close_countdown_text.delete()
-                Uts.server_close_countdown_text = None
-            print("✅ Server closure stopped.")
-        except Exception as e:
-            print(f"❌ Error stopping server closure: {e}")
-    
-    @staticmethod
-    def check_player_allowed_on_join(player: bs.Player):
-        try:
-            if not Uts.server_close_active:
-                return
-            client_id = player.sessionplayer.inputdevice.client_id
-            if not Uts.is_player_allowed_during_closure(client_id, Uts.server_close_tag_name):
-                current_time = time.time()
-                remaining_time = Uts.server_close_end_time - current_time
-                if remaining_time <= 0:
-                    Uts.stop_server_closure()
-                    return
-                hours = int(remaining_time // 3600)
-                minutes = int((remaining_time % 3600) // 60)
-                seconds = int(remaining_time % 60)
-                time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-                message = f"There's a training match for {Uts.server_close_tag_name}. Please try to join again after {time_str}"
-                Uts.sm(message, color=(1, 0, 0), clients=[client_id])
-                def kick_player():
-                    try:
-                        bs.disconnect_client(client_id)
-                    except:
-                        pass
-                bs.apptimer(2.0, kick_player)
-        except Exception as e:
-            print(f"❌ Error checking player on join: {e}")
-
-    @staticmethod
-    def get_user_name(c_id: int) -> str:
-        try:
-            for r in roster():
-                if r['client_id'] == c_id:
-                    if r['players'] == []:
-                        return r['display_string']
-                    else:
-                        return r['players'][0]['name_full']
-        except:
-            pass
-        return 'UNNAMED'
-
-    @staticmethod
-    def sort_list(vals: list, count: int = 3) -> list:
-        vals_dict = dict(r=[])
-        for n in range(len(vals)):
-            vals_dict[n] = list()
-            for c in vals:
-                if len(vals_dict[n]) == count:
-                    break
-                else:
-                    if c not in vals_dict['r']:
-                        vals_dict['r'].append(c)
-                        vals_dict[n].append(c)
-            if len(vals_dict['r']) == len(vals):
-                vals_dict.pop('r')
-                break
-        return list(vals_dict.values())
-
-    @staticmethod
-    def colors() -> dict[str, Sequence[float]]:
-        return dict(
-                yellow=(1.0, 1.0, 0.0),
-                red=(1.0, 0.0, 0.0),
-                green=(0.0, 1.0, 0.0),
-                blue=(0.2, 1.0, 1.0),
-                pink=(1, 0.3, 0.5),
-                orange=(1.0, 0.5, 0.0),
-                violet=(0.5, 0.25, 1.0),
-                white=(1.0, 1.0, 1.0),
-                black=(0.25, 0.25, 0.25))
-
-    @staticmethod
-    def get_admins() -> list[str]:
-        admins = []
-        if not hasattr(Uts, 'pdata'): 
-            Uts.create_players_data()
-        if len(Uts.pdata) > 0:
-            for p, d in getattr(Uts, 'pdata', {}).items():
-                if d['Admin']:
-                    admins.append(p)
-        return admins
-        
-    @staticmethod
-    def get_owners() -> list[str]:
-        owners = []
-        if not hasattr(Uts, 'pdata'): 
-            Uts.create_players_data()
-        if len(Uts.pdata) > 0:
-            for p, d in getattr(Uts, 'pdata', {}).items():
-                if d.get('Owner', False):
-                    owners.append(p)
-        return owners
-
-    @staticmethod
-    def add_or_del_user(c_id: int, add: bool = True) -> None:
-        if c_id == -1:
-            return Uts.sm("You Are Amazing!!", color=(0.5, 0, 1), clients=[c_id], transient=True)
-        if c_id not in Uts.userpbs:
-            Uts.sm(f"'{c_id}' Does not belong to any player.", clients=[c_id], transient=True)
-        else:
-            user = Uts.userpbs[c_id]
-            if add:
-                if not hasattr(Uts, 'pdata'): 
-                    Uts.create_players_data()
-                if user in Uts.pdata:
-                    if not Uts.pdata[user]['Admin']:
-                        Uts.pdata[user]['Admin'] = add
-                        Uts.cm(f"'{Uts.usernames[c_id]}' Added to Admins list")
-            else:
-                if not hasattr(Uts, 'pdata'): 
-                    Uts.create_players_data()
-                if user in Uts.pdata:
-                    if Uts.pdata[user]['Admin']:
-                        Uts.pdata[user]['Admin'] = add
-                        Uts.cm(f"'{Uts.usernames[c_id]}' was removed from the Admins list")
-            Uts.save_players_data()
-            
-    @staticmethod
-    def add_owner(account_id: str) -> None:
-        if not hasattr(Uts, 'pdata'): 
-            Uts.create_players_data()
-        if account_id not in Uts.pdata:
-            Uts.pdata[account_id] = {
-                'Mute': False,
-                'Effect': 'none',
-                'Admin': True,
-                'Owner': True,
-                'Accounts': []
-            }
-        else:
-            Uts.pdata[account_id]['Admin'] = True
-            Uts.pdata[account_id]['Owner'] = True
-        Uts.save_players_data()
-        print(f"Added owner: {account_id}")
-
-    @staticmethod
-    def create_players_data() -> None:
-        if hasattr(Uts, 'pdata'):
-            return
-        folder = Uts.directory_user + '/Configs'
-        file = folder + '/CheatMaxPlayersData.json'
-        if not os.path.exists(folder):
-            os.mkdir(folder)
-        if not os.path.exists(file):
-            with open(file, 'w') as f:
-                f.write('{}')
-        with open(file) as f:
-            r = f.read()
-            Uts.pdata = json.loads(r)
-            
-    @staticmethod
-    def create_tags_data() -> None:
-        folder = Uts.directory_user + '/Configs'
-        file = folder + '/CheatMaxTagsData.json'
-        if not os.path.exists(folder):
-            os.mkdir(folder)
-        if not os.path.exists(file):
-            with open(file, 'w') as f:
-                f.write('{}')
-        with open(file) as f:
-            r = f.read()
-            Uts.tags = json.loads(r)
-
-    @staticmethod
-    def save_players_data() -> None:
-        folder = Uts.directory_user + '/Configs'
-        file = folder + '/CheatMaxPlayersData.json'
-        with open(file, 'w') as f:
-            w = json.dumps(Uts.pdata, indent=4)
-            f.write(w)
-            
-    @staticmethod
-    def save_tags_data() -> None:
-        folder = Uts.directory_user + '/Configs'
-        file = folder + '/CheatMaxTagsData.json'
-        with open(file, 'w') as f:
-            w = json.dumps(Uts.tags, indent=4)
-            f.write(w)
-
-    @staticmethod
-    def player_join(player: bs.Player) -> None:
-        if not hasattr(Uts, "pdata"):
-            Uts.create_players_data()
-        try:
-            sessionplayer = player.sessionplayer
-            account_id = sessionplayer.get_v1_account_id()
-            client_id = sessionplayer.inputdevice.client_id
-            account_name = sessionplayer.inputdevice.get_v1_account_name(True)
-        except Exception as e:
-            if "account" not in str(e).lower():
-                bs.chatmessage(f"Error in player_join: {e}")
-            account_id = None
-        if account_id:
-            if type(account_id) is str and account_id.startswith('pb'):
-                if account_id not in Uts.pdata:
-                    Uts.add_player_data(account_id)
-                    Uts.sm("Saving user data...", color=(0.35, 0.7, 0.1), transient=True, clients=[client_id])
-                accounts = Uts.pdata[account_id]['Accounts']
-                if account_name not in accounts:
-                    accounts.append(account_name)
-                    Uts.save_players_data()
-                Uts.accounts[client_id] = Uts.pdata[account_id]
-                if Uts.pdata[account_id].get('Owner', False):
-                    Uts.sm("You are the owner!", color=(1.0, 0.5, 0.0), transient=True, clients=[client_id])
-            Uts.usernames[client_id] = account_name
-            Uts.useraccounts[client_id] = account_name
-            Uts.players[client_id] = sessionplayer
-        else:
-            # إذا لم يكن هناك account_id (ضيف)، نستخدم client_id كمفتاح مؤقت
-            account_id = f"guest_{client_id}"
-            Uts.userpbs[client_id] = account_id
-            Uts.usernames[client_id] = account_name or f"Guest {client_id}"
-            print(f"👤 Guest player {client_id} assigned temporary PB-ID: {account_id}")
-
-    @staticmethod
-    def update_usernames() -> None:
-        try:
-            for r in roster():
-                c_id = r['client_id']
-                if c_id not in Uts.accounts:
-                    if r['account_id'] in Uts.pdata:
-                        Uts.accounts[c_id] = Uts.pdata[r['account_id']]
-                if c_id not in Uts.usernames:
-                    Uts.usernames[c_id] = r['display_string']
-                acc = r['display_string']
-                for acc_id, dt in list(Uts.pdata.items()):
-                    for ac in dt['Accounts']:
-                        if ac == acc:
-                            Uts.accounts[c_id] = Uts.pdata[acc_id]
-                            Uts.userpbs[c_id] = acc_id
-        except Exception as e:
-            print(f"⚠️ Error in update_usernames (roster): {e}")
-
-        # التأكد من أن كل client_id له إدخال في userpbs
-        for cid in list(Uts.usernames.keys()):
-            if cid not in Uts.userpbs:
-                # استخدام client_id كمفتاح مؤقت (للضيوف)
-                Uts.userpbs[cid] = f"guest_{cid}"
-                print(f"⚠️ Guest player {cid} assigned temporary PB-ID: guest_{cid}")
-
-        for c_id, p in list(Uts.players.items()):
-            try:
-                if p.exists():
-                    Uts.usernames[c_id] = p.getname(full=True)
-                    Uts.shortnames[c_id] = p.getname(full=False)
-                    if p.get_v1_account_id() is not None:
-                        Uts.userpbs[c_id] = p.get_v1_account_id()
-            except:
-                if c_id in Uts.players:
-                    del Uts.players[c_id]
-            
-    @staticmethod
-    def add_player_data(account_id: str) -> None:
-        if not hasattr(Uts, 'pdata'):
-            Uts.create_players_data()
-        if account_id not in Uts.pdata:
-            Uts.pdata[account_id] = {
-                'Mute': False,
-                'Effect': 'none',
-                'Admin': False,
-                'Owner': False,
-                'Accounts': []}
-            Uts.save_players_data()
-
-    @staticmethod
-    def save_settings() -> None:
-        global cfg
-        folder = Uts.directory_user + '/Configs'
-        file = folder + '/CheatMaxSettings.json'
-        with open(file, 'w') as f:
-            w = json.dumps(cfg, indent=4)
-            f.write(w)
-
-    @staticmethod
-    def create_settings() -> None:
-        global cfg
-        folder = Uts.directory_user + '/Configs'
-        file = folder + '/CheatMaxSettings.json'
-        if not os.path.exists(folder):
-            os.mkdir(folder)
-        if not os.path.exists(file):
-            with open(file, 'w') as f:
-                f.write('{}')
-        with open(file) as f:
-            r = f.read()
-            cfg = json.loads(r)
-        # إضافة إعداد الطقس الافتراضي
-        if 'Commands' not in cfg:
-            cfg['Commands'] = {}
-        if 'Weather' not in cfg['Commands']:
-            cfg['Commands']['Weather'] = 'none'
-            Uts.save_settings()
-        # إعداد لوحة المتصدرين (افتراضي معطل)
-        if 'ShowStatsLeaderboard' not in cfg['Commands']:
-            cfg['Commands']['ShowStatsLeaderboard'] = False
-            Uts.save_settings()
-
-    @staticmethod
-    def create_user_system_scripts() -> None:
-        import shutil
-        app = _babase.app.env
-        if app.python_directory_user is None:
-            raise RuntimeError('user python dir unset')
-        if app.python_directory_app is None:
-            raise RuntimeError('app python dir unset')
-        path = app.python_directory_user + '/sys/' + app.engine_version + '_' + str(_babase.app.env.engine_build_number)
-        if os.path.exists(path):
-            print(f"System scripts already exist at: '{path}'")
-            return
-        try:
-            print(f'COPYING "{app.python_directory_app}" -> "{path}".')
-            shutil.copytree(app.python_directory_app, path, 
-                           ignore=shutil.ignore_patterns('__pycache__'))
-            print(f"Created system scripts at: '{path}'")
-            print(f"Restart {bui.appname()} to use them.")
-            print("(use babase.quit() to exit the game)")
-        except Exception as e:
-            print(f"Error creating system scripts: {e}")
-
-    @staticmethod
-    def create_data_text(self) -> None:
-        if isinstance(self, MainMenuActivity):
-            return
-        if getattr(self, '_text_data', None):
-            self._text_data.node.delete()
-        if cfg['Commands'].get('ShowInfo'):
-            info = f"\ue043|Host: {cfg['Commands'].get('HostName', '???')}\n\ue01e|Description: {cfg['Commands'].get('Description', '???')}\n\ue01e|Version: {_babase.app.env.engine_version}"
-            color = tuple(list(cfg['Commands'].get('InfoColor', Uts.colors()['white'])) + [1])
-            self._text_data = text.Text(info,
-                position=(-650.0, -200.0), color=color)
-
-    @staticmethod
-    def create_live_chat(self,
-                         live: bool = True,
-                         chat: list[int, str] = None,
-                         admin: bool = False) -> None:
-        if isinstance(self, MainMenuActivity):
-            return
-        if getattr(self, '_live_chat', None):
-            self._live_chat.node.delete()
-        if cfg['Commands'].get('ChatLive'):
-            max_chats = 6
-            chats = list()
-            txt = str()
-            icon = bui.charstr(bui.SpecialChar.STEAM_LOGO) if admin else ''
-            if any(bs.get_chat_messages()):
-                if len(Chats) == max_chats:
-                    Chats.pop(0)
-                if live:
-                    name = Uts.shortnames.get(chat[0], chat[0])
-                    msg = chat[1]
-                    Chats.append(f'{icon}{name}: {msg}')
-                for msg in Chats:
-                    if len(chats) != max_chats:
-                        chats.append(msg)
-                    else: break
-                txt = '\n'.join(chats)
-            livetext = "\ue043 CHAT LIVE \ue043"
-            txt = (livetext + '\n' + ''.join(['=' for s 
-                in range(len(livetext))]) + '\n') + txt
-            self._live_chat = text.Text(txt, position=(650.0, 200.0),
-                color=(1, 1, 1, 1), h_align=text.Text.HAlign.RIGHT)
-
-    @staticmethod
-    def funtion() -> str:
-        return """    %s
-    try:
-        cm = babase.app.cheatmax_filter_chat(msg, client_id)
-        if cm == '@':
-            return None
-    except Exception:
-        pass
-        """ % Uts.key
-
-    @staticmethod
-    def get_reliable_pb_id(client_id: int) -> str:
-        """إرجاع PB-ID موثوق للاعب، حتى لو كان ضيفًا"""
-        if client_id in Uts.userpbs and Uts.userpbs[client_id] not in (None, 'none', 'None'):
-            return Uts.userpbs[client_id]
-        # إذا لم يكن موجودًا، حاول الحصول عليه من roster
-        for r in roster():
-            if r.get('client_id') == client_id:
-                acc = r.get('account_id')
-                if acc and acc not in (None, 'none', 'None'):
-                    Uts.userpbs[client_id] = acc
-                    return acc
-        # إذا فشل كل شيء، استخدم client_id كمفتاح مؤقت
-        guest_id = f"guest_{client_id}"
-        Uts.userpbs[client_id] = guest_id
-        return guest_id
-
-## ==================== نظام التيجان المتطور ====================
-class TagSystem:
-    def __init__(self):
-        self.current_tags = {}
-        self.animated_tags = {}
-        self.char_animations = {}
-        self.animation_states = {}
-        self.saved_tag_templates = {}
-        self.icons = {
-            'left': '\ue001', 'right': '\ue002', 'up': '\ue003', 'down': '\ue004',
-            'dleft': '\ue005', 'dup': '\ue006', 'dright': '\ue007', 'ddown': '\ue008',
-            'back': '\ue009', 'joystick': '\ue010', 'circles': '\ue019',
-            'android': '\ue020', 'rbyp': '\ue021',
-            'dice1': '\ue022', 'dice2': '\ue023', 'dice3': '\ue024', 'dice4': '\ue025',
-            'volley': '\ue026', 'gather': '\ue027', 't': '\ue028', 'ticket': '\ue029',
-            'pc': '\ue030', 'rbyp2': '\ue031',
-            'us': '\ue032', 'italy': '\ue033', 'germany': '\ue034', 'brazil': '\ue035',
-            'russia': '\ue036', 'china': '\ue037', 'uk': '\ue038', 'canada': '\ue039',
-            'rwb': '\ue040', 'hat': '\ue041', 'fire': '\ue042', 'crown': '\ue043',
-            'zen': '\ue044', 'eye': '\ue045', 'skull': '\ue046', 'heart': '\ue047',
-            'dragon': '\ue048', 'helmet': '\ue049', 'rgwb': '\ue050', 'mw': '\ue051',
-            'syria': '\ue052', 'bgwr': '\ue053', 'gwl': '\ue054', 'saudi': '\ue055',
-            'malaysia': '\ue056', 'bwr': '\ue057', 'australia': '\ue058', 'rws': '\ue059',
-            'up2': '\ue00a', 'down2': '\ue00b', 'bslogo': '\ue00c', 'back2': '\ue00d',
-            'pause': '\ue00e', 'forward': '\ue00f', 'u': '\ue01a', 'y': '\ue01b',
-            'a': '\ue01c', 'usmall': '\ue01d', 'logo': '\ue01e', 'ticket2': '\ue01f',
-            'bronze': '\ue02a', 'silver': '\ue02b', 'gold': '\ue02c', 'badge1': '\ue02d',
-            'badge2': '\ue02e', 'trophy': '\ue02f',
-            'india': '\ue03a', 'japan': '\ue03b', 'france': '\ue03c', 'rw': '\ue03d',
-            'gwr': '\ue03e', 'korea': '\ue03f',
-            'mushroom': '\ue04a', 'nstar': '\ue04b', 'bull': '\ue04c', 'moon': '\ue04d',
-            'spider': '\ue04e', 'fireball': '\ue04f', 'rect': '\ue05a', 'steam': '\ue05b',
-            'nvidia': '\ue05c',
-            'ns': '\ue04b', 'dr': '\ue048', 'fb': '\ue04f', 'cr': '\ue043', 'sk': '\ue046',
-            'ht': '\ue047', 'hl': '\ue049', 'ms': '\ue04a', 'bl': '\ue04c', 'mn': '\ue04d',
-            'sp': '\ue04e', 'la': '\ue001', 'ra': '\ue002', 'ua': '\ue003', 'da': '\ue004'
-        }
-        self.colors = {
-            'red': (1.0, 0.0, 0.0),
-            'green': (0.0, 1.0, 0.0),
-            'blue': (0.0, 0.0, 1.0),
-            'yellow': (1.0, 1.0, 0.0),
-            'gold': (1.0, 0.84, 0.0),
-            'pink': (1.0, 0.3, 0.5),
-            'orange': (1.0, 0.5, 0.0),
-            'purple': (0.5, 0.0, 0.5),
-            'white': (1.0, 1.0, 1.0),
-            'black': (0.1, 0.1, 0.1),
-            'cyan': (0.0, 1.0, 1.0),
-            'lime': (0.5, 1.0, 0.0),
-            'rainbow': 'rainbow'
-        }
-        self.positions = {
-            'top': (0, 2.0, 0),
-            'down': (0, -2.0, 0),
-            'right': (2.0, 1.0, 0),
-            'left': (-2.0, 1.0, 0),
-            'center': (0, 2.0, 0),
-            'head': (0, 2.5, 0),
-            'feet': (0, -1.0, 0)
-        }
-        print("🎮 TagMaster Advanced System Loading...")
-        self.templates_file = Uts.directory_user + '/Configs/tag_templates.json'
-        self.load_templates()
-        bs.apptimer(3.0, lambda: self.start_game_monitoring())
-
-    def start_game_monitoring(self):
-        def game_monitor():
-            try:
-                activity = bs.get_foreground_host_activity()
-                if activity and hasattr(activity, 'players'):
-                    try:
-                        self.quick_apply_tags(activity)
-                        self.cleanup_dead_players(activity)
-                        self.check_player_respawns(activity)
-                    except Exception as e:
-                        print(f"⚠️ Tag monitor error: {e}")
-                bs.apptimer(2.0, game_monitor)
-            except Exception as e:
-                print(f"❌ Game monitor error: {e}")
-                bs.apptimer(5.0, game_monitor)
-        bs.apptimer(1.0, game_monitor)
-        print("🎮 Tag monitoring started (server optimized)")
-
-    def quick_apply_tags(self, activity):
-        try:
-            if not activity or not hasattr(activity, 'players'):
-                return
-            for player in activity.players:
-                try:
-                    if not player.is_alive() or not player.actor or not player.actor.node:
-                        continue
-                    client_id = player.sessionplayer.inputdevice.client_id
-                    account_id = None
-                    if client_id in Uts.userpbs:
-                        account_id = Uts.userpbs[client_id]
-                    if account_id and account_id in Uts.pdata:
-                        player_data = Uts.pdata[account_id]
-                        if 'Tag' in player_data:
-                            tag_data = player_data['Tag']
-                            if str(client_id) not in self.current_tags:
-                                if tag_data.get('type') == 'animated':
-                                    self.create_animated_tag_gradual(player, client_id, tag_data, activity)
-                                else:
-                                    self.create_tag_with_char_animation(player, client_id, tag_data['text'],
-                                                                      tuple(tag_data.get('color', (1,1,1))),
-                                                                      tag_data.get('scale', 0.03),
-                                                                      activity)
-                except Exception as e:
-                    continue
-        except Exception as e:
-            print(f"❌ Quick apply tags error: {e}")
-
-    def apply_normal_tag(self, player, client_id, tag_data, activity):
-        try:
-            if str(client_id) in self.current_tags:
-                self.remove_tag_visual(client_id)
-                self.stop_char_animation(client_id)
-            self.create_tag_with_char_animation(player, client_id, tag_data['text'],
-                                              tuple(tag_data.get('color', (1,1,1))),
-                                              tag_data.get('scale', 0.03), activity)
-        except Exception as e:
-            print(f"❌ Error applying normal tag: {e}")
-
-    def create_animated_tag_gradual(self, player, client_id, tag_data, activity):
-        try:
-            player_name = player.getname()
-            if not player.actor or not player.actor.node:
-                return False
-            with activity.context:
-                colors = tag_data.get('colors', [(1, 1, 1)])
-                first_color = colors[0] if colors else (1, 1, 1)
-                attrs = {
-                    'text': tag_data['text'],
-                    'in_world': True,
-                    'shadow': 1.0,
-                    'flatness': 1.0,
-                    'h_align': 'center',
-                    'v_align': 'center',
-                    'scale': tag_data['scale'],
-                    'color': first_color,
-                    'opacity': 0.0
-                }
-                tag_node = bs.newnode('text', attrs=attrs)
-                math_node = bs.newnode('math',
-                    attrs={'input1': (0.0, 1.3, 0.0), 'operation': 'add'})
-                player.actor.node.connectattr('position_center', math_node, 'input2')
-                math_node.connectattr('output', tag_node, 'position')
-                self.current_tags[str(client_id)] = {
-                    'type': 'animated_gradual',
-                    'tag_node': tag_node,
-                    'math_node': math_node,
-                    'text': tag_data['text'],
-                    'colors': colors,
-                    'scale': tag_data['scale'],
-                    'speed': tag_data['speed']
-                }
-                animation_data = {
-                    'tag_node': tag_node,
-                    'text': tag_data['text'],
-                    'current_char_index': 0,
-                    'start_time': bs.time(),
-                    'duration': 0.5,
-                    'original_opacity': 1.0
-                }
-                self.char_animations[str(client_id)] = animation_data
-
-                def animate_text_display():
-                    try:
-                        if str(client_id) not in self.char_animations:
-                            return
-                        data = self.char_animations[str(client_id)]
-                        current_idx = data['current_char_index']
-                        if current_idx > len(data['text']):
-                            data['tag_node'].opacity = data['original_opacity']
-                            self.start_gradual_animation(client_id)
-                            return
-                        partial_text = data['text'][:current_idx]
-                        data['tag_node'].text = partial_text
-                        progress = min(1.0, current_idx / len(data['text']))
-                        opacity = progress
-                        if progress < 0.5:
-                            opacity = progress * 2
-                        else:
-                            opacity = 1.0
-                        data['tag_node'].opacity = opacity
-                        data['current_char_index'] += 1
-                        if current_idx <= len(data['text']):
-                            bs.apptimer(0.08, animate_text_display)
-                    except:
-                        pass
-
-                bs.apptimer(0.1, animate_text_display)
-                print(f"🌈 Animated tag '{tag_data['text']}' created for {player_name}")
-                return True
-        except Exception as e:
-            print(f"❌ Failed to create animated tag: {e}")
-            return False
-
-    def start_gradual_animation(self, client_id):
-        try:
-            if str(client_id) not in self.current_tags:
-                return
-            tag_data = self.current_tags[str(client_id)]
-            colors = tag_data['colors']
-            if len(colors) < 2:
-                return
-            self.animation_states[str(client_id)] = {
-                'current_index': 0,
-                'next_index': 1,
-                'transition': 0.0
-            }
-
-            def animate_gradual():
-                try:
-                    if str(client_id) not in self.current_tags or str(client_id) not in self.animation_states:
-                        return
-                    tag_data = self.current_tags[str(client_id)]
-                    tag_node = tag_data['tag_node']
-                    if not tag_node.exists():
-                        if str(client_id) in self.animation_states:
-                            del self.animation_states[str(client_id)]
-                        return
-                    state = self.animation_states[str(client_id)]
-                    colors = tag_data['colors']
-                    color1 = colors[state['current_index']]
-                    color2 = colors[state['next_index']]
-                    t = state['transition']
-                    r = color1[0] + (color2[0] - color1[0]) * t
-                    g = color1[1] + (color2[1] - color1[1]) * t
-                    b = color1[2] + (color2[2] - color1[2]) * t
-                    tag_node.color = (r, g, b)
-                    state['transition'] += 0.05 * tag_data['speed']
-                    if state['transition'] >= 1.0:
-                        state['transition'] = 0.0
-                        state['current_index'] = state['next_index']
-                        state['next_index'] = (state['next_index'] + 1) % len(colors)
-                    bs.apptimer(0.05, animate_gradual)
-                except:
-                    if str(client_id) in self.animation_states:
-                        del self.animation_states[str(client_id)]
-
-            bs.apptimer(0.05, animate_gradual)
-        except Exception as e:
-            print(f"❌ Error starting gradual animation: {e}")
-
-    def cleanup_dead_players(self, activity):
-        try:
-            for client_id_str in list(self.current_tags.keys()):
-                player_found = False
-                player_alive = False
-                for player in activity.players:
-                    try:
-                        if str(player.sessionplayer.inputdevice.client_id) == client_id_str:
-                            player_found = True
-                            if player.is_alive():
-                                player_alive = True
-                            break
-                    except:
-                        continue
-                if not player_found or not player_alive:
-                    try:
-                        client_id = int(client_id_str)
-                        self.remove_tag_visual(client_id)
-                        self.stop_char_animation(client_id)
-                    except:
-                        pass
-        except:
-            pass
-
-    def check_player_respawns(self, activity):
-        try:
-            for player in activity.players:
-                try:
-                    client_id = player.sessionplayer.inputdevice.client_id
-                    account_id = None
-                    for acc_id, acc_data in Uts.pdata.items():
-                        if client_id in Uts.userpbs and Uts.userpbs[client_id] == acc_id:
-                            account_id = acc_id
-                            break
-                    if account_id and account_id in Uts.pdata:
-                        player_data = Uts.pdata[account_id]
-                        if 'Tag' in player_data:
-                            tag_data = player_data['Tag']
-                            if player.is_alive() and player.actor and player.actor.node:
-                                if str(client_id) not in self.current_tags:
-                                    if tag_data.get('type') == 'animated':
-                                        self.create_animated_tag_gradual(player, client_id, tag_data, activity)
-                                    else:
-                                        self.create_tag_with_char_animation(player, client_id, tag_data['text'],
-                                                                          tuple(tag_data['color']),
-                                                                          tag_data['scale'], activity)
-                except:
-                    pass
-        except:
-            pass
-
-    # ✅ الدالة الأساسية لإنشاء تاج عادي مع كتابة حرف حرف (معدلة بالكامل – بدون أخطاء)
-    def create_tag_with_char_animation(self, player, client_id, text: str, color, scale: float, activity) -> bool:
-        try:
-            player_name = player.getname()
-            if not player.actor or not player.actor.node:
-                return False
-
-            with activity.context:
-                self.remove_tag_visual(client_id)
-                self.stop_char_animation(client_id)
-                self.stop_animation(client_id)
-
-                tag_node = bs.newnode('text',
-                    attrs={
-                        'text': '',
-                        'in_world': True,
-                        'shadow': 1.0,
-                        'flatness': 1.0,
-                        'h_align': 'center',
-                        'v_align': 'center',
-                        'scale': scale,
-                        'color': color,
-                        'opacity': 0.0
-                    })
-
-                math_node = bs.newnode('math',
-                    attrs={'input1': (0.0, 1.3, 0.0), 'operation': 'add'})
-
-                player.actor.node.connectattr('position_center', math_node, 'input2')
-                math_node.connectattr('output', tag_node, 'position')
-
-                self.current_tags[str(client_id)] = {
-                    'type': 'normal',
-                    'tag_node': tag_node,
-                    'math_node': math_node,
-                    'text': text,
-                    'color': color,
-                    'scale': scale
-                }
-
-                # دالة كتابة النص حرفاً حرفاً
-                def animate_text():
-                    try:
-                        if str(client_id) not in self.current_tags:
-                            return
-                        tag_node = self.current_tags[str(client_id)]['tag_node']
-                        if not tag_node.exists():
-                            return
-                        if not text:
-                            tag_node.text = ''
-                            tag_node.opacity = 1.0
-                            return
-
-                        # جدولة تحديث النص كل 0.05 ثانية
-                        for i in range(len(text) + 1):
-                            bs.apptimer(i * 0.05, lambda idx=i: self._update_text_animation(client_id, text, idx, color))
-
-                        # دالة إنهاء (تثبيت الشفافية)
-                        def finalize():
-                            if str(client_id) in self.current_tags:
-                                tag_node = self.current_tags[str(client_id)]['tag_node']
-                                if tag_node.exists():
-                                    tag_node.opacity = 1.0
-
-                        bs.apptimer(len(text) * 0.05 + 0.5, finalize)
-
-                    except Exception as e:
-                        print(f"Error in animate_text: {e}")
-
-                # بدأ الكتابة بعد 0.1 ثانية
-                bs.apptimer(0.1, animate_text)
-                print(f"Created tag '{text}' for {player_name}")
-                return True
-
-        except Exception as e:
-            print(f"Error creating tag with char animation: {e}")
-            return False
-
-    def _update_text_animation(self, client_id, full_text, index, color):
-        try:
-            if str(client_id) not in self.current_tags:
-                return
-            tag_node = self.current_tags[str(client_id)]['tag_node']
-            if not tag_node.exists():
-                return
-            partial_text = full_text[:index]
-            tag_node.text = partial_text
-            tag_node.color = color
-            opacity = min(1.0, index / len(full_text))
-            tag_node.opacity = opacity
-        except Exception as e:
-            print(f"Error in _update_text_animation: {e}")
-
-    def remove_tag_visual(self, client_id):
-        try:
-            client_id_str = str(client_id)
-            if client_id_str in self.current_tags:
-                tag_data = self.current_tags[client_id_str]
-                if 'tag_node' in tag_data and tag_data['tag_node'] and tag_data['tag_node'].exists():
-                    tag_data['tag_node'].delete()
-                if 'math_node' in tag_data and tag_data['math_node'] and tag_data['math_node'].exists():
-                    tag_data['math_node'].delete()
-                del self.current_tags[client_id_str]
-        except Exception as e:
-            print(f"Error removing tag visual: {e}")
-
-    def stop_char_animation(self, client_id):
-        try:
-            client_id_str = str(client_id)
-            if client_id_str in self.char_animations:
-                del self.char_animations[client_id_str]
-        except:
-            pass
-
-    def stop_animation(self, client_id):
-        try:
-            client_id_str = str(client_id)
-            if client_id_str in self.animation_states:
-                del self.animation_states[client_id_str]
-        except:
-            pass
-
-    def load_templates(self):
-        try:
-            if os.path.exists(self.templates_file):
-                with open(self.templates_file, 'r') as f:
-                    self.saved_tag_templates = json.load(f)
-            else:
-                self.saved_tag_templates = {}
-        except:
-            self.saved_tag_templates = {}
-
-    def save_templates(self):
-        try:
-            with open(self.templates_file, 'w') as f:
-                json.dump(self.saved_tag_templates, f, indent=4)
-        except:
-            pass
-
-    def send_client_message(self, client_id, message, color=(1,1,1)):
-        try:
-            bs.screenmessage(message, color=color, clients=[client_id])
-        except:
-            pass
-
-    def parse_color(self, color_str: str):
-        color_str = color_str.lower()
-        if color_str in self.colors:
-            return self.colors[color_str]
-        if ',' in color_str:
-            try:
-                parts = color_str.split(',')
-                if len(parts) == 3:
-                    r = float(parts[0].strip())
-                    g = float(parts[1].strip())
-                    b = float(parts[2].strip())
-                    return (r, g, b)
-            except:
-                pass
-        if color_str.startswith('#') and len(color_str) == 7:
-            try:
-                r = int(color_str[1:3], 16) / 255.0
-                g = int(color_str[3:5], 16) / 255.0
-                b = int(color_str[5:7], 16) / 255.0
-                return (r, g, b)
-            except:
-                pass
-        return (1.0, 1.0, 1.0)
-
-    def generate_rainbow_colors(self, count: int):
-        colors = []
-        for i in range(count):
-            hue = i / count
-            if hue < 1/6:
-                r, g, b = 1.0, hue * 6, 0.0
-            elif hue < 2/6:
-                r, g, b = (2/6 - hue) * 6, 1.0, 0.0
-            elif hue < 3/6:
-                r, g, b = 0.0, 1.0, (hue - 2/6) * 6
-            elif hue < 4/6:
-                r, g, b = 0.0, (4/6 - hue) * 6, 1.0
-            elif hue < 5/6:
-                r, g, b = (hue - 4/6) * 6, 0.0, 1.0
-            else:
-                r, g, b = 1.0, 0.0, (1 - hue) * 6
-            colors.append((r, g, b))
-        return colors
-
-# ==================== إنشاء مثيل نظام التيجان ====================
+# ==================== إنشاء مثيلات النظام بعد تعريف جميع الكلاسات ====================
 Uts.tag_system = TagSystem()
-# إنشاء مثيل لوحة المتصدرين
 Uts.leaderboard_display = LeaderboardDisplay()
+Uts.clubs_system = ClubsSystem()  # الآن ClubsSystem يعرف Uts
 
+# ==================== دوال الإعداد والتشغيل ====================
 def _install() -> None:
     """تهيئة البيانات الأساسية للنظام"""
     try:
@@ -6049,6 +6759,8 @@ def final_setup():
 ║      Rainbow, None                     ║
 ║ • Stats System: ✓ Added               ║
 ║   └─ /stats, /tops, -statsshow (toggle leaderboard), -statsrestart (reset) ║
+║ • Clubs System: ✓ Added               ║
+║   └─ Create clubs, offers, tags, roles║
 ╚══════════════════════════════════════════╝
     """
     for line in welcome_msg.split('\n'):
@@ -6089,9 +6801,8 @@ class CheatMaxSystem(bs.Plugin):
             plugin()
             settings()
             _install()
-            # ربط التحقق من الحظر عند الاتصال (يجب أن يكون بعد تحميل بيانات الحظر)
-            Uts.create_bans_data()   # تأكد من تحميل بيانات الحظر
-            hook_session_player_join()
+            # ربط التحقق من الحظر عند الاتصال (تم إزالته بسبب عدم وجود الدالة في الإصدار الجديد)
+            # تم الاكتفاء بـ new_on_player_join الذي يقوم بالتحقق
             bs.apptimer(2.0, additional_features)
             bs.apptimer(3.0, setup_automatic_backup)
             bs.apptimer(4.0, setup_performance_monitor)
@@ -6215,13 +6926,23 @@ def system_test():
             tests_failed += 1
 
         try:
-            import bascenev1._hooks
-            # التحقق من وجود hook جديد للحظر
-            if hasattr(bascenev1._hooks, 'on_player_joined') and hasattr(bascenev1._hooks.on_player_joined, '__wrapped__'):
-                print("✅ Test 8: Session player join hook installed")
+            # التحقق من أن دالة on_player_join قد تم تغييرها عن الأصل
+            if Activity.on_player_join != calls['OnPlayerJoin']:
+                print("✅ Test 8: Player join hook installed")
                 tests_passed += 1
             else:
-                print("❌ Test 8: Session player join hook not installed")
+                print("❌ Test 8: Player join hook not installed")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        # اختبار نظام الأندية
+        try:
+            if hasattr(Uts, 'clubs_system') and Uts.clubs_system is not None:
+                print("✅ Test 9: Clubs system initialized")
+                tests_passed += 1
+            else:
+                print("❌ Test 9: Clubs system not initialized")
                 tests_failed += 1
         except:
             tests_failed += 1
