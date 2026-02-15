@@ -2443,7 +2443,7 @@ class CommandFunctions:
         return [
             '-pan', '-ceb', '-colors', '-mp', '-pb', '-effects', 
             '/list', 'test', 'help', 'party', 'stats', '/report', '/stats', '-statsshow',
-            '/offers', '/offer', '/myclub'
+            '/offers', '/offer', '/myclub', '/myid'   # أضفنا /myid هنا
             ]
             
     @staticmethod
@@ -2948,6 +2948,11 @@ class Commands:
         # ========== أمر عرض لوحة المتصدرين ==========
         elif msg.lower() == '-statsshow':
             self.process_statsshow_command(self.client_id)
+            self.value = '@'
+
+        # ========== أمر عرض PB-ID الخاص بي (جديد) ==========
+        elif msg.lower() == '/myid':
+            self.process_myid(self.client_id)
             self.value = '@'
     
     def admin_commands(self) -> None:
@@ -3814,6 +3819,15 @@ class Commands:
         except Exception as e:
             self.clientmessage(f"❌ Error resetting stats: {str(e)[:50]}", color=(1,0,0))
 
+    # ========== أمر myid الجديد ==========
+    def process_myid(self, client_id: int):
+        """عرض PB-ID الخاص باللاعب"""
+        pb = Uts.get_reliable_pb_id(client_id)
+        if pb.startswith('guest_'):
+            self.clientmessage(f"🔹 You are a guest. Your temporary ID: {pb}", color=(1,1,0))
+        else:
+            self.clientmessage(f"🆔 Your PB-ID is: {pb}", color=(0,1,0))
+
     # ========== أوامر الأندية (للكباتن والأعضاء) ==========
     def club_commands(self):
         """معالجة أوامر الأندية"""
@@ -3974,6 +3988,26 @@ class Commands:
                     ClientMessage("❌ Months must be a positive integer", color=(1,0,0))
                     self.value = '@'
                     return
+
+                # --- التحقق من أن اللاعب المستهدف ليس عضوًا في نادي أو كابتن ---
+                if Uts.clubs_system.is_club_member(target_pb):
+                    # الحصول على معلومات ناديه
+                    res = Uts.clubs_system.get_club_by_player(target_pb)
+                    if res:
+                        _, _, player_data = res
+                        expire = player_data.get("contract_expire", "permanent")
+                        ClientMessage(f"⚠️ Player {target_pb} is already in a club (contract: {expire}). Cannot send offer until contract ends.", color=(1,1,0))
+                    else:
+                        ClientMessage(f"⚠️ Player {target_pb} is already in a club.", color=(1,1,0))
+                    self.value = '@'
+                    return
+
+                if Uts.clubs_system.is_captain(target_pb):
+                    ClientMessage(f"❌ Cannot send offer to a club captain ({target_pb}).", color=(1,0,0))
+                    self.value = '@'
+                    return
+                # ----------------------------------------------------------
+
                 # الحصول على نادي الكابتن
                 res = Uts.clubs_system.get_club_by_player(pb_id)
                 if not res:
@@ -4016,13 +4050,16 @@ class Commands:
             return
         self.clientmessage("📋 Your offers:", color=(1,1,0))
         for o in offers:
-            msg = (f"Club name : {o['club-name']}\n"
-                   f"Months : {o['months']}\n"
-                   f"Contract expire : {o['contract-expire']}\n"
-                   f"sender : {o['sender']}\n"
-                   f"To accept: /offer yes {o['club-id']}\n"
-                   f"To reject: /offer no {o['club-id']}")
-            self.send_chat_message(msg)
+            msg_lines = [
+                f"Club name : {o['club-name']}",
+                f"Months : {o['months']}",
+                f"Contract expire : {o['contract-expire']}",
+                f"sender : {o['sender']}",
+                f"To accept: /offer yes {o['club-id']}",
+                f"To reject: /offer no {o['club-id']}"
+            ]
+            for line in msg_lines:
+                self.send_chat_message(line)
 
     def process_offer_yes(self, pb_id: str, club_id: str):
         """قبول عرض والانضمام للنادي"""
@@ -5236,6 +5273,7 @@ class Commands:
                     "/offer yes <club-id> : Accept club offer",     # NEW
                     "/offer no <club-id>  : Reject club offer",     # NEW
                     "/myclub   : Show your club info",              # NEW
+                    "/myid     : Show your PB-ID",                  # NEW
                     "test      : Test if CheatMax works",
                     "help      : This menu"
                 ]
@@ -6194,7 +6232,21 @@ def new_on_player_join(self, player: bs.Player) -> None:
     Uts.player_join(player)
     if Uts.server_close_active:
         Uts.check_player_allowed_on_join(player)
-    
+
+# ==================== إضافة hook لمغادرة اللاعب ====================
+def new_on_player_leave(self, player: bs.Player) -> None:
+    """يُستدعى عند مغادرة لاعب"""
+    # استدعاء الدالة الأصلية إذا كانت موجودة
+    if 'OnPlayerLeave' in calls:
+        calls['OnPlayerLeave'](self, player)
+    try:
+        client_id = player.sessionplayer.inputdevice.client_id
+        # إزالة تاج النادي إن وجد
+        Uts.clubs_system.remove_club_tag(client_id)
+        # يمكن إضافة تنظيفات أخرى هنا إذا لزم الأمر
+    except Exception as e:
+        print(f"❌ Error in new_on_player_leave: {e}")
+
 def new_playerspaz_init_(self, *args, **kwargs) -> None:
     calls['PlayerSpazInit'](self, *args, **kwargs)
     Uts.update_usernames()
@@ -6509,11 +6561,17 @@ def plugin():
         calls['GA_OnTransitionIn'] = bs.GameActivity.on_transition_in
         calls['OnJumpPress'] = PlayerSpaz.on_jump_press
         calls['OnPlayerJoin'] = Activity.on_player_join
+        calls['OnPlayerLeave'] = getattr(Activity, 'on_player_leave', None)  # قد لا تكون موجودة في كل الإصدارات
         calls['PlayerSpazInit'] = PlayerSpaz.__init__
 
         bs.GameActivity.on_transition_in = new_ga_on_transition_in
         PlayerSpaz.on_jump_press = new_playerspaz_on_jump_press
         Activity.on_player_join = new_on_player_join
+        # ربط on_player_leave إذا كانت موجودة
+        if hasattr(Activity, 'on_player_leave'):
+            Activity.on_player_leave = new_on_player_leave
+        else:
+            print("⚠️ Activity.on_player_leave not found, club tags won't auto-remove on leave.")
         PlayerSpaz.__init__ = new_playerspaz_init_
 
         try:
@@ -6797,6 +6855,8 @@ def final_setup():
 ║   └─ /stats, /tops, -statsshow (toggle leaderboard), -statsrestart (reset) ║
 ║ • Clubs System: ✓ Added               ║
 ║   └─ Create clubs, offers, tags, roles║
+║ • Player Leave Hook: ✓ Auto-remove club tag ║
+║ • /myid Command: ✓ Shows your PB-ID   ║
 ╚══════════════════════════════════════════╝
     """
     for line in welcome_msg.split('\n'):
@@ -6877,6 +6937,7 @@ def error_handler(func):
 filter_chat_message = error_handler(filter_chat_message)
 new_ga_on_transition_in = error_handler(new_ga_on_transition_in)
 new_on_player_join = error_handler(new_on_player_join)
+new_on_player_leave = error_handler(new_on_player_leave)
 new_playerspaz_init_ = error_handler(new_playerspaz_init_)
 new_playerspaz_on_jump_press = error_handler(new_playerspaz_on_jump_press)
 
@@ -6979,6 +7040,17 @@ def system_test():
                 tests_passed += 1
             else:
                 print("❌ Test 9: Clubs system not initialized")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        # اختبار hook مغادرة اللاعب
+        try:
+            if hasattr(Activity, 'on_player_leave') and Activity.on_player_leave != calls.get('OnPlayerLeave'):
+                print("✅ Test 10: Player leave hook installed")
+                tests_passed += 1
+            else:
+                print("❌ Test 10: Player leave hook not installed")
                 tests_failed += 1
         except:
             tests_failed += 1
