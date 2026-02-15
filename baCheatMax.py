@@ -553,6 +553,48 @@ class Uts:
     # نظام الأندية (سيتم إنشاؤه لاحقاً)
     clubs_system = None
 
+    # ==================== نظام الطرد التلقائي للدخول/خروج السريع ====================
+    join_times: dict[int, float] = {}  # client_id -> وقت الدخول
+    QUICK_LEAVE_THRESHOLD = 10.0  # ثوانٍ
+
+    @staticmethod
+    def auto_ban_player(client_id: int, account_id: str | None, name: str, reason: str):
+        """حظر لاعب تلقائيًا (إضافته إلى bans_data و pdata)"""
+        try:
+            # إنشاء بيانات الحظر
+            ban_info = {
+                'name': name,
+                'account_id': account_id,
+                'client_id': client_id,
+                'reason': reason,
+                'banned_by': 'System (Auto)',
+                'banned_by_account': 'System',
+                'banned_by_client_id': -1,
+                'banned_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'banned_timestamp': time.time(),
+                'target_type': 'auto'
+            }
+            # تحديد مفتاح الحظر
+            if account_id and account_id.startswith('pb-'):
+                ban_key = f"pb_{account_id}"
+            else:
+                ban_key = f"client_{client_id}"
+            
+            # إضافته إلى bans_data
+            Uts.bans_data[ban_key] = ban_info
+            Uts.save_bans_data()
+
+            # إذا كان لديه حساب، نضبط pdata['banned'] = True
+            if account_id and account_id in Uts.pdata:
+                Uts.pdata[account_id]['banned'] = True
+                Uts.save_players_data()
+
+            # إعلام المشرفين (اختياري)
+            Uts.cm(f"🚫 Auto-ban: {name} ({reason})")
+            print(f"✅ Auto-banned {name} (Client: {client_id}, Account: {account_id}) for: {reason}")
+        except Exception as e:
+            print(f"❌ Error in auto_ban_player: {e}")
+
     @staticmethod
     def create_bans_data():
         folder = Uts.directory_user + '/Configs'
@@ -615,48 +657,7 @@ class Uts:
             w = json.dumps(Uts.reports_data, indent=4)
             f.write(w)
 
-    # ==================== التحقق من الحظر عند الاتصال (جديد) ====================
-    @staticmethod
-    def check_session_player_ban(sessionplayer) -> bool:
-        """التحقق من حظر اللاعب فور اتصاله. إذا كان محظورًا، يتم قطعه وإرجاع True."""
-        try:
-            client_id = sessionplayer.inputdevice.client_id
-            if client_id == -1:  # المستضيف (host) لا يُحظر
-                return False
-
-            # محاولة الحصول على account_id
-            account_id = None
-            try:
-                account_id = sessionplayer.get_v1_account_id()
-            except:
-                # قد لا يكون متاحًا بعد، نحاول من Uts.userpbs إذا وُجد
-                if client_id in Uts.userpbs:
-                    account_id = Uts.userpbs[client_id]
-
-            if not account_id:
-                return False  # لا يوجد account_id، لا يمكن التحقق بدقة
-
-            # التحقق من وجود الحظر
-            for ban_key, ban_info in Uts.bans_data.items():
-                if ban_info.get('account_id') == account_id:
-                    # يوجد حظر – قطع الاتصال
-                    reason = ban_info.get('reason', 'No reason')
-                    banned_by = ban_info.get('banned_by', 'Admin')
-                    print(f"🚫 Banned player {client_id} (account: {account_id}) kicked on join.")
-                    # إرسال رسالة قبل القطع (إذا أمكن)
-                    try:
-                        Uts.sm(f"You are banned.\nReason: {reason}\nBanned by: {banned_by}",
-                               color=(1,0,0), clients=[client_id], transient=True)
-                    except:
-                        pass
-                    # قطع الاتصال بعد ثانية لإعطاء فرصة لظهور الرسالة
-                    bs.apptimer(1.0, lambda: bs.disconnect_client(client_id))
-                    return True
-        except Exception as e:
-            print(f"❌ Error in check_session_player_ban: {e}")
-        return False
-
-    # ✅ FIX: Ban enforcement – only by PB-ID (account_id), client_id check removed
+    # ==================== التحقق من الحظر عند الاتصال (بدون رسالة) ====================
     @staticmethod
     def check_player_ban_on_join(player: bs.Player) -> bool:
         try:
@@ -683,13 +684,46 @@ class Uts:
             print(f"🔍 Checking ban for: {player_name} (Client: {client_id}, PB-ID: {account_id})")
             Uts.create_bans_data()
 
-            # ✅ ONLY check by account_id (pb‑ID) – client_id check removed
+            # ✅ التحقق من حقل banned في pdata أولاً (إذا كان لديه حساب)
+            if account_id and account_id in Uts.pdata and Uts.pdata[account_id].get('banned', False):
+                print(f"🚫 Player {player_name} is banned in pdata.")
+                # طرد فوري بدون رسالة
+                def kick():
+                    try:
+                        bs.disconnect_client(client_id)
+                        print(f"✅ Kicked banned player (pdata): {player_name}")
+                    except Exception as e:
+                        print(f"❌ Error kicking player: {e}")
+                bs.apptimer(0.1, kick)  # طرد فوري بعد 0.1 ثانية
+                return True
+
+            # ✅ التحقق من bans_data (للتوافق مع الحظر اليدوي)
+            # نتحقق أولاً بواسطة account_id
             if account_id:
                 for ban_key, ban_info in Uts.bans_data.items():
                     if ban_info.get('account_id') == account_id:
                         print(f"🚫 Ban match (PB-ID): {ban_key}")
-                        Uts.kick_banned_player(client_id, ban_info)
+                        def kick():
+                            try:
+                                bs.disconnect_client(client_id)
+                                print(f"✅ Kicked banned player: {player_name}")
+                            except Exception as e:
+                                print(f"❌ Error kicking player: {e}")
+                        bs.apptimer(0.1, kick)
                         return True
+
+            # نتحقق بواسطة client_id (للضيوف)
+            for ban_key, ban_info in Uts.bans_data.items():
+                if ban_info.get('client_id') == client_id:
+                    print(f"🚫 Ban match (Client ID): {ban_key}")
+                    def kick():
+                        try:
+                            bs.disconnect_client(client_id)
+                            print(f"✅ Kicked banned player (client): {player_name}")
+                        except Exception as e:
+                            print(f"❌ Error kicking player: {e}")
+                    bs.apptimer(0.1, kick)
+                    return True
 
             # Optional: still check by exact name match (only if no account_id)
             if player_name and not account_id:
@@ -698,7 +732,13 @@ class Uts:
                     banned_name = ban_info.get('name', '').lower()
                     if banned_name and banned_name == player_name_lower:
                         print(f"🚫 Ban match (Name – no PB-ID): {ban_key}")
-                        Uts.kick_banned_player(client_id, ban_info)
+                        def kick():
+                            try:
+                                bs.disconnect_client(client_id)
+                                print(f"✅ Kicked banned player (name): {player_name}")
+                            except Exception as e:
+                                print(f"❌ Error kicking player: {e}")
+                        bs.apptimer(0.1, kick)
                         return True
 
             print(f"✅ Player is not banned: {player_name}")
@@ -707,25 +747,6 @@ class Uts:
             print(f"❌ Error in check_player_ban_on_join: {e}")
             return False
     
-    @staticmethod
-    def kick_banned_player(client_id: int, ban_data: dict):
-        try:
-            reason = ban_data.get('reason', 'No reason provided')
-            banned_by = ban_data.get('banned_by', 'Admin')
-            player_name = ban_data.get('name', f'Player {client_id}')
-            message = getlanguage("BannedMessage", subs=[reason, banned_by])
-            # إضافة transient=True لإرسال الرسالة لعميل محدد
-            Uts.sm(message, color=(1,0,0), clients=[client_id], transient=True)
-            def kick():
-                try:
-                    bs.disconnect_client(client_id)
-                    print(f"✅ Kicked banned player: {player_name} (Client: {client_id})")
-                except Exception as e:
-                    print(f"❌ Error kicking player {client_id}: {e}")
-            bs.apptimer(2.0, lambda: bs.pushcall(kick))
-        except Exception as e:
-            print(f"❌ Error in kick_banned_player: {e}")
-
     @staticmethod
     def start_server_closure(hours: float, tag_name: str, admin_client_id: int) -> bool:
         try:
@@ -1050,11 +1071,13 @@ class Uts:
                 'Effect': 'none',
                 'Admin': True,
                 'Owner': True,
+                'banned': False,   # إضافة حقل الحظر
                 'Accounts': []
             }
         else:
             Uts.pdata[account_id]['Admin'] = True
             Uts.pdata[account_id]['Owner'] = True
+            Uts.pdata[account_id]['banned'] = False
         Uts.save_players_data()
         print(f"Added owner: {account_id}")
 
@@ -1197,6 +1220,7 @@ class Uts:
                 'Effect': 'none',
                 'Admin': False,
                 'Owner': False,
+                'banned': False,   # إضافة حقل الحظر
                 'Accounts': []}
             Uts.save_players_data()
 
@@ -1748,7 +1772,9 @@ class TagSystem:
             print(f"❌ Error starting gradual animation: {e}")
 
     def cleanup_dead_players(self, activity):
+        """إزالة التاجات من اللاعبين الموتى أو غير الموجودين"""
         try:
+            # تنظيف التيجان العادية
             for client_id_str in list(self.current_tags.keys()):
                 player_found = False
                 player_alive = False
@@ -1766,10 +1792,12 @@ class TagSystem:
                         client_id = int(client_id_str)
                         self.remove_tag_visual(client_id)
                         self.stop_char_animation(client_id)
+                        # أيضًا إزالة تاج النادي
+                        Uts.clubs_system.remove_club_tag(client_id)
                     except:
                         pass
-        except:
-            pass
+        except Exception as e:
+            print(f"❌ Error in cleanup_dead_players: {e}")
 
     def check_player_respawns(self, activity):
         try:
@@ -3824,7 +3852,8 @@ class Commands:
         """عرض PB-ID الخاص باللاعب"""
         pb = Uts.get_reliable_pb_id(client_id)
         if pb.startswith('guest_'):
-            self.clientmessage(f"🔹 You are a guest. Your temporary ID: {pb}", color=(1,1,0))
+            # نعرض client ID بدلاً من guest_
+            self.clientmessage(f"🆔 Your Client ID is: {client_id}", color=(1,1,0))
         else:
             self.clientmessage(f"🆔 Your PB-ID is: {pb}", color=(0,1,0))
 
@@ -5273,7 +5302,7 @@ class Commands:
                     "/offer yes <club-id> : Accept club offer",     # NEW
                     "/offer no <club-id>  : Reject club offer",     # NEW
                     "/myclub   : Show your club info",              # NEW
-                    "/myid     : Show your PB-ID",                  # NEW
+                    "/myid     : Show your PB-ID (or Client ID if guest)",  # NEW
                     "test      : Test if CheatMax works",
                     "help      : This menu"
                 ]
@@ -5428,13 +5457,18 @@ class Commands:
                 return
             players_data.sort(key=lambda x: x['client_id'])
             self.send_chat_message("=============================================[Players_list]==================================================")
-            self.send_chat_message("||        PB-ID        ||    Role    ||  Account_name   ||        Name         || Client ID ||   Name Tag  ||")
+            self.send_chat_message("||        PB-ID / Client ID       ||    Role    ||  Account_name   ||        Name         || Client ID ||   Name Tag  ||")
             self.send_chat_message("=============================================================================================================")
             for data in players_data:
                 pb_id = Uts.get_reliable_pb_id(data['client_id'])
-                if len(pb_id) > 20:
-                    pb_id = pb_id[:18] + ".."
-                pb_id = pb_id.ljust(20)
+                if pb_id.startswith('guest_'):
+                    # عرض client ID بدلاً من guest_
+                    pb_display = f"Client: {data['client_id']}"
+                else:
+                    pb_display = pb_id
+                if len(pb_display) > 20:
+                    pb_display = pb_display[:18] + ".."
+                pb_display = pb_display.ljust(20)
                 role = data['role']
                 if role == "Owner":
                     role = "👑 Owner"
@@ -5451,15 +5485,15 @@ class Commands:
                 if len(player_name) > 18:
                     player_name = player_name[:16] + ".."
                 player_name = player_name.ljust(18)
-                client_id = str(data['client_id'])
+                client_id_str = str(data['client_id'])
                 if data['client_id'] == -1:
-                    client_id = "👑 Host"
-                client_id = client_id.center(10)
+                    client_id_str = "👑 Host"
+                client_id_str = client_id_str.center(10)
                 tag = str(data['tag'])
                 if len(tag) > 10:
                     tag = tag[:8] + ".."
                 tag = tag.ljust(10)
-                row = f"|| {pb_id} || {role} || {account_name} || {player_name} || {client_id} || {tag} ||"
+                row = f"|| {pb_display} || {role} || {account_name} || {player_name} || {client_id_str} || {tag} ||"
                 self.send_chat_message(row)
             self.send_chat_message("==========================[Players_list]=============================")
             self.send_chat_message(f"👥 Total Players: {len(players_data)}")
@@ -6227,23 +6261,54 @@ def new_ga_on_transition_in(self) -> None:
 
 def new_on_player_join(self, player: bs.Player) -> None:
     calls['OnPlayerJoin'](self, player)
+    
+    # التحقق من الحظر أولاً
     if Uts.check_player_ban_on_join(player):
         return
+    
+    # تسجيل وقت الدخول
+    try:
+        client_id = player.sessionplayer.inputdevice.client_id
+        Uts.join_times[client_id] = time.time()
+    except:
+        pass
+
     Uts.player_join(player)
+    
     if Uts.server_close_active:
         Uts.check_player_allowed_on_join(player)
 
-# ==================== إضافة hook لمغادرة اللاعب ====================
 def new_on_player_leave(self, player: bs.Player) -> None:
     """يُستدعى عند مغادرة لاعب"""
     # استدعاء الدالة الأصلية إذا كانت موجودة
     if 'OnPlayerLeave' in calls:
         calls['OnPlayerLeave'](self, player)
+    
     try:
         client_id = player.sessionplayer.inputdevice.client_id
+        
+        # التحقق من وقت الدخول والخروج السريع
+        if client_id in Uts.join_times:
+            join_time = Uts.join_times.pop(client_id)
+            leave_time = time.time()
+            duration = leave_time - join_time
+            
+            if duration < Uts.QUICK_LEAVE_THRESHOLD:
+                # خروج سريع - حظر اللاعب
+                account_id = Uts.get_reliable_pb_id(client_id)
+                player_name = Uts.usernames.get(client_id, f"Player {client_id}")
+                reason = f"Auto-ban: quick leave after {duration:.1f} seconds"
+                Uts.auto_ban_player(client_id, account_id if not account_id.startswith('guest_') else None, player_name, reason)
+                
+                # إذا كان لا يزال متصلاً (نادر) نطرده
+                try:
+                    bs.disconnect_client(client_id)
+                except:
+                    pass
+        
         # إزالة تاج النادي إن وجد
         Uts.clubs_system.remove_club_tag(client_id)
-        # يمكن إضافة تنظيفات أخرى هنا إذا لزم الأمر
+        
     except Exception as e:
         print(f"❌ Error in new_on_player_leave: {e}")
 
@@ -6831,7 +6896,7 @@ def final_setup():
 ║ • Multi-Language: ✓ Supported           ║
 ║ • Protection: ✓ Enabled                 ║
 ║ • Ban System: ✓ Active (PB-ID Verified)║
-║   └─ Instant kick on connection (fixed) ║
+║   └─ Instant kick on connection (no message) ║
 ║ • Report System: ✓ Active               ║
 ║ • Commands in lobby: ✓ Fixed            ║
 ║ • Teleport: ✓ Fixed (uses client ID)   ║
@@ -6845,7 +6910,7 @@ def final_setup():
 ║ • Explosion: ✓ Added                  ║
 ║ • Locator: ✓ Added (Glowing)          ║
 ║ • Ping: ✓ Fixed (No errors)           ║
-║ • /List Fixed: ✓ Shows PB-ID          ║
+║ • /List Fixed: ✓ No 'guest_' (shows Client ID) ║
 ║ • A-Soccer Integration: ✓ Auto-save   ║
 ║ • Weather System: ✓ Added & Saved     ║
 ║   └─ Snow, Rock, Metal, Ice, Spark,   ║
@@ -6856,7 +6921,8 @@ def final_setup():
 ║ • Clubs System: ✓ Added               ║
 ║   └─ Create clubs, offers, tags, roles║
 ║ • Player Leave Hook: ✓ Auto-remove club tag ║
-║ • /myid Command: ✓ Shows your PB-ID   ║
+║ • /myid Command: ✓ Shows your PB-ID (or Client ID if guest) ║
+║ • Auto-ban for quick leave: ✓ Enabled (10s) ║
 ╚══════════════════════════════════════════╝
     """
     for line in welcome_msg.split('\n'):
@@ -7051,6 +7117,17 @@ def system_test():
                 tests_passed += 1
             else:
                 print("❌ Test 10: Player leave hook not installed")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        # اختبار join_times
+        try:
+            if hasattr(Uts, 'join_times'):
+                print("✅ Test 11: join_times initialized")
+                tests_passed += 1
+            else:
+                print("❌ Test 11: join_times missing")
                 tests_failed += 1
         except:
             tests_failed += 1
