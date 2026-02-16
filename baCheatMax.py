@@ -2420,10 +2420,18 @@ class ClubsSystem:
         if not spaz or not spaz.node or not spaz.node.exists():
             return
         club_name = club_data["club-name"]
+        # إضافة أيقونة القبعة للكباتن فقط
+        if role == "captain":
+            hat_icon = '\ue041'  # رمز القبعة
+            display_name = f"{hat_icon}{club_name}"
+        else:
+            display_name = club_name
+
         back_color = club_data.get("club-color-back", [1,1,1])
         front_color = club_data.get("club-color-front", [1,1,1])
         back_color_tuple = (back_color[0], back_color[1], back_color[2])
         front_color_tuple = (front_color[0], front_color[1], front_color[2])
+        
         # إزالة أي تاج سابق لهذا اللاعب
         if client_id in self.club_tags:
             self.remove_club_tag(client_id)
@@ -2431,18 +2439,18 @@ class ClubsSystem:
         with activity.context:
             # عقدة رياضية للخلفية (إزاحة طفيفة)
             math_back = bs.newnode('math',
-                attrs={'input1': (-0.15, 1.75, -0.1), 'operation': 'add'})
+                attrs={'input1': (0, 1.7, -0.05), 'operation': 'add'})
             spaz.node.connectattr('position_center', math_back, 'input2')
             # النص الخلفي
             tag_back = bs.newnode('text',
                 attrs={
-                    'text': club_name,
+                    'text': display_name,
                     'in_world': True,
                     'shadow': 1.0,
                     'flatness': 1.0,
                     'h_align': 'center',
                     'v_align': 'center',
-                    'scale': 0.015,
+                    'scale': 0.013,
                     'color': back_color_tuple,
                     'opacity': 0.8
                 })
@@ -2450,18 +2458,18 @@ class ClubsSystem:
 
             # عقدة رياضية للأمام (بدون إزاحة)
             math_front = bs.newnode('math',
-                attrs={'input1': (0.0, 1.75, 0.0), 'operation': 'add'})
+                attrs={'input1': (0.0, 1.7, 0.0), 'operation': 'add'})
             spaz.node.connectattr('position_center', math_front, 'input2')
             # النص الأمامي
             tag_front = bs.newnode('text',
                 attrs={
-                    'text': club_name,
+                    'text': display_name,
                     'in_world': True,
                     'shadow': 1.0,
                     'flatness': 1.0,
                     'h_align': 'center',
                     'v_align': 'center',
-                    'scale': 0.015,
+                    'scale': 0.013,
                     'color': front_color_tuple,
                     'opacity': 1.0
                 })
@@ -2469,7 +2477,6 @@ class ClubsSystem:
 
             # تخزين العقد
             self.club_tags[client_id] = [tag_back, tag_front, math_back, math_front]
-
     def remove_club_tag(self, client_id: int):
         """إزالة تاج النادي للاعب"""
         if client_id in self.club_tags:
