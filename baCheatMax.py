@@ -553,9 +553,7 @@ class Uts:
     # نظام الأندية (سيتم إنشاؤه لاحقاً)
     clubs_system = None
 
-    # ==================== نظام الطرد التلقائي للدخول/خروج السريع ====================
-    join_times: dict[int, float] = {}  # client_id -> وقت الدخول
-    QUICK_LEAVE_THRESHOLD = 10.0  # ثوانٍ
+    # ==================== نظام الطرد التلقائي للدخول/خروج السريع (تمت إزالته) ====================
 
     @staticmethod
     def auto_ban_player(client_id: int, account_id: str | None, name: str, reason: str):
@@ -6328,13 +6326,6 @@ def new_on_player_join(self, player: bs.Player) -> None:
     # التحقق من الحظر أولاً
     if Uts.check_player_ban_on_join(player):
         return
-    
-    # تسجيل وقت الدخول
-    try:
-        client_id = player.sessionplayer.inputdevice.client_id
-        Uts.join_times[client_id] = time.time()
-    except:
-        pass
 
     Uts.player_join(player)
     
@@ -6357,25 +6348,6 @@ def new_on_player_leave(self, player: bs.Player) -> None:
         except AttributeError:
             print("⚠️ player.sessionplayer or inputdevice not available")
             return
-        
-        # التحقق من وقت الدخول والخروج السريع
-        if client_id in Uts.join_times:
-            join_time = Uts.join_times.pop(client_id)
-            leave_time = time.time()
-            duration = leave_time - join_time
-            
-            if duration < Uts.QUICK_LEAVE_THRESHOLD:
-                # خروج سريع - حظر اللاعب
-                account_id = Uts.get_reliable_pb_id(client_id)
-                player_name = Uts.usernames.get(client_id, f"Player {client_id}")
-                reason = f"Auto-ban: quick leave after {duration:.1f} seconds"
-                Uts.auto_ban_player(client_id, account_id if not account_id.startswith('guest_') else None, player_name, reason)
-                
-                # إذا كان لا يزال متصلاً (نادر) نطرده
-                try:
-                    bs.disconnect_client(client_id)
-                except:
-                    pass
         
         # إزالة تاج النادي إن وجد
         Uts.clubs_system.remove_club_tag(client_id)
@@ -6997,8 +6969,6 @@ def final_setup():
 ║   └─ Create clubs, offers, tags, roles (no icons, double text) ║
 ║ • Player Leave Hook: ✓ Auto-remove club tag ║
 ║ • /myid Command: ✓ Shows your PB-ID (as chat message) ║
-║ • Auto-ban for quick leave: ✓ Enabled (10s) ║
-║ • Ban now removes club tag instantly   ║
 ║ • All tags removed on death ✓          ║
 ╚══════════════════════════════════════════╝
     """
@@ -7198,16 +7168,8 @@ def system_test():
         except:
             tests_failed += 1
 
-        # اختبار join_times
-        try:
-            if hasattr(Uts, 'join_times'):
-                print("✅ Test 11: join_times initialized")
-                tests_passed += 1
-            else:
-                print("❌ Test 11: join_times missing")
-                tests_failed += 1
-        except:
-            tests_failed += 1
+        # اختبار join_times (تمت إزالته)
+        # تم حذف هذا الاختبار لأن join_times لم يعد موجوداً
 
         print(f"📊 Test Results: {tests_passed} passed, {tests_failed} failed")
         if tests_failed == 0:
