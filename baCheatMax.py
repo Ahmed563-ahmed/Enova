@@ -589,6 +589,10 @@ class Uts:
                 Uts.pdata[account_id]['banned'] = True
                 Uts.save_players_data()
 
+            # ✅ إزالة تاج النادي قبل الطرد
+            if Uts.clubs_system:
+                Uts.clubs_system.remove_club_tag(client_id)
+
             # إعلام المشرفين (اختياري)
             Uts.cm(f"🚫 Auto-ban: {name} ({reason})")
             print(f"✅ Auto-banned {name} (Client: {client_id}, Account: {account_id}) for: {reason}")
@@ -657,6 +661,59 @@ class Uts:
             w = json.dumps(Uts.reports_data, indent=4)
             f.write(w)
 
+    # ==================== مراقبة الحظر الدورية (BombMaster style) ====================
+    @staticmethod
+    def start_ban_monitoring():
+        """بدء مراقبة دورية للاعبين المحظورين وطردهم فورًا"""
+        def check_bans():
+            try:
+                if not Uts.bans_data and not any(Uts.pdata.get(acc, {}).get('banned', False) for acc in Uts.pdata):
+                    # لا يوجد محظورين، نستمر في المراقبة لكن لا حاجة للفحص
+                    pass
+                else:
+                    # فحص جميع اللاعبين الحاليين
+                    roster_data = roster()
+                    for player_info in roster_data:
+                        client_id = player_info.get('client_id')
+                        if client_id is None or client_id == -1:
+                            continue
+                        account_id = player_info.get('account_id')
+                        if not account_id:
+                            account_id = Uts.userpbs.get(client_id)
+                        player_name = player_info.get('display_string', f'Player_{client_id}')
+                        
+                        # التحقق من bans_data
+                        banned = False
+                        if account_id:
+                            for ban_key, ban_info in Uts.bans_data.items():
+                                if ban_info.get('account_id') == account_id:
+                                    banned = True
+                                    break
+                        if not banned and client_id in Uts.userpbs:
+                            # التحقق من pdata
+                            acc = Uts.userpbs[client_id]
+                            if acc in Uts.pdata and Uts.pdata[acc].get('banned', False):
+                                banned = True
+                        
+                        if banned:
+                            print(f"🚫 Ban monitor: Kicking {player_name} (C{client_id})")
+                            # ✅ إزالة تاج النادي قبل الطرد
+                            if Uts.clubs_system:
+                                Uts.clubs_system.remove_club_tag(client_id)
+                            def kick():
+                                try:
+                                    bs.disconnect_client(client_id)
+                                except Exception as e:
+                                    print(f"❌ Error kicking banned player: {e}")
+                            bs.pushcall(kick)
+            except Exception as e:
+                print(f"❌ Error in ban monitor: {e}")
+            # إعادة الجدولة
+            bs.apptimer(1.0, check_bans)
+        
+        bs.apptimer(1.0, check_bans)
+        print("✅ Ban monitoring started")
+
     # ==================== التحقق من الحظر عند الاتصال (بدون رسالة) ====================
     @staticmethod
     def check_player_ban_on_join(player: bs.Player) -> bool:
@@ -687,14 +744,14 @@ class Uts:
             # ✅ التحقق من حقل banned في pdata أولاً (إذا كان لديه حساب)
             if account_id and account_id in Uts.pdata and Uts.pdata[account_id].get('banned', False):
                 print(f"🚫 Player {player_name} is banned in pdata.")
-                # طرد فوري بدون رسالة
+                # طرد فوري بدون رسالة باستخدام pushcall (تنفيذ فوري)
                 def kick():
                     try:
                         bs.disconnect_client(client_id)
                         print(f"✅ Kicked banned player (pdata): {player_name}")
                     except Exception as e:
                         print(f"❌ Error kicking player: {e}")
-                bs.apptimer(0.1, kick)  # طرد فوري بعد 0.1 ثانية
+                bs.pushcall(kick)
                 return True
 
             # ✅ التحقق من bans_data (للتوافق مع الحظر اليدوي)
@@ -709,7 +766,7 @@ class Uts:
                                 print(f"✅ Kicked banned player: {player_name}")
                             except Exception as e:
                                 print(f"❌ Error kicking player: {e}")
-                        bs.apptimer(0.1, kick)
+                        bs.pushcall(kick)
                         return True
 
             # نتحقق بواسطة client_id (للضيوف)
@@ -722,7 +779,7 @@ class Uts:
                             print(f"✅ Kicked banned player (client): {player_name}")
                         except Exception as e:
                             print(f"❌ Error kicking player: {e}")
-                    bs.apptimer(0.1, kick)
+                    bs.pushcall(kick)
                     return True
 
             # Optional: still check by exact name match (only if no account_id)
@@ -738,7 +795,7 @@ class Uts:
                                 print(f"✅ Kicked banned player (name): {player_name}")
                             except Exception as e:
                                 print(f"❌ Error kicking player: {e}")
-                        bs.apptimer(0.1, kick)
+                        bs.pushcall(kick)
                         return True
 
             print(f"✅ Player is not banned: {player_name}")
@@ -1154,7 +1211,6 @@ class Uts:
             Uts.userpbs[client_id] = account_id
         else:
             # إذا لم يكن هناك account_id صالح (ضيف)، نستخدم client_id كمفتاح مؤقت
-            account_id = f"guest_{client_id}"
             Uts.userpbs[client_id] = account_id
             print(f"👤 Guest player {client_id} assigned temporary PB-ID: {account_id}")
 
@@ -1356,13 +1412,7 @@ class Uts:
                     return acc
             except:
                 pass
-        # 4. إذا لم نجد، نستخدم القيمة المخزنة (حتى لو guest_)
-        if client_id in Uts.userpbs:
-            return Uts.userpbs[client_id]
-        # 5. أخيرًا، ننشئ guest_
-        guest = f"guest_{client_id}"
-        Uts.userpbs[client_id] = guest
-        return guest
+        # 4. إذا لم يتم العثور على PB-ID، قم بتعيين guest_ مؤقت
 
     @staticmethod
     def find_client_id_by_pb(pb_id: str) -> int | None:
@@ -1598,7 +1648,7 @@ class TagSystem:
                 if activity and hasattr(activity, 'players'):
                     try:
                         self.quick_apply_tags(activity)
-                        self.cleanup_dead_players(activity)
+                        self.cleanup_dead_players(activity)  # سيتم استدعاؤها كل ثانيتين
                         self.check_player_respawns(activity)
                     except Exception as e:
                         print(f"⚠️ Tag monitor error: {e}")
@@ -1774,7 +1824,7 @@ class TagSystem:
     def cleanup_dead_players(self, activity):
         """إزالة التاجات من اللاعبين الموتى أو غير الموجودين"""
         try:
-            # تنظيف التيجان العادية
+            # تنظيف التيجان العادية والمتحركة
             for client_id_str in list(self.current_tags.keys()):
                 player_found = False
                 player_alive = False
@@ -1792,6 +1842,7 @@ class TagSystem:
                         client_id = int(client_id_str)
                         self.remove_tag_visual(client_id)
                         self.stop_char_animation(client_id)
+                        self.stop_animation(client_id)
                         # أيضًا إزالة تاج النادي
                         Uts.clubs_system.remove_club_tag(client_id)
                     except:
@@ -2015,46 +2066,15 @@ class TagSystem:
         return colors
 
 
-# ==================== أيقونات الأندية المدعومة ====================
-CLUB_ICONS = {
-    'left': '\ue001', 'right': '\ue002', 'up': '\ue003', 'down': '\ue004',
-    'dleft': '\ue005', 'dup': '\ue006', 'dright': '\ue007', 'ddown': '\ue008',
-    'back': '\ue009', 'joystick': '\ue010', 'circles': '\ue019',
-    'android': '\ue020', 'rbyp': '\ue021',
-    'dice1': '\ue022', 'dice2': '\ue023', 'dice3': '\ue024', 'dice4': '\ue025',
-    'volley': '\ue026', 'gather': '\ue027', 't': '\ue028', 'ticket': '\ue029',
-    'pc': '\ue030', 'rbyp2': '\ue031',
-    'us': '\ue032', 'italy': '\ue033', 'germany': '\ue034', 'brazil': '\ue035',
-    'russia': '\ue036', 'china': '\ue037', 'uk': '\ue038', 'canada': '\ue039',
-    'rwb': '\ue040', 'hat': '\ue041', 'fire': '\ue042', 'crown': '\ue043',
-    'zen': '\ue044', 'eye': '\ue045', 'skull': '\ue046', 'heart': '\ue047',
-    'dragon': '\ue048', 'helmet': '\ue049', 'rgwb': '\ue050', 'mw': '\ue051',
-    'syria': '\ue052', 'bgwr': '\ue053', 'gwl': '\ue054', 'saudi': '\ue055',
-    'malaysia': '\ue056', 'bwr': '\ue057', 'australia': '\ue058', 'rws': '\ue059',
-    'up2': '\ue00a', 'down2': '\ue00b', 'bslogo': '\ue00c', 'back2': '\ue00d',
-    'pause': '\ue00e', 'forward': '\ue00f', 'u': '\ue01a', 'y': '\ue01b',
-    'a': '\ue01c', 'usmall': '\ue01d', 'logo': '\ue01e', 'ticket2': '\ue01f',
-    'bronze': '\ue02a', 'silver': '\ue02b', 'gold': '\ue02c', 'badge1': '\ue02d',
-    'badge2': '\ue02e', 'trophy': '\ue02f',
-    'india': '\ue03a', 'japan': '\ue03b', 'france': '\ue03c', 'rw': '\ue03d',
-    'gwr': '\ue03e', 'korea': '\ue03f',
-    'mushroom': '\ue04a', 'nstar': '\ue04b', 'bull': '\ue04c', 'moon': '\ue04d',
-    'spider': '\ue04e', 'fireball': '\ue04f', 'rect': '\ue05a', 'steam': '\ue05b',
-    'nvidia': '\ue05c',
-    'ns': '\ue04b', 'dr': '\ue048', 'fb': '\ue04f', 'cr': '\ue043', 'sk': '\ue046',
-    'ht': '\ue047', 'hl': '\ue049', 'ms': '\ue04a', 'bl': '\ue04c', 'mn': '\ue04d',
-    'sp': '\ue04e', 'la': '\ue001', 'ra': '\ue002', 'ua': '\ue003', 'da': '\ue004'
-}
-
-# ==================== نظام الأندية (يُعرف بعد Uts) ====================
+# ==================== نظام الأندية المعدل (بدون أيقونات، تاج مزدوج) ====================
 class ClubsSystem:
-    """إدارة الأندية واللاعبين والعقود والعروض"""
+    """إدارة الأندية واللاعبين والعقود والعروض - نسخة بدون أيقونات"""
     def __init__(self):
         self.clubs_file = os.path.join(Uts.directory_user, 'Configs', 'CheatMaxClubsData.json')
         self.offers_file = os.path.join(Uts.directory_user, 'Configs', 'CheatMaxOffersData.json')
         self.clubs_data = {}
         self.offers_data = {}  # مفتاح: pb-ID اللاعب، القيمة: قائمة بالعروض
-        self.club_tags = {}    # تخزين تاجات الأندية (client_id -> tag_node)
+        self.club_tags = {}    # تخزين تاجات الأندية (client_id -> [tag_back, tag_front, math_back, math_front])
         self.load_data()
 
     def load_data(self):
@@ -2102,19 +2122,15 @@ class ClubsSystem:
             if cid not in self.clubs_data:
                 return cid
 
-    def create_club(self, club_name: str, club_color: tuple, icon_name: str, captain1_pb: str, captain2_pb: str, creator_name: str) -> str:
+    def create_club(self, club_name: str, back_color: tuple, front_color: tuple, captain1_pb: str, captain2_pb: str, creator_name: str) -> str:
         """إنشاء نادي جديد وإرجاع ID النادي"""
         club_id = self.generate_club_id()
-        icon_code = CLUB_ICONS.get(icon_name.lower(), icon_name)  # إذا لم يجد الأيقونة يستخدم النص كما هو
         created_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # captains: سنخزنهم كقائمة من pb-IDs
-        # players: قائمة من الكائنات تحتوي pb-id, contract_expire, role, joined_timestamp
-        # سنقوم بإضافة الكابتن كأول عضوين
         players_list = []
         # نضيف الكابتن الأول
         players_list.append({
             "pb-id": captain1_pb,
-            "contract_expire": "permanent",  # الكابتن ليس له عقد
+            "contract_expire": "permanent",
             "role": "captain",
             "joined": time.time()
         })
@@ -2127,14 +2143,14 @@ class ClubsSystem:
         })
         self.clubs_data[club_id] = {
             "club-name": club_name,
-            "club-color": [club_color[0], club_color[1], club_color[2]],
-            "club-icon": icon_code,
+            "club-color-back": [back_color[0], back_color[1], back_color[2]],
+            "club-color-front": [front_color[0], front_color[1], front_color[2]],
             "club-created-in": created_date,
             "players": players_list,
             "max-players": 20
         }
         self.save_clubs()
-        # تحديث بيانات اللاعبين (Uts.pdata) لتخزين club ID و role (يمكن استخدامها عند الدخول)
+        # تحديث بيانات اللاعبين (Uts.pdata) لتخزين club ID و role
         self._update_player_club_info(captain1_pb, club_id, "captain", "permanent")
         self._update_player_club_info(captain2_pb, club_id, "captain", "permanent")
         return club_id
@@ -2233,7 +2249,6 @@ class ClubsSystem:
 
     def accept_offer(self, player_pb: str, club_id: str) -> bool:
         """قبول عرض: إضافة اللاعب للنادي وإزالة العرض"""
-        # التحقق من وجود العرض
         offers = self.get_player_offers(player_pb)
         offer = None
         for o in offers:
@@ -2242,20 +2257,15 @@ class ClubsSystem:
                 break
         if not offer:
             return False
-        # التحقق من وجود النادي
         club_data = self.get_club_by_id(club_id)
         if not club_data:
             return False
-        # التحقق من عدم تجاوز العدد الأقصى
         if len(club_data.get("players", [])) >= club_data.get("max-players", 20):
             return False
-        # إضافة اللاعب
         players = club_data.setdefault("players", [])
-        # التحقق من عدم وجوده بالفعل
         for p in players:
             if p["pb-id"] == player_pb:
-                return False  # موجود بالفعل
-        # حساب تاريخ انتهاء العقد
+                return False
         months = offer["months"]
         expire_str = (datetime.now() + timedelta(days=30*months)).strftime("%Y-%m-%d")
         players.append({
@@ -2264,10 +2274,8 @@ class ClubsSystem:
             "role": "player",
             "joined": time.time()
         })
-        # تحديث Uts.pdata
         self._update_player_club_info(player_pb, club_id, "player", expire_str)
         self.save_clubs()
-        # إزالة العرض
         self.remove_offer(player_pb, club_id)
         return True
 
@@ -2277,7 +2285,6 @@ class ClubsSystem:
         if not result:
             return False
         club_id, club_data, _ = result
-        # التحقق من أن target_pb عضو في نفس النادي
         target_player_data = None
         for p in club_data["players"]:
             if p["pb-id"] == target_pb:
@@ -2285,9 +2292,7 @@ class ClubsSystem:
                 break
         if not target_player_data:
             return False
-        # تغيير الدور إلى captain
         target_player_data["role"] = "captain"
-        # تحديث Uts.pdata
         if target_pb in Uts.pdata:
             if "club" not in Uts.pdata[target_pb]:
                 Uts.pdata[target_pb]["club"] = {}
@@ -2309,7 +2314,6 @@ class ClubsSystem:
                 try:
                     expire_date = datetime.strptime(expire, "%Y-%m-%d").date()
                     if expire_date < now:
-                        # انتهى العقد
                         pb = player["pb-id"]
                         players.remove(player)
                         if pb in Uts.pdata and "club" in Uts.pdata[pb]:
@@ -2327,7 +2331,6 @@ class ClubsSystem:
         if not club_data:
             return []
         players = club_data.get("players", [])
-        # نرتب حسب joined (time.time())
         players.sort(key=lambda p: p.get("joined", 0))
         return players
 
@@ -2341,7 +2344,6 @@ class ClubsSystem:
         cap_names = []
         for cap in captains[:2]:
             pb = cap["pb-id"]
-            # نحاول الحصول على الاسم من Uts.usernames (أصعب شوية)
             name = "Unknown"
             for cid, acc in Uts.userpbs.items():
                 if acc == pb:
@@ -2358,7 +2360,6 @@ class ClubsSystem:
         lines.append(f"Club second Captain : {cap_names[1]}")
         lines.append(f"Club created in : {club.get('club-created-in', 'Unknown')}")
         lines.append(f"members : {max_players}/{total}")
-        # قائمة الأعضاء
         for p in members:
             pb = p["pb-id"]
             name = "Unknown"
@@ -2413,54 +2414,71 @@ class ClubsSystem:
             return "You are not in any club."
         club_id, club_data, player_data = res
         club_name = club_data["club-name"]
-        icon = club_data["club-icon"]
         expire = player_data.get("contract_expire", "permanent")
-        return f"My club : {club_name}\nMy club icon : {icon}\nContract Expire : {expire}"
+        return f"My club : {club_name}\nContract Expire : {expire}"
 
     def create_club_tag(self, spaz, client_id: int, club_data: dict, role: str, activity):
-        """إنشاء تاج النادي فوق اللاعب (يُستدعى عند spawn)"""
+        """إنشاء تاج النادي فوق اللاعب (نص مزدوج)"""
         if not spaz or not spaz.node or not spaz.node.exists():
             return
         club_name = club_data["club-name"]
-        icon = club_data.get("club-icon", "")
-        color = club_data.get("club-color", [1,1,1])
-        color_tuple = (color[0], color[1], color[2])
-        # تنسيق التاج: أيقونة || اسم النادي (مع لون)
-        if role == "captain":
-            tag_text = f"{icon} || \ue041{club_name}"
-        else:
-            tag_text = f"{icon} || {club_name}"
-        with activity.context:
-            # إزالة أي تاج سابق لهذا اللاعب
-            if client_id in self.club_tags:
-                old_tag = self.club_tags[client_id]
-                if old_tag and old_tag.exists():
-                    old_tag.delete()
-                del self.club_tags[client_id]
+        back_color = club_data.get("club-color-back", [1,1,1])
+        front_color = club_data.get("club-color-front", [1,1,1])
+        back_color_tuple = (back_color[0], back_color[1], back_color[2])
+        front_color_tuple = (front_color[0], front_color[1], front_color[2])
+        # إزالة أي تاج سابق لهذا اللاعب
+        if client_id in self.club_tags:
+            self.remove_club_tag(client_id)
 
-            tag_node = bs.newnode('text',
+        with activity.context:
+            # عقدة رياضية للخلفية (إزاحة طفيفة)
+            math_back = bs.newnode('math',
+                attrs={'input1': (-0.15, 1.75, -0.1), 'operation': 'add'})
+            spaz.node.connectattr('position_center', math_back, 'input2')
+            # النص الخلفي
+            tag_back = bs.newnode('text',
                 attrs={
-                    'text': tag_text,
+                    'text': club_name,
                     'in_world': True,
                     'shadow': 1.0,
                     'flatness': 1.0,
                     'h_align': 'center',
                     'v_align': 'center',
-                    'scale': 0.01,
-                    'color': color_tuple
+                    'scale': 0.015,
+                    'color': back_color_tuple,
+                    'opacity': 0.8
                 })
-            math_node = bs.newnode('math',
+            math_back.connectattr('output', tag_back, 'position')
+
+            # عقدة رياضية للأمام (بدون إزاحة)
+            math_front = bs.newnode('math',
                 attrs={'input1': (0.0, 1.75, 0.0), 'operation': 'add'})
-            spaz.node.connectattr('position_center', math_node, 'input2')
-            math_node.connectattr('output', tag_node, 'position')
-            self.club_tags[client_id] = tag_node
+            spaz.node.connectattr('position_center', math_front, 'input2')
+            # النص الأمامي
+            tag_front = bs.newnode('text',
+                attrs={
+                    'text': club_name,
+                    'in_world': True,
+                    'shadow': 1.0,
+                    'flatness': 1.0,
+                    'h_align': 'center',
+                    'v_align': 'center',
+                    'scale': 0.015,
+                    'color': front_color_tuple,
+                    'opacity': 1.0
+                })
+            math_front.connectattr('output', tag_front, 'position')
+
+            # تخزين العقد
+            self.club_tags[client_id] = [tag_back, tag_front, math_back, math_front]
 
     def remove_club_tag(self, client_id: int):
         """إزالة تاج النادي للاعب"""
         if client_id in self.club_tags:
-            tag = self.club_tags[client_id]
-            if tag and tag.exists():
-                tag.delete()
+            nodes = self.club_tags[client_id]
+            for node in nodes:
+                if node and node.exists():
+                    node.delete()
             del self.club_tags[client_id]
 
 
@@ -3156,7 +3174,10 @@ class Commands:
                                 self.value = '@'
                             else:
                                 self.util.cm(f"{user1} kicked {user2} Goodbye!")
-                                bs.disconnect_client(c_id)
+                                try:
+                                    bs.disconnect_client(c_id)
+                                except Exception as e:
+                                    print(f"❌ Error kicking player: {e}")
                                 self.value = '@'
     
         elif ms[0] == cmd[13]: # -chatLive
@@ -3847,15 +3868,14 @@ class Commands:
         except Exception as e:
             self.clientmessage(f"❌ Error resetting stats: {str(e)[:50]}", color=(1,0,0))
 
-    # ========== أمر myid الجديد ==========
+    # ========== أمر myid الجديد (يستخدم send_chat_message) ==========
     def process_myid(self, client_id: int):
-        """عرض PB-ID الخاص باللاعب"""
+        """عرض PB-ID الخاص باللاعب في رسالة دردشة خاصة"""
         pb = Uts.get_reliable_pb_id(client_id)
         if pb.startswith('guest_'):
-            # نعرض client ID بدلاً من guest_
-            self.clientmessage(f"🆔 Your Client ID is: {client_id}", color=(1,1,0))
+            self.send_chat_message(f"🆔 You don't have a PB-ID (guest).")
         else:
-            self.clientmessage(f"🆔 Your PB-ID is: {pb}", color=(0,1,0))
+            self.send_chat_message(f"🆔 Your PB-ID is: {pb}")
 
     # ========== أوامر الأندية (للكباتن والأعضاء) ==========
     def club_commands(self):
@@ -3907,31 +3927,30 @@ class Commands:
                     ClientMessage(getlanguage("AdminOnly"), color=(1,0,0))
                     self.value = '@'
                     return
-                # /club add <club_name> <club_color> <club_icon> <pb-ID captain-1> <pb-ID captain-2>
+                # /club add <name> <r,g,b back> <r,g,b front> <captain1-pb> <captain2-pb>
                 if len(ms) < 7:
-                    ClientMessage("❌ Use: /club add <name> <r,g,b> <icon> <captain1-pb> <captain2-pb>", color=(1,0,0))
-                    ClientMessage("📝 Example: /club add Heros 0.2,0.5,0.8 cr pb-XXXX pb-YYYY", color=(1,1,0))
+                    ClientMessage("❌ Use: /club add <name> <r,g,b back> <r,g,b front> <captain1-pb> <captain2-pb>", color=(1,0,0))
+                    ClientMessage("📝 Example: /club add Heros 0.1,0.1,0.1 1,0.84,0 pb-XXXX pb-YYYY", color=(1,1,0))
                     self.value = '@'
                     return
                 club_name = ms[2]
-                color_str = ms[3]
-                icon_name = ms[4]
+                back_color_str = ms[3]
+                front_color_str = ms[4]
                 cap1_pb = ms[5]
                 cap2_pb = ms[6]
-                # تحليل اللون
+                # تحليل ألوان الخلفية والمقدمة
                 try:
-                    r, g, b = map(float, color_str.split(','))
-                    color = (r, g, b)
+                    r_back, g_back, b_back = map(float, back_color_str.split(','))
+                    back_color = (r_back, g_back, b_back)
+                    r_front, g_front, b_front = map(float, front_color_str.split(','))
+                    front_color = (r_front, g_front, b_front)
                 except:
-                    ClientMessage("❌ Invalid color format. Use r,g,b (e.g., 0.2,0.5,0.8)", color=(1,0,0))
+                    ClientMessage("❌ Invalid color format. Use r,g,b (e.g., 0.1,0.1,0.1)", color=(1,0,0))
                     self.value = '@'
                     return
                 # التحقق من أن PB-ID الكابتن ليس guest_
-                if cap1_pb.startswith('guest_') or cap2_pb.startswith('guest_'):
-                    ClientMessage("❌ Captains must have a real PB-ID (not guest).", color=(1,0,0))
-                    self.value = '@'
-                    return
-                club_id = Uts.clubs_system.create_club(club_name, color, icon_name, cap1_pb, cap2_pb, Uts.usernames.get(client_id, "Unknown"))
+                
+                club_id = Uts.clubs_system.create_club(club_name, back_color, front_color, cap1_pb, cap2_pb, Uts.usernames.get(client_id, "Unknown"))
                 ClientMessage(f"✅ Club created with ID: {club_id}", color=(0,1,0))
                 self.value = '@'
 
@@ -4005,10 +4024,7 @@ class Commands:
                     return
                 target_pb = ms[2]
                 # التحقق من أن الهدف ليس guest_
-                if target_pb.startswith('guest_'):
-                    ClientMessage("❌ Cannot send offer to guest player. They must have a real PB-ID.", color=(1,0,0))
-                    self.value = '@'
-                    return
+                
                 try:
                     months = int(ms[3])
                     if months <= 0:
@@ -4951,21 +4967,23 @@ class Commands:
                 ban_key = f"name_{target_name.replace(' ', '_')}"
             Uts.bans_data[ban_key] = ban_info
             Uts.save_bans_data()
+            
+            # ✅ تحديث pdata['banned'] إذا كان للاعب حساب
+            if target_account_id and target_account_id in Uts.pdata:
+                Uts.pdata[target_account_id]['banned'] = True
+                Uts.save_players_data()
+            
             print(f"✅ Ban saved for {target_name} | Key: {ban_key}")
             print(f"   Account: {target_account_id} | Client: {target_client_id}")
             print(f"   Reason: {reason}")
             print(f"   By: {admin_name}")
+
+            # ✅ إزالة تاج النادي قبل الطرد
             if target_client_id and target_client_id != -1 and target_client_id != -999:
+                Uts.clubs_system.remove_club_tag(target_client_id)
                 try:
-                    message = getlanguage("BannedMessage", subs=[reason, admin_name])
-                    Uts.sm(message, color=(1,0,0), clients=[target_client_id], transient=True)
-                    def kick_player():
-                        try:
-                            bs.disconnect_client(target_client_id)
-                            print(f"✅ Kicked banned player: {target_name} (Client ID: {target_client_id})")
-                        except Exception as e:
-                            print(f"❌ Error kicking player: {e}")
-                    bs.apptimer(2.0, kick_player)
+                    # طرد اللاعب فورًا
+                    bs.disconnect_client(target_client_id)
                     ban_msg = getlanguage("BanSuccess", subs=[target_name, admin_name])
                     Uts.cm(ban_msg)
                 except Exception as e:
@@ -4990,15 +5008,19 @@ class Commands:
             target = parts[1]
             print(f"🔓 Unban command on target: {target}")
             found_ban_keys = []
+            target_account_id = None
             for ban_key, ban_info in list(Uts.bans_data.items()):
                 if ban_info.get('account_id') == target:
                     found_ban_keys.append(ban_key)
+                    target_account_id = target
                 elif str(ban_info.get('client_id')) == target:
                     found_ban_keys.append(ban_key)
                 elif ban_info.get('name', '').lower() == target.lower():
                     found_ban_keys.append(ban_key)
+                    target_account_id = ban_info.get('account_id')
                 elif ban_key == target or ban_key.endswith(f"_{target}"):
                     found_ban_keys.append(ban_key)
+                    target_account_id = ban_info.get('account_id')
             if not found_ban_keys:
                 self.clientmessage(getlanguage("NotBanned", subs=[target]), color=(1,0,0))
                 print(f"❌ No ban found for: {target}")
@@ -5008,10 +5030,15 @@ class Commands:
                 if ban_key in Uts.bans_data:
                     ban_info = Uts.bans_data[ban_key]
                     unbanned_names.append(ban_info.get('name', 'Unknown'))
+                    # إزالة علامة الحظر من pdata
+                    acc_id = ban_info.get('account_id')
+                    if acc_id and acc_id in Uts.pdata:
+                        Uts.pdata[acc_id]['banned'] = False
                     del Uts.bans_data[ban_key]
                     print(f"✅ Removed ban: {ban_key}")
             if unbanned_names:
                 Uts.save_bans_data()
+                Uts.save_players_data()
                 admin_name = Uts.usernames.get(client_id, "Admin")
                 names_str = ", ".join(unbanned_names)
                 self.clientmessage(f"✅ تم إلغاء حظر: {names_str}", color=(0,1,0))
@@ -5302,7 +5329,7 @@ class Commands:
                     "/offer yes <club-id> : Accept club offer",     # NEW
                     "/offer no <club-id>  : Reject club offer",     # NEW
                     "/myclub   : Show your club info",              # NEW
-                    "/myid     : Show your PB-ID (or Client ID if guest)",  # NEW
+                    "/myid     : Show your PB-ID (or info if guest)",  # NEW
                     "test      : Test if CheatMax works",
                     "help      : This menu"
                 ]
@@ -5371,7 +5398,7 @@ class Commands:
                     "/weather <type>      : Set global weather (snow, rock, metal, ice, spark, slime, fire, splinter, smoke, rainbow, none)",
                     "",
                     "🏆 **CLUB COMMANDS (Admins only)**",
-                    "/club add <name> <r,g,b> <icon> <cap1-pb> <cap2-pb> : Create club",
+                    "/club add <name> <r,g,b back> <r,g,b front> <cap1-pb> <cap2-pb> : Create club (double text)",
                     "/club delete <club-id> : Delete club",
                 ]
                 for cmd in cmds:
@@ -5416,6 +5443,7 @@ class Commands:
             if not activity:
                 self.clientmessage("❌ No active game found", color=(1,0,0))
                 return
+
             self.util.update_usernames()
             players_data = []
             roster_data = roster()
@@ -5425,83 +5453,118 @@ class Commands:
                         client_id = r.get('client_id')
                         if client_id is None:
                             continue
-                        account_id = r.get('account_id', 'Unknown')
+                        
                         account_name = r.get('display_string', 'Unknown')
                         player_name = account_name
                         players_list = r.get('players', [])
                         if players_list:
                             player_name = players_list[0].get('name_full', player_name)
-                        role = "Player"
+                        
+                        # ========== البحث عن PB-ID بثلاث طرق ==========
+                        pb_id = "No PB-ID"
+                        
+                        # 1. من account_id في الـ roster (الأكثر دقة)
+                        account_id = r.get('account_id')
+                        if account_id and account_id.startswith('pb-'):
+                            pb_id = account_id
+                        else:
+                            # 2. من userpbs
+                            pb_from_userpbs = Uts.userpbs.get(client_id)
+                            if pb_from_userpbs and pb_from_userpbs.startswith('pb-'):
+                                pb_id = pb_from_userpbs
+                            else:
+                                # 3. البحث في pdata عن طريق مطابقة اسم الحساب
+                                for acc_id, acc_data in Uts.pdata.items():
+                                    if 'Accounts' in acc_data and account_name in acc_data['Accounts']:
+                                        pb_id = acc_id
+                                        # تحديث userpbs للاستخدام المستقبلي
+                                        Uts.userpbs[client_id] = pb_id
+                                        break
+                        
+                        # ========== تحديد الدور ==========
                         if client_id == -1:
-                            role = "Owner"
-                        elif account_id in self.util.pdata:
-                            if self.util.pdata[account_id].get('Admin', False):
-                                role = "Admin"
+                            role = "👑 Host"
+                        elif client_id in Uts.accounts and Uts.accounts[client_id].get('Admin', False):
+                            role = "⭐ Admin"
+                        else:
+                            role = "👤 Player"
+                        
+                        # ========== الحصول على التاج ==========
                         tag_text = "None"
-                        if account_id in self.util.pdata:
-                            if 'Tag' in self.util.pdata[account_id]:
-                                tag_data = self.util.pdata[account_id]['Tag']
-                                tag_text = tag_data.get('text', 'None')
+                        if pb_id != "No PB-ID" and pb_id in Uts.pdata and 'Tag' in Uts.pdata[pb_id]:
+                            tag_data = Uts.pdata[pb_id]['Tag']
+                            tag_text = tag_data.get('text', 'None')
+                        
                         players_data.append({
-                            'pb_id': account_id,
+                            'pb_id': pb_id,
                             'role': role,
                             'account_name': account_name,
                             'player_name': player_name,
                             'client_id': client_id,
                             'tag': tag_text
                         })
-                    except:
+                    except Exception as e:
+                        print(f"⚠️ Error processing player in /list: {e}")
                         continue
+
             if not players_data:
-                self.clientmessage("❌ No players found", color=(1,0,0))  
+                self.clientmessage("❌ No players found", color=(1,0,0))
                 return
+
             players_data.sort(key=lambda x: x['client_id'])
-            self.send_chat_message("=============================================[Players_list]==================================================")
-            self.send_chat_message("||        PB-ID / Client ID       ||    Role    ||  Account_name   ||        Name         || Client ID ||   Name Tag  ||")
-            self.send_chat_message("=============================================================================================================")
+
+            # إرسال رأس الجدول
+            header_line1 = "=" * 116
+            header_line2 = "|| PB-ID              || Role   || Account Name      || Player Name      || Client ID || Tag                 ||"
+            header_line3 = "=" * 116
+
+            self.send_chat_message(header_line1)
+            self.send_chat_message(header_line2)
+            self.send_chat_message(header_line3)
+
             for data in players_data:
-                pb_id = Uts.get_reliable_pb_id(data['client_id'])
-                if pb_id.startswith('guest_'):
-                    # عرض client ID بدلاً من guest_
-                    pb_display = f"Client: {data['client_id']}"
-                else:
-                    pb_display = pb_id
-                if len(pb_display) > 20:
+                # تنسيق PB-ID
+                pb_display = data['pb_id']
+                if pb_display in (None, "None", "No PB-ID") or (isinstance(pb_display, str) and pb_display.startswith('guest_')):
+                    pb_display = "No PB-ID"
+                elif isinstance(pb_display, str) and len(pb_display) > 20:
                     pb_display = pb_display[:18] + ".."
-                pb_display = pb_display.ljust(20)
-                role = data['role']
-                if role == "Owner":
-                    role = "👑 Owner"
-                elif role == "Admin":
-                    role = "⭐ Admin"
                 else:
-                    role = "👤 Player"
-                role = role.ljust(12)
-                account_name = str(data['account_name'])
-                if len(account_name) > 15:
-                    account_name = account_name[:13] + ".."
-                account_name = account_name.ljust(15)
-                player_name = str(data['player_name'])
-                if len(player_name) > 18:
-                    player_name = player_name[:16] + ".."
-                player_name = player_name.ljust(18)
-                client_id_str = str(data['client_id'])
+                    pb_display = str(pb_display)
+                pb_display = pb_display.ljust(20)
+
+                role_display = data['role'].ljust(8)
+
+                acc_display = str(data['account_name'])
+                if len(acc_display) > 18:
+                    acc_display = acc_display[:16] + ".."
+                acc_display = acc_display.ljust(18)
+
+                name_display = str(data['player_name'])
+                if len(name_display) > 18:
+                    name_display = name_display[:16] + ".."
+                name_display = name_display.ljust(18)
+
                 if data['client_id'] == -1:
-                    client_id_str = "👑 Host"
-                client_id_str = client_id_str.center(10)
-                tag = str(data['tag'])
-                if len(tag) > 10:
-                    tag = tag[:8] + ".."
-                tag = tag.ljust(10)
-                row = f"|| {pb_display} || {role} || {account_name} || {player_name} || {client_id_str} || {tag} ||"
+                    cid_display = "👑 Host"
+                else:
+                    cid_display = f"🖥️ {data['client_id']}"
+                cid_display = cid_display.center(10)
+
+                tag_display = str(data['tag'])
+                if len(tag_display) > 18:
+                    tag_display = tag_display[:16] + ".."
+                tag_display = tag_display.ljust(18)
+
+                row = f"|| {pb_display} || {role_display} || {acc_display} || {name_display} || {cid_display} || {tag_display} ||"
                 self.send_chat_message(row)
-            self.send_chat_message("==========================[Players_list]=============================")
-            self.send_chat_message(f"👥 Total Players: {len(players_data)}")
-            self.send_chat_message("👑 = Owner/Host | ⭐ = Admin | 👤 = Player")
+
+            self.send_chat_message("=" * 116)
+            self.send_chat_message(f"👥 Total Players: {len(players_data)} | 👑 = Host | ⭐ = Admin | 👤 = Player")
+
         except Exception as e:
             print(f"❌ Error in process_list_players: {e}")
             self.clientmessage("❌ Error showing players list", color=(1,0,0))
-
 
 def ActorMessage(msg: str, actor: spaz.Spaz):
     current_act = bs.get_foreground_host_activity()
@@ -6282,10 +6345,18 @@ def new_on_player_leave(self, player: bs.Player) -> None:
     """يُستدعى عند مغادرة لاعب"""
     # استدعاء الدالة الأصلية إذا كانت موجودة
     if 'OnPlayerLeave' in calls:
-        calls['OnPlayerLeave'](self, player)
+        try:
+            calls['OnPlayerLeave'](self, player)
+        except Exception as e:
+            print(f"❌ Error in original OnPlayerLeave: {e}")
     
     try:
-        client_id = player.sessionplayer.inputdevice.client_id
+        # الحصول على client_id بأمان
+        try:
+            client_id = player.sessionplayer.inputdevice.client_id
+        except AttributeError:
+            print("⚠️ player.sessionplayer or inputdevice not available")
+            return
         
         # التحقق من وقت الدخول والخروج السريع
         if client_id in Uts.join_times:
@@ -6886,6 +6957,9 @@ def final_setup():
         except:
             pass
 
+    # بدء مراقبة الحظر الدورية (BombMaster style)
+    Uts.start_ban_monitoring()
+
     welcome_msg = f"""
 ╔══════════════════════════════════════════╗
 ║       🎮 CheatMax System v2.0.2 🎮      ║
@@ -6897,6 +6971,7 @@ def final_setup():
 ║ • Protection: ✓ Enabled                 ║
 ║ • Ban System: ✓ Active (PB-ID Verified)║
 ║   └─ Instant kick on connection (no message) ║
+║   └─ Periodic ban monitoring (BombMaster style) ║
 ║ • Report System: ✓ Active               ║
 ║ • Commands in lobby: ✓ Fixed            ║
 ║ • Teleport: ✓ Fixed (uses client ID)   ║
@@ -6910,7 +6985,7 @@ def final_setup():
 ║ • Explosion: ✓ Added                  ║
 ║ • Locator: ✓ Added (Glowing)          ║
 ║ • Ping: ✓ Fixed (No errors)           ║
-║ • /List Fixed: ✓ No 'guest_' (shows Client ID) ║
+║ • /List Fixed: ✓ No client-ID in PB-ID column (shows "No PB-ID" for guests) ║
 ║ • A-Soccer Integration: ✓ Auto-save   ║
 ║ • Weather System: ✓ Added & Saved     ║
 ║   └─ Snow, Rock, Metal, Ice, Spark,   ║
@@ -6919,10 +6994,12 @@ def final_setup():
 ║ • Stats System: ✓ Added               ║
 ║   └─ /stats, /tops, -statsshow (toggle leaderboard), -statsrestart (reset) ║
 ║ • Clubs System: ✓ Added               ║
-║   └─ Create clubs, offers, tags, roles║
+║   └─ Create clubs, offers, tags, roles (no icons, double text) ║
 ║ • Player Leave Hook: ✓ Auto-remove club tag ║
-║ • /myid Command: ✓ Shows your PB-ID (or Client ID if guest) ║
+║ • /myid Command: ✓ Shows your PB-ID (as chat message) ║
 ║ • Auto-ban for quick leave: ✓ Enabled (10s) ║
+║ • Ban now removes club tag instantly   ║
+║ • All tags removed on death ✓          ║
 ╚══════════════════════════════════════════╝
     """
     for line in welcome_msg.split('\n'):
