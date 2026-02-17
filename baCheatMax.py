@@ -767,16 +767,8 @@ class Uts:
                 print(f"👑 Admin {client_id} is joining - skip ban check.")
                 return False
 
-            # الحصول على account_id الحقيقي من اللاعب
-            account_id = None
-            try:
-                account_id = sessionplayer.get_v1_account_id()
-            except:
-                pass
-
-            # إذا لم نجد، نحاول من userpbs
-            if not account_id and client_id in Uts.userpbs:
-                account_id = Uts.userpbs[client_id]
+            # الحصول على account_id الحقيقي من اللاعب باستخدام الدالة الموحدة
+            account_id = Uts.get_reliable_pb_id(client_id)
 
             player_name = None
             try:
@@ -1163,10 +1155,12 @@ class Uts:
     def add_or_del_user(c_id: int, add: bool = True) -> None:
         if c_id == -1:
             return Uts.sm("You Are Amazing!!", color=(0.5, 0, 1), clients=[c_id], transient=True)
-        if c_id not in Uts.userpbs:
+        # الحصول على pb-ID باستخدام الدالة الموحدة
+        pb_id = Uts.get_reliable_pb_id(c_id)
+        if not pb_id or not pb_id.startswith('pb-'):
             Uts.sm(f"'{c_id}' Does not belong to any player.", clients=[c_id], transient=True)
         else:
-            user = Uts.userpbs[c_id]
+            user = pb_id
             if add:
                 if not hasattr(Uts, 'pdata'): 
                     Uts.create_players_data()
@@ -1457,30 +1451,37 @@ class Uts:
 
     @staticmethod
     def get_reliable_pb_id(client_id: int) -> str | None:
-        """إرجاع PB-ID موثوق للاعب، حتى لو كان ضيفًا"""
+        """
+        إرجاع pb-ID موثوق للاعب بنفس طريقة الأمر /list.
+        الأولوية: 1) account_id من roster  2) userpbs  3) مطابقة الاسم في pdata
+        """
         if client_id == -1:
-            return None  # المضيف ليس لديه PB-ID
-        # 1. التحقق من userpbs أولاً
+            return None  # المضيف ليس لديه pb-ID
+
+        # 1. محاولة الحصول من userpbs أولاً (الأسرع)
         if client_id in Uts.userpbs and Uts.userpbs[client_id] and Uts.userpbs[client_id].startswith('pb-'):
             return Uts.userpbs[client_id]
-        # 2. البحث في roster
+
+        # 2. البحث في roster عن account_id
         for r in roster():
             if r.get('client_id') == client_id:
                 acc = r.get('account_id')
-                if acc and acc.startswith('pb'):
-                    Uts.userpbs[client_id] = acc
+                if acc and acc.startswith('pb-'):
+                    Uts.userpbs[client_id] = acc  # تخزين للاستخدام المستقبلي
                     return acc
-        # 3. البحث في players dict
-        if client_id in Uts.players and Uts.players[client_id].exists():
-            try:
-                acc = Uts.players[client_id].get_v1_account_id()
-                if acc and acc.startswith('pb'):
-                    Uts.userpbs[client_id] = acc
-                    return acc
-            except:
-                pass
-        # 4. إذا لم يتم العثور على PB-ID، قم بتعيين guest_ مؤقت
-        return f"guest_{client_id}"
+                break
+
+        # 3. البحث في pdata عن طريق مطابقة اسم الحساب (من usernames)
+        player_name = Uts.usernames.get(client_id)
+        if player_name:
+            for acc_id, acc_data in Uts.pdata.items():
+                if 'Accounts' in acc_data and player_name in acc_data['Accounts']:
+                    if acc_id.startswith('pb-'):
+                        Uts.userpbs[client_id] = acc_id
+                        return acc_id
+
+        # 4. إذا لم نجد، نعيد القيمة الحالية من userpbs (قد تكون guest_)
+        return Uts.userpbs.get(client_id)
 
     @staticmethod
     def find_client_id_by_pb(pb_id: str) -> int | None:
@@ -1587,9 +1588,9 @@ class LeaderboardDisplay:
                 # الحصول على اسم اللاعب
                 name = pdata.get('Accounts', [None])[0]
                 if not name:
-                    # البحث عبر Uts.userpbs
-                    for cid, acc in Uts.userpbs.items():
-                        if acc == acc_id:
+                    # البحث عبر Uts.usernames
+                    for cid, pb in Uts.userpbs.items():
+                        if pb == acc_id:
                             name = Uts.usernames.get(cid)
                             break
                 if not name:
@@ -1736,9 +1737,7 @@ class TagSystem:
                     if not player.is_alive() or not player.actor or not player.actor.node:
                         continue
                     client_id = player.sessionplayer.inputdevice.client_id
-                    account_id = None
-                    if client_id in Uts.userpbs:
-                        account_id = Uts.userpbs[client_id]
+                    account_id = Uts.get_reliable_pb_id(client_id)
                     if account_id and account_id in Uts.pdata:
                         player_data = Uts.pdata[account_id]
                         if 'Tag' in player_data:
@@ -1923,11 +1922,7 @@ class TagSystem:
             for player in activity.players:
                 try:
                     client_id = player.sessionplayer.inputdevice.client_id
-                    account_id = None
-                    for acc_id, acc_data in Uts.pdata.items():
-                        if client_id in Uts.userpbs and Uts.userpbs[client_id] == acc_id:
-                            account_id = acc_id
-                            break
+                    account_id = Uts.get_reliable_pb_id(client_id)
                     if account_id and account_id in Uts.pdata:
                         player_data = Uts.pdata[account_id]
                         if 'Tag' in player_data:
@@ -2599,9 +2594,11 @@ class CommandFunctions:
 
     @staticmethod
     def get_my_pb(client_id: int) -> None:
-        if Uts.userpbs.get(client_id):
-            pb = Uts.userpbs[client_id]
+        pb = Uts.get_reliable_pb_id(client_id)
+        if pb:
             Uts.sm(pb, transient=True, clients=[client_id])
+        else:
+            Uts.sm("You don't have a PB-ID (guest).", transient=True, clients=[client_id])
     
     @staticmethod
     def spaz_sjump(node: bs.Node) -> None:
@@ -3382,16 +3379,27 @@ class Commands:
                 ClientMessage(f"Incomplete data \n Example: {ms[0]} 113 fire", color=(1, 0.5, 0))
                 self.value = '@'
             else:
-                if c_id not in self.util.accounts:
+                # التحقق من أن اللاعب موجود
+                if c_id not in self.util.usernames:
                     ClientMessage(f"'{c_id}' Does not belong to any player.", color=(1, 0.5, 0))
                     ClientMessage("We suggest you use the '/list' command", color=(1, 0.5, 0))
                     self.value = '@'
                 else:
+                    # الحصول على pb-ID باستخدام الدالة الموحدة
+                    pb_id = self.util.get_reliable_pb_id(c_id)
+                    if not pb_id:
+                        ClientMessage("Cannot apply effect: player has no PB-ID.", color=(1,0,0))
+                        self.value = '@'
+                        return
+                    
                     if eff not in self.fct.effects():
                         ClientMessage(f"'{eff}' is invalid. enter the command '-effects' for more information.", color=(1, 0.5, 0))
                         self.value = '@'
                     else:
-                        self.util.accounts[c_id]['Effect'] = eff
+                        # التأكد من وجود بيانات اللاعب
+                        if pb_id not in self.util.pdata:
+                            self.util.add_player_data(pb_id)
+                        self.util.pdata[pb_id]['Effect'] = eff
                         self.util.save_players_data()
                         user = self.util.usernames[c_id]
                         ClientMessage(f"Added '{eff}' effect to {user}", color=(0, 0.5, 1))
@@ -3794,10 +3802,10 @@ class Commands:
     def process_stats_command(self, client_id: int):
         """عرض إحصائيات اللاعب بتنسيق جدول أنيق مع أيقونات من القائمة"""
         try:
-            # البحث عن account_id الخاص باللاعب
+            # البحث عن account_id الخاص باللاعب باستخدام الدالة الموحدة
             account_id = Uts.get_reliable_pb_id(client_id)
-            if not account_id:
-                self.clientmessage("❌ Can't Found pb-ID ", color=(1,0,0))
+            if not account_id or (account_id.startswith('guest_') and account_id not in Uts.pdata):
+                self.clientmessage("❌ Can't Found pb-ID or no stats data", color=(1,0,0))
                 return
 
             data = self._load_cheatmax_data()
@@ -3947,7 +3955,7 @@ class Commands:
     def process_myid(self, client_id: int):
         """عرض PB-ID الخاص باللاعب في رسالة دردشة خاصة"""
         pb = Uts.get_reliable_pb_id(client_id)
-        if pb and pb.startswith('guest_'):
+        if not pb or pb.startswith('guest_'):
             self.send_chat_message(f"🆔 You don't have a PB-ID (guest).")
         else:
             self.send_chat_message(f"🆔 Your PB-ID is: {pb}")
@@ -4024,6 +4032,10 @@ class Commands:
                     self.value = '@'
                     return
                 # التحقق من أن PB-ID الكابتن ليس guest_
+                if cap1_pb.startswith('guest_') or cap2_pb.startswith('guest_'):
+                    ClientMessage("❌ Captains must have valid PB-IDs.", color=(1,0,0))
+                    self.value = '@'
+                    return
                 
                 club_id = Uts.clubs_system.create_club(club_name, back_color, front_color, cap1_pb, cap2_pb, Uts.usernames.get(client_id, "Unknown"))
                 ClientMessage(f"✅ Club created with ID: {club_id}", color=(0,1,0))
@@ -4099,6 +4111,10 @@ class Commands:
                     return
                 target_pb = ms[2]
                 # التحقق من أن الهدف ليس guest_
+                if target_pb.startswith('guest_'):
+                    ClientMessage("❌ Cannot send offer to guest players.", color=(1,0,0))
+                    self.value = '@'
+                    return
                 
                 try:
                     months = int(ms[3])
@@ -4221,7 +4237,7 @@ class Commands:
             color = Uts.tag_system.parse_color(color_str)
             if color == 'rainbow':
                 self.clientmessage("⚠️ 'rainbow' is for animated tags only. Using yellow instead.", color=(1,1,0))
-                color = (1.0, 1.0, 0.0)
+                color = (1.0, 1.0, 1.0)
             activity = bs.get_foreground_host_activity()
             if not activity:
                 self.clientmessage("❌ No active game found", color=(1,0,0))
@@ -4233,11 +4249,7 @@ class Commands:
                     if player.is_alive():
                         try:
                             target_client_id = player.sessionplayer.inputdevice.client_id
-                            account_id = None
-                            for acc_id, acc_data in Uts.pdata.items():
-                                if target_client_id in Uts.userpbs and Uts.userpbs[target_client_id] == acc_id:
-                                    account_id = acc_id
-                                    break
+                            account_id = Uts.get_reliable_pb_id(target_client_id)
                             if account_id:
                                 Uts.tag_system.remove_tag_visual(target_client_id)
                                 Uts.tag_system.stop_char_animation(target_client_id)
@@ -4263,10 +4275,7 @@ class Commands:
                 for player in activity.players:
                     if player.sessionplayer.inputdevice.client_id == target_client_id:
                         target_player = player
-                        for acc_id, acc_data in Uts.pdata.items():
-                            if target_client_id in Uts.userpbs and Uts.userpbs[target_client_id] == acc_id:
-                                account_id = acc_id
-                                break
+                        account_id = Uts.get_reliable_pb_id(target_client_id)
                         break
                 if target_player and account_id:
                     player_name = target_player.getname()
@@ -4339,11 +4348,7 @@ class Commands:
                     if player.is_alive():
                         try:
                             target_client_id = player.sessionplayer.inputdevice.client_id
-                            account_id = None
-                            for acc_id, acc_data in Uts.pdata.items():
-                                if target_client_id in Uts.userpbs and Uts.userpbs[target_client_id] == acc_id:
-                                    account_id = acc_id
-                                    break
+                            account_id = Uts.get_reliable_pb_id(target_client_id)
                             if account_id:
                                 Uts.tag_system.remove_tag_visual(target_client_id)
                                 Uts.tag_system.stop_char_animation(target_client_id)
@@ -4371,10 +4376,7 @@ class Commands:
                 for player in activity.players:
                     if player.sessionplayer.inputdevice.client_id == target_client_id:
                         target_player = player
-                        for acc_id, acc_data in Uts.pdata.items():
-                            if target_client_id in Uts.userpbs and Uts.userpbs[target_client_id] == acc_id:
-                                account_id = acc_id
-                                break
+                        account_id = Uts.get_reliable_pb_id(target_client_id)
                         break
                 if target_player and account_id:
                     player_name = target_player.getname()
@@ -4435,10 +4437,7 @@ class Commands:
                 for player in activity.players:
                     if player.sessionplayer.inputdevice.client_id == target_client_id:
                         target_player = player
-                        for acc_id, acc_data in Uts.pdata.items():
-                            if target_client_id in Uts.userpbs and Uts.userpbs[target_client_id] == acc_id:
-                                account_id = acc_id
-                                break
+                        account_id = Uts.get_reliable_pb_id(target_client_id)
                         break
                 if target_player and account_id:
                     if str(target_client_id) in Uts.tag_system.current_tags:
@@ -4559,7 +4558,7 @@ class Commands:
             color = Uts.tag_system.parse_color(color_str)
             if color == 'rainbow':
                 self.clientmessage("⚠️ 'rainbow' is for animated tags only. Using yellow instead.", color=(1,1,0))
-                color = (1.0, 1.0, 0.0)
+                color = (1.0, 1.0, 1.0)
             Uts.tag_system.saved_tag_templates[tag_name] = {
                 'text': text,
                 'color': list(color) if isinstance(color, tuple) else color,
@@ -4608,10 +4607,7 @@ class Commands:
                 for player in activity.players:
                     if player.sessionplayer.inputdevice.client_id == target_client_id:
                         target_player = player
-                        for acc_id, acc_data in Uts.pdata.items():
-                            if target_client_id in Uts.userpbs and Uts.userpbs[target_client_id] == acc_id:
-                                account_id = acc_id
-                                break
+                        account_id = Uts.get_reliable_pb_id(target_client_id)
                         break
                 if target_player and account_id:
                     if target_player.is_alive():
@@ -4998,15 +4994,7 @@ class Commands:
                 print(f"🔍 Searching by Client ID: {target_client_id}")
                 if target_client_id in Uts.usernames:
                     name = Uts.usernames[target_client_id]
-                    account_id = Uts.userpbs.get(target_client_id, None)
-                    # إذا لم نجد account_id، نحاول من roster
-                    if not account_id:
-                        for r in roster():
-                            if r.get('client_id') == target_client_id:
-                                account_id = r.get('account_id')
-                                if account_id and account_id.startswith('pb-'):
-                                    Uts.userpbs[target_client_id] = account_id
-                                break
+                    account_id = Uts.get_reliable_pb_id(target_client_id)  # استخدام الدالة الموحدة
                     print(f"✅ Found player by Client ID: {name} (Account ID: {account_id})")
                     return {
                         'client_id': target_client_id,
@@ -5020,7 +5008,7 @@ class Commands:
                         account_id = r.get('account_id')
                         name = r.get('display_string', f"Player {client_id}")
                         print(f"✅ Found in roster by Client ID: {name} (Account ID: {account_id})")
-                        if account_id and account_id.startswith('pb-'):
+                        if account_id and account_id.startswith('pb-') and client_id is not None:
                             Uts.userpbs[client_id] = account_id
                         return {
                             'client_id': client_id,
@@ -5031,17 +5019,10 @@ class Commands:
             except ValueError:
                 pass
             print(f"🔍 Searching by name: {target}")
+            # 1. البحث في usernames
             for client_id, name in list(Uts.usernames.items()):
                 if name.lower() == target.lower():
-                    account_id = Uts.userpbs.get(client_id, None)
-                    # إذا لم نجد account_id، نحاول من roster
-                    if not account_id:
-                        for r in roster():
-                            if r.get('client_id') == client_id:
-                                account_id = r.get('account_id')
-                                if account_id and account_id.startswith('pb-'):
-                                    Uts.userpbs[client_id] = account_id
-                                break
+                    account_id = Uts.get_reliable_pb_id(client_id)  # استخدام الدالة الموحدة
                     print(f"✅ Found player by name in usernames: {name} (Client ID: {client_id}, Account ID: {account_id})")
                     return {
                         'client_id': client_id,
@@ -5049,11 +5030,12 @@ class Commands:
                         'name': name,
                         'type': 'name'
                     }
+            # 2. البحث في roster
             for r in roster():
                 display_name = r.get('display_string', '')
                 if display_name.lower() == target.lower():
                     client_id = r.get('client_id')
-                    account_id = r.get('account_id', None)
+                    account_id = r.get('account_id')
                     print(f"✅ Found in roster by name: {display_name} (Client ID: {client_id}, Account ID: {account_id})")
                     if account_id and account_id.startswith('pb-') and client_id is not None:
                         Uts.userpbs[client_id] = account_id
@@ -5063,6 +5045,27 @@ class Commands:
                         'name': display_name,
                         'type': 'name'
                     }
+            # 3. البحث في pdata عن طريق Accounts (مطابقة الاسم مع أي حساب في القائمة)
+            for acc_id, acc_data in Uts.pdata.items():
+                if 'Accounts' in acc_data:
+                    for stored_name in acc_data['Accounts']:
+                        if stored_name.lower() == target.lower():
+                            # نبحث عن client_id لهذا الحساب
+                            for cid, pb in Uts.userpbs.items():
+                                if pb == acc_id:
+                                    return {
+                                        'client_id': cid,
+                                        'account_id': acc_id,
+                                        'name': stored_name,
+                                        'type': 'name'
+                                    }
+                            # إذا لم نجد client_id متصل، نعيد بدون client_id
+                            return {
+                                'client_id': None,
+                                'account_id': acc_id,
+                                'name': stored_name,
+                                'type': 'name'
+                            }
             if target.lower() in ['all', 'الكل', 'كل', 'جميع']:
                 print(f"🔍 Target is 'all'")
                 return {
@@ -5253,17 +5256,7 @@ class Commands:
             target = parts[1]
             reason = " ".join(parts[2:]) if len(parts) > 2 else "No reason provided"
             reporter_name = Uts.usernames.get(client_id, "Unknown")
-            reporter_account = Uts.userpbs.get(client_id, None)
-            if reporter_account is None:
-                try:
-                    activity = bs.get_foreground_host_activity()
-                    if activity:
-                        for player in activity.players:
-                            if player.sessionplayer.inputdevice.client_id == client_id:
-                                reporter_account = player.sessionplayer.get_v1_account_id()
-                                break
-                except:
-                    pass
+            reporter_account = Uts.get_reliable_pb_id(client_id)  # استخدام الدالة الموحدة
             if reporter_account is None:
                 reporter_account = "Unknown"
             server_name = cfg.get('Commands', {}).get('HostName', 'Unknown Server')
@@ -7084,6 +7077,8 @@ def final_setup():
 ║ • Player Leave Hook: ✓ Auto-remove club tag ║
 ║ • /myid Command: ✓ Shows your PB-ID (as chat message) ║
 ║ • All tags removed on death ✓          ║
+║ • PB-ID Resolution: ✓ Unified (same as /list) ║
+║   └─ All commands using pb-ID now use same reliable method ║
 ╚══════════════════════════════════════════╝
     """
     for line in welcome_msg.split('\n'):
@@ -7281,6 +7276,20 @@ def system_test():
                 print("❌ Test 10: Player leave hook not installed")
                 tests_failed += 1
         except:
+            tests_failed += 1
+
+        # اختبار دالة get_reliable_pb_id
+        try:
+            test_client = list(Uts.usernames.keys())[0] if Uts.usernames else -1
+            pb = Uts.get_reliable_pb_id(test_client)
+            if pb is not None or test_client == -1:
+                print("✅ Test 11: get_reliable_pb_id works")
+                tests_passed += 1
+            else:
+                print("❌ Test 11: get_reliable_pb_id failed")
+                tests_failed += 1
+        except Exception as e:
+            print(f"❌ Test 11 exception: {e}")
             tests_failed += 1
 
         print(f"📊 Test Results: {tests_passed} passed, {tests_failed} failed")
