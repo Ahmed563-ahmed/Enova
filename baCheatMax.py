@@ -5494,7 +5494,6 @@ class Commands:
                         self.send_chat_message(cmd)
             else:
                 self.clientmessage("❌ Invalid help page. Use 1-4", color=(1,0,0))
-
     def process_list_players(self):
         try:
             activity = bs.get_foreground_host_activity()
@@ -5502,7 +5501,7 @@ class Commands:
                 self.clientmessage("❌ No active game found", color=(1,0,0))
                 return
 
-            self.util.update_usernames()
+            self.util.update_usernames()  # تحديث الأسماء فقط (آمن)
             players_data = []
             roster_data = roster()
             if roster_data:
@@ -5518,36 +5517,23 @@ class Commands:
                         if players_list:
                             player_name = players_list[0].get('name_full', player_name)
                         
-                        # ========== البحث عن PB-ID بثلاث طرق ==========
+                        # ========== الحصول على PB-ID بأمان (بدون تحديث userpbs) ==========
                         pb_id = "No PB-ID"
-                        
-                        # 1. من account_id في الـ roster (الأكثر دقة)
                         account_id = r.get('account_id')
                         if account_id and account_id.startswith('pb-'):
                             pb_id = account_id
-                            # تحديث userpbs فوراً
-                            Uts.userpbs[client_id] = pb_id
-                        else:
-                            # 2. من userpbs
-                            pb_from_userpbs = Uts.userpbs.get(client_id)
-                            if pb_from_userpbs and pb_from_userpbs.startswith('pb-'):
-                                pb_id = pb_from_userpbs
-                            else:
-                                # 3. البحث في pdata عن طريق مطابقة اسم الحساب
-                                for acc_id, acc_data in Uts.pdata.items():
-                                    if 'Accounts' in acc_data and account_name in acc_data['Accounts']:
-                                        pb_id = acc_id
-                                        # تحديث userpbs للاستخدام المستقبلي
-                                        Uts.userpbs[client_id] = pb_id
-                                        break
+                        # لا نقوم بتحديث Uts.userpbs هنا لتجنب أي تأثير جانبي على نظام الحظر
                         
                         # ========== تحديد الدور ==========
                         if client_id == -1:
                             role = "👑 Host"
-                        elif client_id in Uts.accounts and Uts.accounts[client_id].get('Admin', False):
-                            role = "⭐ Admin"
                         else:
-                            role = "👤 Player"
+                            # استخدام .get لتجنب KeyError
+                            acc = Uts.accounts.get(client_id)
+                            if acc and acc.get('Admin', False):
+                                role = "⭐ Admin"
+                            else:
+                                role = "👤 Player"
                         
                         # ========== الحصول على التاج ==========
                         tag_text = "None"
@@ -5625,7 +5611,6 @@ class Commands:
         except Exception as e:
             print(f"❌ Error in process_list_players: {e}")
             self.clientmessage("❌ Error showing players list", color=(1,0,0))
-
 def ActorMessage(msg: str, actor: spaz.Spaz):
     current_act = bs.get_foreground_host_activity()
     if current_act is None:
