@@ -6429,9 +6429,9 @@ def new_ga_on_transition_in(self) -> None:
 def new_on_player_join(self, player: bs.Player) -> None:
     calls['OnPlayerJoin'](self, player)
     
-    # التحقق من الحظر أولاً
-    if Uts.check_player_ban_on_join(player):
-        return
+    # # التحقق من الحظر أولاً
+    # if Uts.check_player_ban_on_join(player):
+    #     return
 
     Uts.player_join(player)
     
@@ -7037,7 +7037,7 @@ def final_setup():
             pass
 
     # بدء مراقبة الحظر الدورية (BombMaster style)
-    Uts.start_ban_monitoring()
+    # Uts.start_ban_monitoring()
 
     welcome_msg = f"""
 ╔══════════════════════════════════════════╗
