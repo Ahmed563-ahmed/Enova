@@ -1,9 +1,7 @@
 # ba_meta require api 9
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-
 import os, random, json
 import shutil
 from datetime import datetime, timedelta
@@ -659,6 +657,24 @@ class Uts:
             w = json.dumps(Uts.reports_data, indent=4)
             f.write(w)
 
+    # ==================== تنظيف بيانات الحظر من الإدخالات غير الصالحة (المضيف) ====================
+    @staticmethod
+    def clean_bans_data():
+        """إزالة أي بيانات حظر غير صالحة (مثل client_-1)"""
+        removed = []
+        for key in list(Uts.bans_data.keys()):
+            if key == "client_-1" or key == "pb_None" or key == "name_Host":
+                removed.append(key)
+                del Uts.bans_data[key]
+            else:
+                ban_info = Uts.bans_data[key]
+                if ban_info.get('client_id') == -1 or ban_info.get('account_id') == 'pb--1':
+                    removed.append(key)
+                    del Uts.bans_data[key]
+        if removed:
+            Uts.save_bans_data()
+            print(f"🧹 Cleaned invalid ban entries: {removed}")
+
     # ==================== مراقبة الحظر الدورية (BombMaster style) - محسنة ====================
     @staticmethod
     def start_ban_monitoring():
@@ -737,6 +753,7 @@ class Uts:
         try:
             sessionplayer = player.sessionplayer
             client_id = sessionplayer.inputdevice.client_id
+            # المضيف (client_id = -1) لا يتم حظره أبداً
             if client_id == -1:
                 print("👑 Host is joining - skip ban check.")
                 return False
@@ -1417,8 +1434,10 @@ class Uts:
         """ % Uts.key
 
     @staticmethod
-    def get_reliable_pb_id(client_id: int) -> str:
+    def get_reliable_pb_id(client_id: int) -> str | None:
         """إرجاع PB-ID موثوق للاعب، حتى لو كان ضيفًا"""
+        if client_id == -1:
+            return None  # المضيف ليس لديه PB-ID
         # 1. التحقق من userpbs أولاً
         if client_id in Uts.userpbs and Uts.userpbs[client_id] and Uts.userpbs[client_id].startswith('pb-'):
             return Uts.userpbs[client_id]
@@ -1439,6 +1458,7 @@ class Uts:
             except:
                 pass
         # 4. إذا لم يتم العثور على PB-ID، قم بتعيين guest_ مؤقت
+        return f"guest_{client_id}"
 
     @staticmethod
     def find_client_id_by_pb(pb_id: str) -> int | None:
@@ -5494,6 +5514,7 @@ class Commands:
                         self.send_chat_message(cmd)
             else:
                 self.clientmessage("❌ Invalid help page. Use 1-4", color=(1,0,0))
+
     def process_list_players(self):
         try:
             activity = bs.get_foreground_host_activity()
@@ -5501,7 +5522,7 @@ class Commands:
                 self.clientmessage("❌ No active game found", color=(1,0,0))
                 return
 
-            self.util.update_usernames()  # تحديث الأسماء فقط (آمن)
+            self.util.update_usernames()
             players_data = []
             roster_data = roster()
             if roster_data:
@@ -5517,23 +5538,36 @@ class Commands:
                         if players_list:
                             player_name = players_list[0].get('name_full', player_name)
                         
-                        # ========== الحصول على PB-ID بأمان (بدون تحديث userpbs) ==========
+                        # ========== البحث عن PB-ID بثلاث طرق ==========
                         pb_id = "No PB-ID"
+                        
+                        # 1. من account_id في الـ roster (الأكثر دقة)
                         account_id = r.get('account_id')
                         if account_id and account_id.startswith('pb-'):
                             pb_id = account_id
-                        # لا نقوم بتحديث Uts.userpbs هنا لتجنب أي تأثير جانبي على نظام الحظر
+                            # تحديث userpbs فوراً
+                            Uts.userpbs[client_id] = pb_id
+                        else:
+                            # 2. من userpbs
+                            pb_from_userpbs = Uts.userpbs.get(client_id)
+                            if pb_from_userpbs and pb_from_userpbs.startswith('pb-'):
+                                pb_id = pb_from_userpbs
+                            else:
+                                # 3. البحث في pdata عن طريق مطابقة اسم الحساب
+                                for acc_id, acc_data in Uts.pdata.items():
+                                    if 'Accounts' in acc_data and account_name in acc_data['Accounts']:
+                                        pb_id = acc_id
+                                        # تحديث userpbs للاستخدام المستقبلي
+                                        Uts.userpbs[client_id] = pb_id
+                                        break
                         
                         # ========== تحديد الدور ==========
                         if client_id == -1:
                             role = "👑 Host"
+                        elif client_id in Uts.accounts and Uts.accounts[client_id].get('Admin', False):
+                            role = "⭐ Admin"
                         else:
-                            # استخدام .get لتجنب KeyError
-                            acc = Uts.accounts.get(client_id)
-                            if acc and acc.get('Admin', False):
-                                role = "⭐ Admin"
-                            else:
-                                role = "👤 Player"
+                            role = "👤 Player"
                         
                         # ========== الحصول على التاج ==========
                         tag_text = "None"
@@ -5611,6 +5645,7 @@ class Commands:
         except Exception as e:
             print(f"❌ Error in process_list_players: {e}")
             self.clientmessage("❌ Error showing players list", color=(1,0,0))
+
 def ActorMessage(msg: str, actor: spaz.Spaz):
     current_act = bs.get_foreground_host_activity()
     if current_act is None:
@@ -6355,6 +6390,15 @@ def hook_chat_filter():
     except Exception as e:
         print(f"⚠️ Failed to hook chat filter: {e}")
 
+def verify_chat_filter():
+    """التحقق من أن فلتر الشات مربوط بشكل صحيح"""
+    import bascenev1._hooks
+    if hasattr(bascenev1._hooks.filter_chat_message, '__wrapped__'):
+        print("✅ Chat filter is hooked")
+    else:
+        print("⚠️ Chat filter not hooked, attempting again...")
+        hook_chat_filter()
+
 # ------------------ Game Activity hooks ------------------
 def new_ga_on_transition_in(self) -> None:
     calls['GA_OnTransitionIn'](self)
@@ -6411,22 +6455,22 @@ def new_playerspaz_init_(self, *args, **kwargs) -> None:
         user = None
     if not hasattr(Uts, 'pdata'): 
         Uts.create_players_data()
+    # تطبيق التأثيرات مع تأخير بسيط لضمان وجود العقد
     if user and user in Uts.pdata:
         eff = Uts.pdata[user]['Effect']
-        apply_effect(self, eff)
-    # إضافة تاج النادي إذا كان اللاعب عضواً في نادي
+        bs.timer(0.2, lambda: apply_effect(self, eff))
+    # إضافة تاج النادي إذا كان اللاعب عضواً في نادي (مع تأخير)
     if user and user in Uts.pdata and "club" in Uts.pdata[user]:
         club_info = Uts.pdata[user]["club"]
         club_id = club_info["club-id"]
         role = club_info["role"]
         club_data = Uts.clubs_system.get_club_by_id(club_id)
         if club_data:
-            # تأجيل إنشاء التاج حتى يتم إعداد اللاعب بالكامل
             current_act = bs.get_foreground_host_activity()
             if current_act:
                 client_id = self._player.sessionplayer.inputdevice.client_id
                 bs.timer(0.5, lambda: Uts.clubs_system.create_club_tag(self, client_id, club_data, role, current_act))
-    # تاج مخصص
+    # تاج مخصص (مع تأخير)
     if user and user in Uts.tags:
         tag_data = Uts.tags[user]
         text = tag_data.get('text', '')
@@ -6434,8 +6478,7 @@ def new_playerspaz_init_(self, *args, **kwargs) -> None:
         scale = tag_data.get('scale', 0.02)
         current_act = bs.get_foreground_host_activity()
         if current_act is not None:
-            with current_act.context:
-                bs.timer(0.5, lambda: create_custom_tag_for_spaz(self, text, color, scale))
+            bs.timer(0.6, lambda: create_custom_tag_for_spaz(self, text, color, scale))
 
 def create_custom_tag_for_spaz(spaz, text, color, scale):
     if not spaz.node or not spaz.node.exists():
@@ -6670,6 +6713,7 @@ def _install() -> None:
             print(f"✅ Added owner: {owner_account}")
 
         Uts.create_bans_data()
+        Uts.clean_bans_data()  # تنظيف بيانات الحظر غير الصالحة (المضيف)
         Uts.create_reports_data()
         Uts.create_warns_data()
 
@@ -6702,6 +6746,7 @@ def settings():
 
     try:
         Uts.create_bans_data()
+        Uts.clean_bans_data()
         Uts.create_reports_data()
         print("✅ Bans and reports systems initialized")
     except Exception as e:
@@ -7064,6 +7109,7 @@ class CheatMaxSystem(bs.Plugin):
             bs.apptimer(4.0, setup_performance_monitor)
             bs.apptimer(5.0, add_special_commands)
             bs.apptimer(6.0, final_setup)
+            bs.apptimer(7.0, verify_chat_filter)
             self.initialized = True
             print("✅ CheatMax System initialization sequence started")
         except Exception as e:
@@ -7214,9 +7260,6 @@ def system_test():
                 tests_failed += 1
         except:
             tests_failed += 1
-
-        # اختبار join_times (تمت إزالته)
-        # تم حذف هذا الاختبار لأن join_times لم يعد موجوداً
 
         print(f"📊 Test Results: {tests_passed} passed, {tests_failed} failed")
         if tests_failed == 0:
