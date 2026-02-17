@@ -694,6 +694,10 @@ class Uts:
                         if client_id is None or client_id == -1:
                             continue
                         
+                        # التحقق من أن اللاعب ليس Admin
+                        if CommandFunctions.user_is_admin(client_id):
+                            continue
+                        
                         # الحصول على account_id الحالي من الـ roster (المصدر الأوثق)
                         current_account_id = player_info.get('account_id')
                         if not current_account_id:
@@ -758,6 +762,11 @@ class Uts:
                 print("👑 Host is joining - skip ban check.")
                 return False
 
+            # التحقق مما إذا كان اللاعب Admin (حتى لا يُحظر)
+            if CommandFunctions.user_is_admin(client_id):
+                print(f"👑 Admin {client_id} is joining - skip ban check.")
+                return False
+
             # الحصول على account_id الحقيقي من اللاعب
             account_id = None
             try:
@@ -788,6 +797,10 @@ class Uts:
             if account_id and account_id.startswith('pb-') and account_id in Uts.pdata:
                 if Uts.pdata[account_id].get('banned', False):
                     print(f"🚫 Player {player_name} is banned in pdata (pb: {account_id}).")
+                    # حتى لو كان في pdata، نتحقق مرة أخرى إذا كان Admin (احتياطاً)
+                    if CommandFunctions.user_is_admin(client_id):
+                        print(f"⚠️ But {player_name} is admin, ignoring ban in pdata.")
+                        return False
                     def kick():
                         try:
                             bs.disconnect_client(client_id)
@@ -802,6 +815,9 @@ class Uts:
                 for ban_key, ban_info in Uts.bans_data.items():
                     if ban_info.get('account_id') == account_id:
                         print(f"🚫 Ban match (PB-ID): {ban_key}")
+                        if CommandFunctions.user_is_admin(client_id):
+                            print(f"⚠️ But {player_name} is admin, ignoring ban in bans_data.")
+                            return False
                         def kick():
                             try:
                                 bs.disconnect_client(client_id)
@@ -816,6 +832,9 @@ class Uts:
                 for ban_key, ban_info in Uts.bans_data.items():
                     if ban_info.get('client_id') == client_id:
                         print(f"🚫 Ban match (Client ID): {ban_key}")
+                        if CommandFunctions.user_is_admin(client_id):
+                            print(f"⚠️ But {player_name} is admin, ignoring ban in bans_data.")
+                            return False
                         def kick():
                             try:
                                 bs.disconnect_client(client_id)
@@ -832,6 +851,9 @@ class Uts:
                     banned_name = ban_info.get('name', '').lower()
                     if banned_name and banned_name == player_name_lower:
                         print(f"🚫 Ban match (Name – no PB-ID): {ban_key}")
+                        if CommandFunctions.user_is_admin(client_id):
+                            print(f"⚠️ But {player_name} is admin, ignoring ban in bans_data.")
+                            return False
                         def kick():
                             try:
                                 bs.disconnect_client(client_id)
@@ -3925,7 +3947,7 @@ class Commands:
     def process_myid(self, client_id: int):
         """عرض PB-ID الخاص باللاعب في رسالة دردشة خاصة"""
         pb = Uts.get_reliable_pb_id(client_id)
-        if pb.startswith('guest_'):
+        if pb and pb.startswith('guest_'):
             self.send_chat_message(f"🆔 You don't have a PB-ID (guest).")
         else:
             self.send_chat_message(f"🆔 Your PB-ID is: {pb}")
