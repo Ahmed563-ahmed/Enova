@@ -1655,7 +1655,41 @@ class LeaderboardDisplay:
         except:
             return {}
 
+# ==================== Flag Actor for PhotoSession ====================
+class Flag(bs.Actor):
+    """علم بسيط يمكن وضعه في العالم"""
+    def __init__(self, position=(0, 1, 0), color=(1, 1, 1), touchable=False):
+        super().__init__()
+        shared = SharedObjects.get()
+        # استخدم mesh العلم إذا كان متوفراً، وإلا استخدم شكل بسيط
+        try:
+            mesh = bs.getmesh('flag')
+            texture = bs.gettexture('flag')
+        except:
+            mesh = bs.getmesh('shield')  # بديل
+            texture = bs.gettexture('flagColor')
+        self.node = bs.newnode('prop',
+            delegate=self,
+            attrs={
+                'position': position,
+                'mesh': mesh,
+                'color_texture': texture,
+                'body': 'sphere',
+                'body_scale': 0.0,
+                'mesh_scale': 1.0,
+                'shadow_size': 0.0,
+                'materials': [shared.object_material] if touchable else [shared.footing_material],
+                'reflection': 'soft',
+                'reflection_scale': [0.5],
+            })
+        self.node.color = color
 
+    def handlemessage(self, msg):
+        if isinstance(msg, bs.DieMessage):
+            if self.node:
+                self.node.delete()
+        else:
+            super().handlemessage(msg)
 # ==================== نظام التيجان المتطور ====================
 class TagSystem:
     def __init__(self):
@@ -7676,5 +7710,6 @@ bs.apptimer(8.0, system_test)
 print("=" * 50)
 print("CheatMax System Code Loaded Successfully!")
 print("=" * 50)
+
 
 
