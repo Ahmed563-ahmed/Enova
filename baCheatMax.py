@@ -2627,7 +2627,9 @@ class CommandFunctions:
             '/teleport', '/fly','/warn', '/warns', '/clearwarns', '/ride', '/invisible',
             '/tint', '/upwall', '/downwall', '/floor', '/spawnball', '/explosion', '/locator', '/ping',
             '/weather', '/tops', '-statsrestart',
-            '/club'
+            '/club', '/photo', '/photoclear',   # الأمر الجديد
+            # ===== الأوامر الجديدة لـ A-Soccer =====
+            '/backtext', '/fronttext', '/grab', '/fighting'
         ]
 
     @staticmethod
@@ -3633,7 +3635,26 @@ class Commands:
         elif ms[0] == '-statsrestart':
             self.process_statsrestart_command(self.client_id)
             self.value = '@'
+        elif ms[0] == '/photo':
+            self.process_photo_command(msg, self.client_id)
+            self.value = '@'
+        elif ms[0] == '/photoclear':
+            self.process_photoclear_command(self.client_id)  # ✅ تصحيح: إضافة self.
+            self.value = '@'
 
+        # ========== الأوامر الجديدة لـ A-Soccer ==========
+        elif ms[0] == '/backtext':
+            self.process_backtext_command(msg, self.client_id)
+            self.value = '@'
+        elif ms[0] == '/fronttext':
+            self.process_fronttext_command(msg, self.client_id)
+            self.value = '@'
+        elif ms[0] == '/grab':
+            self.process_grab_command(msg, self.client_id)
+            self.value = '@'
+        elif ms[0] == '/fighting':
+            self.process_fighting_command(msg, self.client_id)
+            self.value = '@'
     def owner_commands(self) -> None:
         msg = self.msg.strip()
         ms = self.arguments
@@ -3811,6 +3832,123 @@ class Commands:
             print(f"✅ A-Soccer config updated: {key} = ({r},{g},{b})")
         except Exception as e:
             print(f"❌ Failed to update A-Soccer config: {e}")
+    
+    def process_backtext_command(self, msg: str, client_id: int):
+        """تغيير النص الخلفي في ملعب A-Soccer (الموجود في -3.06,0.66,-8.5)"""
+        self._process_text_command(msg, client_id, 'back', (-3.06, 0.66, -8.5))
+
+    def process_fronttext_command(self, msg: str, client_id: int):
+        """تغيير النص الأمامي في ملعب A-Soccer (الموجود في -3,0.7,-8.5)"""
+        self._process_text_command(msg, client_id, 'front', (-3.0, 0.7, -8.5))
+
+    def _process_text_command(self, msg: str, client_id: int, label: str, target_pos: tuple):
+        """دالة مساعدة لتغيير نص في موقع محدد"""
+        try:
+            parts = msg.split()
+            if len(parts) < 3:
+                self.clientmessage(f"❌ Use: /{label}text <text> <r,g,b[,a]>", color=(1,0,0))
+                self.clientmessage("📝 Example: /fronttext 'New Title' 1,0.5,0", color=(1,1,0))
+                return
+
+            # استخراج النص واللون
+            color_str = parts[-1]
+            text_parts = parts[1:-1]
+            if not text_parts:
+                self.clientmessage("❌ No text provided", color=(1,0,0))
+                return
+            new_text = ' '.join(text_parts)
+
+            # تحليل اللون
+            try:
+                rgba = [float(x.strip()) for x in color_str.split(',')]
+                if len(rgba) == 3:
+                    r, g, b = rgba
+                    a = 1.0
+                elif len(rgba) == 4:
+                    r, g, b, a = rgba
+                else:
+                    raise ValueError
+            except:
+                self.clientmessage("❌ Invalid color format. Use r,g,b or r,g,b,a", color=(1,0,0))
+                return
+
+            activity = bs.get_foreground_host_activity()
+            if not activity or activity.__class__.__name__ != 'SoccerGame':
+                self.clientmessage("❌ No active Soccer game", color=(1,0,0))
+                return
+
+            with activity.context:
+                found = False
+                for node in bs.getnodes():
+                    if node.getnodetype() == 'text' and node.in_world:
+                        pos = node.position
+                        # تحقق من الموقع بتسامح بسيط
+                        if (abs(pos[0] - target_pos[0]) < 0.1 and
+                            abs(pos[1] - target_pos[1]) < 0.1 and
+                            abs(pos[2] - target_pos[2]) < 0.1):
+                            node.text = new_text
+                            node.color = (r, g, b, a)
+                            found = True
+                            break
+                if found:
+                    self.clientmessage(f"✅ {label.capitalize()} text updated", color=(0,1,0))
+                else:
+                    self.clientmessage(f"⚠️ {label.capitalize()} text node not found", color=(1,1,0))
+
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+
+    def process_grab_command(self, msg: str, client_id: int):
+        """تفعيل/تعطيل خاصية الإمساك (pickup) في A-Soccer"""
+        try:
+            parts = msg.split()
+            if len(parts) < 2 or parts[1].lower() not in ['on', 'off']:
+                self.clientmessage("❌ Use: /grab <on|off>", color=(1,0,0))
+                return
+            state = parts[1].lower() == 'on'
+
+            activity = bs.get_foreground_host_activity()
+            if not activity or activity.__class__.__name__ != 'SoccerGame':
+                self.clientmessage("❌ No active Soccer game", color=(1,0,0))
+                return
+
+            # تغيير إعداد النشاط
+            activity.enable_pickup = state
+            self.clientmessage(f"✅ Grab mode set to {state}", color=(0,1,0))
+
+            # تحديث اللاعبين الحاليين (اختياري)
+            with activity.context:
+                for player in activity.players:
+                    if player.is_alive() and player.actor:
+                        # إعادة ربط التحكم لتفعيل/تعطيل pickup
+                        player.actor.connect_controls_to_player(enable_pickup=state)
+
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+
+    def process_fighting_command(self, msg: str, client_id: int):
+        """تفعيل/تعطيل إمكانية إيذاء اللاعبين (invincible) في A-Soccer"""
+        try:
+            parts = msg.split()
+            if len(parts) < 2 or parts[1].lower() not in ['on', 'off']:
+                self.clientmessage("❌ Use: /fighting <on|off>", color=(1,0,0))
+                return
+            state = parts[1].lower() == 'on'   # on = fighting allowed (not invincible)
+
+            activity = bs.get_foreground_host_activity()
+            if not activity or activity.__class__.__name__ != 'SoccerGame':
+                self.clientmessage("❌ No active Soccer game", color=(1,0,0))
+                return
+
+            with activity.context:
+                for player in activity.players:
+                    if player.is_alive() and player.actor and player.actor.node:
+                        # invincible = True يعني لا يتأثر بالضربات
+                        player.actor.node.invincible = not state
+                self.clientmessage(f"✅ Fighting mode set to {state}", color=(0,1,0))
+
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
 
     def process_weather_command(self, msg: str, client_id: int):
         try:
@@ -5577,7 +5715,171 @@ class Commands:
                         self.send_chat_message(cmd)
             else:
                 self.clientmessage("❌ Invalid help page. Use 1-4", color=(1,0,0))
+    # ==================== الأمر /photo - إنشاء منصة جديدة دون مسح القديمة ====================
+    # تم نقل كلاس PhotoSession إلى النطاق العام (خارج الدالة) ليكون متاحاً لأمر /photoclear
+    class PhotoSession:
+        """جلسة تصوير: تحتوي على منصة وعلمين وفقاقيع"""
+        def __init__(self, activity, color):
+            self.activity = activity
+            self.color = color
+            self.main_platform = None
+            self.platform_collide = None
+            self.left_flag = None
+            self.right_flag = None
+            self.left_flag_collide = None
+            self.right_flag_collide = None
+            self.bubble_timer = None
+            self.create_elements()
 
+        def create_elements(self):
+            with self.activity.context:
+                shared = SharedObjects.get()
+
+                # مادة تصادم مشتركة (تمنع المرور)
+                solid_material = bs.Material()
+                solid_material.add_actions(
+                    conditions=('they_have_material', shared.player_material),
+                    actions=(
+                        ('modify_part_collision', 'collide', True),
+                        ('modify_part_collision', 'physical', True)))
+
+                # ========== المنصة الرئيسية (أعرض) ==========
+                platform_width = 8.0
+                self.main_platform = bs.newnode('locator',
+                    attrs={
+                        'shape': 'box',
+                        'position': (0.0, 0.25, -3),
+                        'color': self.color,
+                        'opacity': 1,
+                        'draw_beauty': True,
+                        'additive': False,
+                        'size': [platform_width, 0.5, 1.9]
+                    })
+
+                self.platform_collide = bs.newnode('region',
+                    attrs={
+                        'position': (0, 0.3, -3),
+                        'scale': (platform_width, 0.5, 1.9),
+                        'type': 'box',
+                        'materials': (shared.footing_material, solid_material)
+                    })
+
+                # ========== الأعلام الحقيقية ==========
+                flag_z = -2
+                flag_x_left = -platform_width/2 + 0.5
+                flag_x_right = platform_width/2 - 0.5
+
+                self.left_flag = Flag(position=(flag_x_left, 0.0, flag_z),
+                                    color=self.color,
+                                    touchable=False)
+                self.left_flag_collide = bs.newnode('region',
+                    attrs={
+                        'position': (flag_x_left, 1.0, flag_z),
+                        'scale': (0.5, 2.0, 0.3),
+                        'type': 'box',
+                        'materials': (shared.footing_material, solid_material)
+                    })
+
+                self.right_flag = Flag(position=(flag_x_right, 0.0, flag_z),
+                                    color=self.color,
+                                    touchable=False)
+                self.right_flag_collide = bs.newnode('region',
+                    attrs={
+                        'position': (flag_x_right, 1.0, flag_z),
+                        'scale': (0.5, 2.0, 0.3),
+                        'type': 'box',
+                        'materials': (shared.footing_material, solid_material)
+                    })
+
+                # فقاقيع اختيارية
+                self.bubble_timer = bs.Timer(1.0, self.emit_bubbles, repeat=True)
+
+        def emit_bubbles(self):
+            if not self.main_platform or not self.main_platform.exists():
+                return
+            with self.activity.context:
+                for _ in range(8):
+                    x = random.uniform(-4, 4)
+                    y = random.uniform(1, 5)
+                    z = random.uniform(-3, -1)
+                    bs.emitfx(position=(x, y, z),
+                              count=3,
+                              spread=0.5,
+                              scale=0.6,
+                              chunk_type='bubble' if hasattr(bs, 'chunk_type_bubble') else 'spark')
+
+        def cleanup(self):
+            """حذف جميع عناصر هذه الجلسة"""
+            if self.bubble_timer:
+                self.bubble_timer = None
+            with self.activity.context:
+                if self.main_platform and self.main_platform.exists():
+                    self.main_platform.delete()
+                if self.platform_collide and self.platform_collide.exists():
+                    self.platform_collide.delete()
+                if self.left_flag_collide and self.left_flag_collide.exists():
+                    self.left_flag_collide.delete()
+                if self.right_flag_collide and self.right_flag_collide.exists():
+                    self.right_flag_collide.delete()
+                if self.left_flag:
+                    self.left_flag.handlemessage(bs.DieMessage())
+                if self.right_flag:
+                    self.right_flag.handlemessage(bs.DieMessage())
+            print("🧹 Photo session cleaned up.")
+
+    def process_photo_command(self, msg: str, client_id: int):
+        """إنشاء منصة تصوير جديدة دون حذف القديمة"""
+        try:
+            parts = msg.split()
+            if len(parts) < 2:
+                self.clientmessage("❌ Use: /photo <r,g,b>", color=(1,0,0))
+                self.clientmessage("📝 Example: /photo 1,0.5,0", color=(1,1,0))
+                return
+
+            # تحليل اللون
+            try:
+                r_str, g_str, b_str = parts[1].split(',')
+                r = float(r_str)
+                g = float(g_str)
+                b = float(b_str)
+                color = (r, g, b)
+            except Exception:
+                self.clientmessage("❌ Invalid color format. Use r,g,b (e.g., 1,0.5,0)", color=(1,0,0))
+                return
+
+            activity = bs.get_foreground_host_activity()
+            if not activity:
+                self.clientmessage("❌ No active game", color=(1,0,0))
+                return
+
+            # ⛔ لا نقوم بحذف الجلسات السابقة - نضيف الجديدة فقط
+            # إذا لم تكن القائمة موجودة، ننشئها (في Uts)
+            if not hasattr(Uts, 'photo_sessions'):
+                Uts.photo_sessions = []
+
+            # إنشاء الجلسة الجديدة وإضافتها إلى القائمة
+            session = self.PhotoSession(activity, color)
+            Uts.photo_sessions.append(session)
+
+            self.clientmessage(f"📸 New photo session created with color ({r},{g},{b}) - total: {len(Uts.photo_sessions)}", color=(0,1,0))
+
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+
+    # ==================== أمر مسح جميع جلسات التصوير ====================
+    def process_photoclear_command(self, client_id: int):
+        """حذف جميع جلسات التصوير النشطة"""
+        try:
+            if hasattr(Uts, 'photo_sessions') and Uts.photo_sessions:
+                count = len(Uts.photo_sessions)
+                for session in Uts.photo_sessions:
+                    session.cleanup()
+                Uts.photo_sessions.clear()
+                self.clientmessage(f"✅ Cleared {count} photo session(s).", color=(0,1,0))
+            else:
+                self.clientmessage("📭 No active photo sessions.", color=(0.5,0.5,1))
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
     def process_list_players(self):
         try:
             activity = bs.get_foreground_host_activity()
@@ -7375,3 +7677,4 @@ bs.apptimer(8.0, system_test)
 print("=" * 50)
 print("CheatMax System Code Loaded Successfully!")
 print("=" * 50)
+
