@@ -1692,117 +1692,174 @@ class Flag(bs.Actor):
             super().handlemessage(msg)
 
 # ==================== PhotoSession (تم نقله إلى الخارج) ====================
-class PhotoSession:
-    """جلسة تصوير: تحتوي على منصة وعلمين وفقاقيع"""
-    def __init__(self, activity, color):
-        self.activity = activity
-        self.color = color
-        self.main_platform = None
-        self.platform_collide = None
-        self.left_flag = None
-        self.right_flag = None
-        self.left_flag_collide = None
-        self.right_flag_collide = None
-        self.bubble_timer = None
-        self.create_elements()
 
-    def create_elements(self):
-        with self.activity.context:
-            shared = SharedObjects.get()
-
-            # مادة تصادم مشتركة (تمنع المرور)
-            solid_material = bs.Material()
-            solid_material.add_actions(
-                conditions=('they_have_material', shared.player_material),
-                actions=(
-                    ('modify_part_collision', 'collide', True),
-                    ('modify_part_collision', 'physical', True)))
-
-            # ========== المنصة الرئيسية (أعرض) ==========
-            platform_width = 8.0
-            self.main_platform = bs.newnode('locator',
-                attrs={
-                    'shape': 'box',
-                    'position': (0.0, 0.25, -3),
-                    'color': self.color,
-                    'opacity': 1,
-                    'draw_beauty': True,
-                    'additive': False,
-                    'size': [platform_width, 0.5, 1.9]
-                })
-
-            self.platform_collide = bs.newnode('region',
-                attrs={
-                    'position': (0, 0.3, -3),
-                    'scale': (platform_width, 0.5, 1.9),
-                    'type': 'box',
-                    'materials': (shared.footing_material, solid_material)
-                })
-
-            # ========== الأعلام الحقيقية ==========
-            flag_z = -2
-            flag_x_left = -platform_width/2 + 0.5
-            flag_x_right = platform_width/2 - 0.5
-
-            self.left_flag = Flag(position=(flag_x_left, 0.0, flag_z),
-                                color=self.color,
-                                touchable=False)
-            self.left_flag_collide = bs.newnode('region',
-                attrs={
-                    'position': (flag_x_left, 1.0, flag_z),
-                    'scale': (0.5, 2.0, 0.3),
-                    'type': 'box',
-                    'materials': (shared.footing_material, solid_material)
-                })
-
-            self.right_flag = Flag(position=(flag_x_right, 0.0, flag_z),
-                                color=self.color,
-                                touchable=False)
-            self.right_flag_collide = bs.newnode('region',
-                attrs={
-                    'position': (flag_x_right, 1.0, flag_z),
-                    'scale': (0.5, 2.0, 0.3),
-                    'type': 'box',
-                    'materials': (shared.footing_material, solid_material)
-                })
-
-            # فقاقيع اختيارية
-            self.bubble_timer = bs.Timer(1.0, self.emit_bubbles, repeat=True)
-
-    def emit_bubbles(self):
-        if not self.main_platform or not self.main_platform.exists():
-            return
-        with self.activity.context:
-            for _ in range(8):
-                x = random.uniform(-4, 4)
-                y = random.uniform(1, 5)
-                z = random.uniform(-3, -1)
-                bs.emitfx(position=(x, y, z),
-                          count=3,
-                          spread=0.5,
-                          scale=0.6,
-                          chunk_type='bubble' if hasattr(bs, 'chunk_type_bubble') else 'spark')
-
-    def cleanup(self):
-        """حذف جميع عناصر هذه الجلسة"""
-        if self.bubble_timer:
+    # ==================== أوامر التصوير (تستخدم PhotoSession العام) ====================
+    class PhotoSession:
+        """جلسة تصوير: تحتوي على منصة وعلمين وفقاقيع"""
+        def __init__(self, activity, color):
+            self.activity = activity
+            self.color = color
+            self.main_platform = None
+            self.platform_collide = None
+            self.left_flag = None
+            self.right_flag = None
+            self.left_flag_collide = None
+            self.right_flag_collide = None
             self.bubble_timer = None
-        with self.activity.context:
-            if self.main_platform and self.main_platform.exists():
-                self.main_platform.delete()
-            if self.platform_collide and self.platform_collide.exists():
-                self.platform_collide.delete()
-            if self.left_flag_collide and self.left_flag_collide.exists():
-                self.left_flag_collide.delete()
-            if self.right_flag_collide and self.right_flag_collide.exists():
-                self.right_flag_collide.delete()
-            if self.left_flag:
-                self.left_flag.handlemessage(bs.DieMessage())
-            if self.right_flag:
-                self.right_flag.handlemessage(bs.DieMessage())
-        print("🧹 Photo session cleaned up.")
+            self.create_elements()
 
-# ==================== نظام التيجان المتطور ====================
+        def create_elements(self):
+            with self.activity.context:
+                shared = SharedObjects.get()
+
+                # مادة تصادم مشتركة (تمنع المرور)
+                solid_material = bs.Material()
+                solid_material.add_actions(
+                    conditions=('they_have_material', shared.player_material),
+                    actions=(
+                        ('modify_part_collision', 'collide', True),
+                        ('modify_part_collision', 'physical', True)))
+
+                # ========== المنصة الرئيسية (أعرض) ==========
+                platform_width = 8.0
+                self.main_platform = bs.newnode('locator',
+                    attrs={
+                        'shape': 'box',
+                        'position': (0.0, 0.25, -3),
+                        'color': self.color,
+                        'opacity': 1,
+                        'draw_beauty': True,
+                        'additive': False,
+                        'size': [platform_width, 0.5, 1.9]
+                    })
+
+                self.platform_collide = bs.newnode('region',
+                    attrs={
+                        'position': (0, 0.3, -3),
+                        'scale': (platform_width, 0.5, 1.9),
+                        'type': 'box',
+                        'materials': (shared.footing_material, solid_material)
+                    })
+
+                # ========== الأعلام الحقيقية ==========
+                flag_z = -2
+                flag_x_left = -platform_width/2 + 0.5
+                flag_x_right = platform_width/2 - 0.5
+
+                self.left_flag = Flag(position=(flag_x_left, 0.0, flag_z),
+                                    color=self.color,
+                                    touchable=False)
+                self.left_flag_collide = bs.newnode('region',
+                    attrs={
+                        'position': (flag_x_left, 1.0, flag_z),
+                        'scale': (0.5, 2.0, 0.3),
+                        'type': 'box',
+                        'materials': (shared.footing_material, solid_material)
+                    })
+
+                self.right_flag = Flag(position=(flag_x_right, 0.0, flag_z),
+                                    color=self.color,
+                                    touchable=False)
+                self.right_flag_collide = bs.newnode('region',
+                    attrs={
+                        'position': (flag_x_right, 1.0, flag_z),
+                        'scale': (0.5, 2.0, 0.3),
+                        'type': 'box',
+                        'materials': (shared.footing_material, solid_material)
+                    })
+
+                # فقاقيع اختيارية
+                self.bubble_timer = bs.Timer(1.0, self.emit_bubbles, repeat=True)
+
+        def emit_bubbles(self):
+            if not self.main_platform or not self.main_platform.exists():
+                return
+            with self.activity.context:
+                for _ in range(8):
+                    x = random.uniform(-4, 4)
+                    y = random.uniform(1, 5)
+                    z = random.uniform(-3, -1)
+                    bs.emitfx(position=(x, y, z),
+                              count=3,
+                              spread=0.5,
+                              scale=0.6,
+                              chunk_type='bubble' if hasattr(bs, 'chunk_type_bubble') else 'spark')
+
+        def cleanup(self):
+            """حذف جميع عناصر هذه الجلسة"""
+            if self.bubble_timer:
+                self.bubble_timer = None
+            with self.activity.context:
+                if self.main_platform and self.main_platform.exists():
+                    self.main_platform.delete()
+                if self.platform_collide and self.platform_collide.exists():
+                    self.platform_collide.delete()
+                if self.left_flag_collide and self.left_flag_collide.exists():
+                    self.left_flag_collide.delete()
+                if self.right_flag_collide and self.right_flag_collide.exists():
+                    self.right_flag_collide.delete()
+                if self.left_flag:
+                    self.left_flag.handlemessage(bs.DieMessage())
+                if self.right_flag:
+                    self.right_flag.handlemessage(bs.DieMessage())
+            print("🧹 Photo session cleaned up.")
+
+    def process_photo_command(self, msg: str, client_id: int):
+        """إنشاء منصة تصوير جديدة دون حذف القديمة"""
+        try:
+            parts = msg.split()
+            if len(parts) < 2:
+                self.clientmessage("❌ Use: /photo <r,g,b>", color=(1,0,0))
+                self.clientmessage("📝 Example: /photo 1,0.5,0", color=(1,1,0))
+                return
+
+            # تحليل اللون
+            try:
+                r_str, g_str, b_str = parts[1].split(',')
+                r = float(r_str)
+                g = float(g_str)
+                b = float(b_str)
+                color = (r, g, b)
+            except Exception:
+                self.clientmessage("❌ Invalid color format. Use r,g,b (e.g., 1,0.5,0)", color=(1,0,0))
+                return
+
+            activity = bs.get_foreground_host_activity()
+            if not activity:
+                self.clientmessage("❌ No active game", color=(1,0,0))
+                return
+
+            # ⛔ لا نقوم بحذف الجلسات السابقة - نضيف الجديدة فقط
+            # إذا لم تكن القائمة موجودة، ننشئها (في Uts)
+            if not hasattr(Uts, 'photo_sessions'):
+                Uts.photo_sessions = []
+
+            # إنشاء الجلسة الجديدة وإضافتها إلى القائمة
+            session = self.PhotoSession(activity, color)
+            Uts.photo_sessions.append(session)
+
+            self.clientmessage(f"📸 New photo session created with color ({r},{g},{b}) - total: {len(Uts.photo_sessions)}", color=(0,1,0))
+
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+
+    # ==================== أمر مسح جميع جلسات التصوير ====================
+    def process_photoclear_command(self, client_id: int):
+        """حذف جميع جلسات التصوير النشطة"""
+        try:
+            if hasattr(Uts, 'photo_sessions') and Uts.photo_sessions:
+                count = len(Uts.photo_sessions)
+                for session in Uts.photo_sessions:
+                    session.cleanup()
+                Uts.photo_sessions.clear()
+                self.clientmessage(f"✅ Cleared {count} photo session(s).", color=(0,1,0))
+            else:
+                self.clientmessage("📭 No active photo sessions.", color=(0.5,0.5,1))
+        except Exception as e:
+            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+
+
+
 class TagSystem:
     def __init__(self):
         self.current_tags = {}
@@ -5993,173 +6050,6 @@ class Commands:
             print(f"❌ Error in process_list_players: {e}")
             self.clientmessage("❌ Error showing players list", color=(1,0,0))
 
-    # ==================== أوامر التصوير (تستخدم PhotoSession العام) ====================
-    class PhotoSession:
-        """جلسة تصوير: تحتوي على منصة وعلمين وفقاقيع"""
-        def __init__(self, activity, color):
-            self.activity = activity
-            self.color = color
-            self.main_platform = None
-            self.platform_collide = None
-            self.left_flag = None
-            self.right_flag = None
-            self.left_flag_collide = None
-            self.right_flag_collide = None
-            self.bubble_timer = None
-            self.create_elements()
-
-        def create_elements(self):
-            with self.activity.context:
-                shared = SharedObjects.get()
-
-                # مادة تصادم مشتركة (تمنع المرور)
-                solid_material = bs.Material()
-                solid_material.add_actions(
-                    conditions=('they_have_material', shared.player_material),
-                    actions=(
-                        ('modify_part_collision', 'collide', True),
-                        ('modify_part_collision', 'physical', True)))
-
-                # ========== المنصة الرئيسية (أعرض) ==========
-                platform_width = 8.0
-                self.main_platform = bs.newnode('locator',
-                    attrs={
-                        'shape': 'box',
-                        'position': (0.0, 0.25, -3),
-                        'color': self.color,
-                        'opacity': 1,
-                        'draw_beauty': True,
-                        'additive': False,
-                        'size': [platform_width, 0.5, 1.9]
-                    })
-
-                self.platform_collide = bs.newnode('region',
-                    attrs={
-                        'position': (0, 0.3, -3),
-                        'scale': (platform_width, 0.5, 1.9),
-                        'type': 'box',
-                        'materials': (shared.footing_material, solid_material)
-                    })
-
-                # ========== الأعلام الحقيقية ==========
-                flag_z = -2
-                flag_x_left = -platform_width/2 + 0.5
-                flag_x_right = platform_width/2 - 0.5
-
-                self.left_flag = Flag(position=(flag_x_left, 0.0, flag_z),
-                                    color=self.color,
-                                    touchable=False)
-                self.left_flag_collide = bs.newnode('region',
-                    attrs={
-                        'position': (flag_x_left, 1.0, flag_z),
-                        'scale': (0.5, 2.0, 0.3),
-                        'type': 'box',
-                        'materials': (shared.footing_material, solid_material)
-                    })
-
-                self.right_flag = Flag(position=(flag_x_right, 0.0, flag_z),
-                                    color=self.color,
-                                    touchable=False)
-                self.right_flag_collide = bs.newnode('region',
-                    attrs={
-                        'position': (flag_x_right, 1.0, flag_z),
-                        'scale': (0.5, 2.0, 0.3),
-                        'type': 'box',
-                        'materials': (shared.footing_material, solid_material)
-                    })
-
-                # فقاقيع اختيارية
-                self.bubble_timer = bs.Timer(1.0, self.emit_bubbles, repeat=True)
-
-        def emit_bubbles(self):
-            if not self.main_platform or not self.main_platform.exists():
-                return
-            with self.activity.context:
-                for _ in range(8):
-                    x = random.uniform(-4, 4)
-                    y = random.uniform(1, 5)
-                    z = random.uniform(-3, -1)
-                    bs.emitfx(position=(x, y, z),
-                              count=3,
-                              spread=0.5,
-                              scale=0.6,
-                              chunk_type='bubble' if hasattr(bs, 'chunk_type_bubble') else 'spark')
-
-        def cleanup(self):
-            """حذف جميع عناصر هذه الجلسة"""
-            if self.bubble_timer:
-                self.bubble_timer = None
-            with self.activity.context:
-                if self.main_platform and self.main_platform.exists():
-                    self.main_platform.delete()
-                if self.platform_collide and self.platform_collide.exists():
-                    self.platform_collide.delete()
-                if self.left_flag_collide and self.left_flag_collide.exists():
-                    self.left_flag_collide.delete()
-                if self.right_flag_collide and self.right_flag_collide.exists():
-                    self.right_flag_collide.delete()
-                if self.left_flag:
-                    self.left_flag.handlemessage(bs.DieMessage())
-                if self.right_flag:
-                    self.right_flag.handlemessage(bs.DieMessage())
-            print("🧹 Photo session cleaned up.")
-
-    def process_photo_command(self, msg: str, client_id: int):
-        """إنشاء منصة تصوير جديدة دون حذف القديمة"""
-        try:
-            parts = msg.split()
-            if len(parts) < 2:
-                self.clientmessage("❌ Use: /photo <r,g,b>", color=(1,0,0))
-                self.clientmessage("📝 Example: /photo 1,0.5,0", color=(1,1,0))
-                return
-
-            # تحليل اللون
-            try:
-                r_str, g_str, b_str = parts[1].split(',')
-                r = float(r_str)
-                g = float(g_str)
-                b = float(b_str)
-                color = (r, g, b)
-            except Exception:
-                self.clientmessage("❌ Invalid color format. Use r,g,b (e.g., 1,0.5,0)", color=(1,0,0))
-                return
-
-            activity = bs.get_foreground_host_activity()
-            if not activity:
-                self.clientmessage("❌ No active game", color=(1,0,0))
-                return
-
-            # ⛔ لا نقوم بحذف الجلسات السابقة - نضيف الجديدة فقط
-            # إذا لم تكن القائمة موجودة، ننشئها (في Uts)
-            if not hasattr(Uts, 'photo_sessions'):
-                Uts.photo_sessions = []
-
-            # إنشاء الجلسة الجديدة وإضافتها إلى القائمة
-            session = self.PhotoSession(activity, color)
-            Uts.photo_sessions.append(session)
-
-            self.clientmessage(f"📸 New photo session created with color ({r},{g},{b}) - total: {len(Uts.photo_sessions)}", color=(0,1,0))
-
-        except Exception as e:
-            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
-
-    # ==================== أمر مسح جميع جلسات التصوير ====================
-    def process_photoclear_command(self, client_id: int):
-        """حذف جميع جلسات التصوير النشطة"""
-        try:
-            if hasattr(Uts, 'photo_sessions') and Uts.photo_sessions:
-                count = len(Uts.photo_sessions)
-                for session in Uts.photo_sessions:
-                    session.cleanup()
-                Uts.photo_sessions.clear()
-                self.clientmessage(f"✅ Cleared {count} photo session(s).", color=(0,1,0))
-            else:
-                self.clientmessage("📭 No active photo sessions.", color=(0.5,0.5,1))
-        except Exception as e:
-            self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
-
-
-
 
 def ActorMessage(msg: str, actor: spaz.Spaz):
     current_act = bs.get_foreground_host_activity()
@@ -7827,5 +7717,4 @@ bs.apptimer(8.0, system_test)
 print("=" * 50)
 print("CheatMax System Code Loaded Successfully!")
 print("=" * 50)
-
 
