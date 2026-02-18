@@ -1716,8 +1716,10 @@ class TagSystem:
                 activity = bs.get_foreground_host_activity()
                 if activity and hasattr(activity, 'players'):
                     try:
+                        # تحديث الأسماء قبل تطبيق التيجان
+                        Uts.update_usernames()
                         self.quick_apply_tags(activity)
-                        self.cleanup_dead_players(activity)  # سيتم استدعاؤها كل ثانيتين
+                        self.cleanup_dead_players(activity)
                         self.check_player_respawns(activity)
                     except Exception as e:
                         print(f"⚠️ Tag monitor error: {e}")
@@ -1740,18 +1742,25 @@ class TagSystem:
                     account_id = Uts.get_reliable_pb_id(client_id)
                     if account_id and account_id in Uts.pdata:
                         player_data = Uts.pdata[account_id]
+                        # تطبيق تاج عادي/متحرك
                         if 'Tag' in player_data:
                             tag_data = player_data['Tag']
-                            # إذا كان التاج موجوداً بالفعل، نتخطى
-                            if str(client_id) in self.current_tags:
-                                continue
-                            if tag_data.get('type') == 'animated':
-                                self.create_animated_tag_gradual(player, client_id, tag_data, activity)
-                            else:
-                                self.create_tag_with_char_animation(player, client_id, tag_data['text'],
-                                                                  tuple(tag_data.get('color', (1,1,1))),
-                                                                  tag_data.get('scale', 0.03),
-                                                                  activity)
+                            if str(client_id) not in self.current_tags:
+                                if tag_data.get('type') == 'animated':
+                                    self.create_animated_tag_gradual(player, client_id, tag_data, activity)
+                                else:
+                                    self.create_tag_with_char_animation(player, client_id, tag_data['text'],
+                                                                      tuple(tag_data.get('color', (1,1,1))),
+                                                                      tag_data.get('scale', 0.03),
+                                                                      activity)
+                        # تطبيق تاج النادي
+                        if 'club' in player_data and player_data['club']:
+                            club_info = player_data['club']
+                            club_id = club_info['club-id']
+                            club_data = Uts.clubs_system.get_club_by_id(club_id) if Uts.clubs_system else None
+                            if club_data:
+                                role = club_info.get('role', 'player')
+                                Uts.clubs_system.create_club_tag(player.actor, client_id, club_data, role, activity)
                 except Exception as e:
                     continue
         except Exception as e:
@@ -1920,7 +1929,8 @@ class TagSystem:
                         self.stop_char_animation(client_id)
                         self.stop_animation(client_id)
                         # أيضًا إزالة تاج النادي
-                        Uts.clubs_system.remove_club_tag(client_id)
+                        if Uts.clubs_system:
+                            Uts.clubs_system.remove_club_tag(client_id)
                     except:
                         pass
         except Exception as e:
@@ -1930,22 +1940,30 @@ class TagSystem:
         try:
             for player in activity.players:
                 try:
+                    if not player.is_alive() or not player.actor or not player.actor.node:
+                        continue
                     client_id = player.sessionplayer.inputdevice.client_id
                     account_id = Uts.get_reliable_pb_id(client_id)
                     if account_id and account_id in Uts.pdata:
                         player_data = Uts.pdata[account_id]
+                        # تاج عادي/متحرك
                         if 'Tag' in player_data:
                             tag_data = player_data['Tag']
-                            if player.is_alive() and player.actor and player.actor.node:
-                                # إذا كان التاج موجوداً بالفعل، نتخطى
-                                if str(client_id) in self.current_tags:
-                                    continue
+                            if str(client_id) not in self.current_tags:
                                 if tag_data.get('type') == 'animated':
                                     self.create_animated_tag_gradual(player, client_id, tag_data, activity)
                                 else:
                                     self.create_tag_with_char_animation(player, client_id, tag_data['text'],
                                                                       tuple(tag_data['color']),
                                                                       tag_data['scale'], activity)
+                        # تاج النادي
+                        if 'club' in player_data and player_data['club']:
+                            club_info = player_data['club']
+                            club_id = club_info['club-id']
+                            club_data = Uts.clubs_system.get_club_by_id(club_id) if Uts.clubs_system else None
+                            if club_data:
+                                role = club_info.get('role', 'player')
+                                Uts.clubs_system.create_club_tag(player.actor, client_id, club_data, role, activity)
                 except:
                     pass
         except:
@@ -6481,28 +6499,33 @@ def new_on_player_leave(self, player: bs.Player) -> None:
 
 def new_playerspaz_init_(self, *args, **kwargs) -> None:
     calls['PlayerSpazInit'](self, *args, **kwargs)
-    Uts.update_usernames()
+    Uts.update_usernames()  # تحديث الأسماء قبل البدء
     try:
         user = self._player.sessionplayer.get_v1_account_id()
     except (AttributeError, ba.SessionPlayerNotFoundError):
         user = None
     if not hasattr(Uts, 'pdata'): 
         Uts.create_players_data()
+    
     # تطبيق التأثيرات مع تأخير بسيط لضمان وجود العقد
     if user and user in Uts.pdata:
         eff = Uts.pdata[user]['Effect']
         bs.timer(0.2, lambda: apply_effect(self, eff))
+    
     # إضافة تاج النادي إذا كان اللاعب عضواً في نادي (مع تأخير)
-    if user and user in Uts.pdata and "club" in Uts.pdata[user]:
-        club_info = Uts.pdata[user]["club"]
-        club_id = club_info["club-id"]
-        role = club_info["role"]
-        club_data = Uts.clubs_system.get_club_by_id(club_id)
-        if club_data:
-            current_act = bs.get_foreground_host_activity()
-            if current_act:
-                client_id = self._player.sessionplayer.inputdevice.client_id
-                bs.timer(0.5, lambda: Uts.clubs_system.create_club_tag(self, client_id, club_data, role, current_act))
+    client_id = self._player.sessionplayer.inputdevice.client_id
+    if client_id is not None:
+        account_id = Uts.get_reliable_pb_id(client_id)
+        if account_id and account_id in Uts.pdata and "club" in Uts.pdata[account_id]:
+            club_info = Uts.pdata[account_id]["club"]
+            club_id = club_info["club-id"]
+            role = club_info["role"]
+            club_data = Uts.clubs_system.get_club_by_id(club_id) if Uts.clubs_system else None
+            if club_data:
+                current_act = bs.get_foreground_host_activity()
+                if current_act:
+                    bs.timer(0.5, lambda: Uts.clubs_system.create_club_tag(self, client_id, club_data, role, current_act))
+    
     # تاج مخصص (مع تأخير)
     if user and user in Uts.tags:
         tag_data = Uts.tags[user]
@@ -7098,6 +7121,7 @@ def final_setup():
 ║ • PB-ID Resolution: ✓ Unified (same as /list) ║
 ║   └─ All commands using pb-ID now use same reliable method ║
 ║ • Tag Duplication: ✓ Fixed (no more overlapping tags) ║
+║ • Club Tags: ✓ Fixed (now appear correctly) ║
 ╚══════════════════════════════════════════╝
     """
     for line in welcome_msg.split('\n'):
