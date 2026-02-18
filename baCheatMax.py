@@ -9,7 +9,6 @@ import bascenev1 as bs
 import bauiv1 as bui
 import babase as ba
 import _babase
-from bascenev1lib.actor.flag import Flag
 import time
 from bascenev1._activity import Activity
 from bascenev1lib.actor.bomb import Bomb
@@ -21,6 +20,7 @@ import bascenev1lib.actor.popuptext as ptext
 import bascenev1lib.actor.text as text
 import bascenev1lib.actor.image as image
 import bascenev1lib.actor.spaz as spaz
+from bascenev1lib.actor.flag import Flag  # <-- استيراد العلم الرسمي
 
 if TYPE_CHECKING:
     from typing import Sequence, Any, Callable
@@ -512,18 +512,7 @@ class WeatherEffect:
 
         bs.emitfx(**kwargs)
 
-class Flag(bs.Actor):
-    def __init__(self, position=(0,0,0), color=(1,1,1), touchable=True):
-        super().__init__()
-        self.node = bs.newnode('flag',
-            attrs={
-                'position': position,
-                'color': color,
-                'touchable': touchable
-            })
-    def handlemessage(self, msg):
-        if isinstance(msg, bs.DieMessage):
-            self.node.delete()
+
 # ==================== كلاس Uts (يُعرف قبل LeaderboardDisplay و TagSystem و ClubsSystem) ====================
 class Uts:
     directory_user: str = _babase.app.env.python_directory_user
@@ -5936,14 +5925,12 @@ class Commands:
                                 'materials': (shared.footing_material, solid_material)
                             })
 
-                        # ========== الأعلام الحقيقية ==========
+                        # ========== الأعلام الحقيقية (بدون خاصية touchable) ==========
                         flag_z = -2
                         flag_x_left = -platform_width/2 + 0.5
                         flag_x_right = platform_width/2 - 0.5
 
-                        self.left_flag = Flag(position=(flag_x_left, 0.0, flag_z),
-                                            color=self.color,
-                                            touchable=False)
+                        self.left_flag = Flag(position=(flag_x_left, 0.0, flag_z), color=self.color)
                         self.left_flag_collide = bs.newnode('region',
                             attrs={
                                 'position': (flag_x_left, 1.0, flag_z),
@@ -5952,9 +5939,7 @@ class Commands:
                                 'materials': (shared.footing_material, solid_material)
                             })
 
-                        self.right_flag = Flag(position=(flag_x_right, 0.0, flag_z),
-                                            color=self.color,
-                                            touchable=False)
+                        self.right_flag = Flag(position=(flag_x_right, 0.0, flag_z), color=self.color)
                         self.right_flag_collide = bs.newnode('region',
                             attrs={
                                 'position': (flag_x_right, 1.0, flag_z),
@@ -7690,6 +7675,3 @@ bs.apptimer(8.0, system_test)
 print("=" * 50)
 print("CheatMax System Code Loaded Successfully!")
 print("=" * 50)
-
-
-
