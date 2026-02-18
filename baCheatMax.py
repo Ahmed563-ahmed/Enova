@@ -5715,7 +5715,137 @@ class Commands:
                         self.send_chat_message(cmd)
             else:
                 self.clientmessage("❌ Invalid help page. Use 1-4", color=(1,0,0))
-    # ==================== الأمر /photo - إنشاء منصة جديدة دون مسح القديمة ====================
+  
+    def process_list_players(self):
+        try:
+            activity = bs.get_foreground_host_activity()
+            if not activity:
+                self.clientmessage("❌ No active game found", color=(1,0,0))
+                return
+
+            self.util.update_usernames()
+            players_data = []
+            roster_data = roster()
+            if roster_data:
+                for r in roster_data:
+                    try:
+                        client_id = r.get('client_id')
+                        if client_id is None:
+                            continue
+                        
+                        account_name = r.get('display_string', 'Unknown')
+                        player_name = account_name
+                        players_list = r.get('players', [])
+                        if players_list:
+                            player_name = players_list[0].get('name_full', player_name)
+                        
+                        # ========== البحث عن PB-ID بثلاث طرق ==========
+                        pb_id = "No PB-ID"
+                        
+                        # 1. من account_id في الـ roster (الأكثر دقة)
+                        account_id = r.get('account_id')
+                        if account_id and account_id.startswith('pb-'):
+                            pb_id = account_id
+                            # تحديث userpbs فوراً
+                            Uts.userpbs[client_id] = pb_id
+                        else:
+                            # 2. من userpbs
+                            pb_from_userpbs = Uts.userpbs.get(client_id)
+                            if pb_from_userpbs and pb_from_userpbs.startswith('pb-'):
+                                pb_id = pb_from_userpbs
+                            else:
+                                # 3. البحث في pdata عن طريق مطابقة اسم الحساب
+                                for acc_id, acc_data in Uts.pdata.items():
+                                    if 'Accounts' in acc_data and account_name in acc_data['Accounts']:
+                                        pb_id = acc_id
+                                        # تحديث userpbs للاستخدام المستقبلي
+                                        Uts.userpbs[client_id] = pb_id
+                                        break
+                        
+                        # ========== تحديد الدور ==========
+                        if client_id == -1:
+                            role = "👑 Host"
+                        elif client_id in Uts.accounts and Uts.accounts[client_id].get('Admin', False):
+                            role = "⭐ Admin"
+                        else:
+                            role = "👤 Player"
+                        
+                        # ========== الحصول على التاج ==========
+                        tag_text = "None"
+                        if pb_id != "No PB-ID" and pb_id in Uts.pdata and 'Tag' in Uts.pdata[pb_id]:
+                            tag_data = Uts.pdata[pb_id]['Tag']
+                            tag_text = tag_data.get('text', 'None')
+                        
+                        players_data.append({
+                            'pb_id': pb_id,
+                            'role': role,
+                            'account_name': account_name,
+                            'player_name': player_name,
+                            'client_id': client_id,
+                            'tag': tag_text
+                        })
+                    except Exception as e:
+                        print(f"⚠️ Error processing player in /list: {e}")
+                        continue
+
+            if not players_data:
+                self.clientmessage("❌ No players found", color=(1,0,0))
+                return
+
+            players_data.sort(key=lambda x: x['client_id'])
+
+            # إرسال رأس الجدول
+            header_line1 = "=" * 116
+            header_line2 = "|| PB-ID              || Role   || Account Name      || Player Name      || Client ID || Tag                 ||"
+            header_line3 = "=" * 116
+
+            self.send_chat_message(header_line1)
+            self.send_chat_message(header_line2)
+            self.send_chat_message(header_line3)
+
+            for data in players_data:
+                # تنسيق PB-ID
+                pb_display = data['pb_id']
+                if pb_display in (None, "None", "No PB-ID") or (isinstance(pb_display, str) and pb_display.startswith('guest_')):
+                    pb_display = "No PB-ID"
+                elif isinstance(pb_display, str) and len(pb_display) > 20:
+                    pb_display = pb_display[:18] + ".."
+                else:
+                    pb_display = str(pb_display)
+                pb_display = pb_display.ljust(20)
+
+                role_display = data['role'].ljust(8)
+
+                acc_display = str(data['account_name'])
+                if len(acc_display) > 18:
+                    acc_display = acc_display[:16] + ".."
+                acc_display = acc_display.ljust(18)
+
+                name_display = str(data['player_name'])
+                if len(name_display) > 18:
+                    name_display = name_display[:16] + ".."
+                name_display = name_display.ljust(18)
+
+                if data['client_id'] == -1:
+                    cid_display = "👑 Host"
+                else:
+                    cid_display = f"🖥️ {data['client_id']}"
+                cid_display = cid_display.center(10)
+
+                tag_display = str(data['tag'])
+                if len(tag_display) > 18:
+                    tag_display = tag_display[:16] + ".."
+                tag_display = tag_display.ljust(18)
+
+                row = f"|| {pb_display} || {role_display} || {acc_display} || {name_display} || {cid_display} || {tag_display} ||"
+                self.send_chat_message(row)
+
+            self.send_chat_message("=" * 116)
+            self.send_chat_message(f"👥 Total Players: {len(players_data)} | 👑 = Host | ⭐ = Admin | 👤 = Player")
+
+        except Exception as e:
+            print(f"❌ Error in process_list_players: {e}")
+            self.clientmessage("❌ Error showing players list", color=(1,0,0))
     # تم نقل كلاس PhotoSession إلى النطاق العام (خارج الدالة) ليكون متاحاً لأمر /photoclear
     class PhotoSession:
         """جلسة تصوير: تحتوي على منصة وعلمين وفقاقيع"""
@@ -5880,137 +6010,6 @@ class Commands:
                 self.clientmessage("📭 No active photo sessions.", color=(0.5,0.5,1))
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
-    def process_list_players(self):
-        try:
-            activity = bs.get_foreground_host_activity()
-            if not activity:
-                self.clientmessage("❌ No active game found", color=(1,0,0))
-                return
-
-            self.util.update_usernames()
-            players_data = []
-            roster_data = roster()
-            if roster_data:
-                for r in roster_data:
-                    try:
-                        client_id = r.get('client_id')
-                        if client_id is None:
-                            continue
-                        
-                        account_name = r.get('display_string', 'Unknown')
-                        player_name = account_name
-                        players_list = r.get('players', [])
-                        if players_list:
-                            player_name = players_list[0].get('name_full', player_name)
-                        
-                        # ========== البحث عن PB-ID بثلاث طرق ==========
-                        pb_id = "No PB-ID"
-                        
-                        # 1. من account_id في الـ roster (الأكثر دقة)
-                        account_id = r.get('account_id')
-                        if account_id and account_id.startswith('pb-'):
-                            pb_id = account_id
-                            # تحديث userpbs فوراً
-                            Uts.userpbs[client_id] = pb_id
-                        else:
-                            # 2. من userpbs
-                            pb_from_userpbs = Uts.userpbs.get(client_id)
-                            if pb_from_userpbs and pb_from_userpbs.startswith('pb-'):
-                                pb_id = pb_from_userpbs
-                            else:
-                                # 3. البحث في pdata عن طريق مطابقة اسم الحساب
-                                for acc_id, acc_data in Uts.pdata.items():
-                                    if 'Accounts' in acc_data and account_name in acc_data['Accounts']:
-                                        pb_id = acc_id
-                                        # تحديث userpbs للاستخدام المستقبلي
-                                        Uts.userpbs[client_id] = pb_id
-                                        break
-                        
-                        # ========== تحديد الدور ==========
-                        if client_id == -1:
-                            role = "👑 Host"
-                        elif client_id in Uts.accounts and Uts.accounts[client_id].get('Admin', False):
-                            role = "⭐ Admin"
-                        else:
-                            role = "👤 Player"
-                        
-                        # ========== الحصول على التاج ==========
-                        tag_text = "None"
-                        if pb_id != "No PB-ID" and pb_id in Uts.pdata and 'Tag' in Uts.pdata[pb_id]:
-                            tag_data = Uts.pdata[pb_id]['Tag']
-                            tag_text = tag_data.get('text', 'None')
-                        
-                        players_data.append({
-                            'pb_id': pb_id,
-                            'role': role,
-                            'account_name': account_name,
-                            'player_name': player_name,
-                            'client_id': client_id,
-                            'tag': tag_text
-                        })
-                    except Exception as e:
-                        print(f"⚠️ Error processing player in /list: {e}")
-                        continue
-
-            if not players_data:
-                self.clientmessage("❌ No players found", color=(1,0,0))
-                return
-
-            players_data.sort(key=lambda x: x['client_id'])
-
-            # إرسال رأس الجدول
-            header_line1 = "=" * 116
-            header_line2 = "|| PB-ID              || Role   || Account Name      || Player Name      || Client ID || Tag                 ||"
-            header_line3 = "=" * 116
-
-            self.send_chat_message(header_line1)
-            self.send_chat_message(header_line2)
-            self.send_chat_message(header_line3)
-
-            for data in players_data:
-                # تنسيق PB-ID
-                pb_display = data['pb_id']
-                if pb_display in (None, "None", "No PB-ID") or (isinstance(pb_display, str) and pb_display.startswith('guest_')):
-                    pb_display = "No PB-ID"
-                elif isinstance(pb_display, str) and len(pb_display) > 20:
-                    pb_display = pb_display[:18] + ".."
-                else:
-                    pb_display = str(pb_display)
-                pb_display = pb_display.ljust(20)
-
-                role_display = data['role'].ljust(8)
-
-                acc_display = str(data['account_name'])
-                if len(acc_display) > 18:
-                    acc_display = acc_display[:16] + ".."
-                acc_display = acc_display.ljust(18)
-
-                name_display = str(data['player_name'])
-                if len(name_display) > 18:
-                    name_display = name_display[:16] + ".."
-                name_display = name_display.ljust(18)
-
-                if data['client_id'] == -1:
-                    cid_display = "👑 Host"
-                else:
-                    cid_display = f"🖥️ {data['client_id']}"
-                cid_display = cid_display.center(10)
-
-                tag_display = str(data['tag'])
-                if len(tag_display) > 18:
-                    tag_display = tag_display[:16] + ".."
-                tag_display = tag_display.ljust(18)
-
-                row = f"|| {pb_display} || {role_display} || {acc_display} || {name_display} || {cid_display} || {tag_display} ||"
-                self.send_chat_message(row)
-
-            self.send_chat_message("=" * 116)
-            self.send_chat_message(f"👥 Total Players: {len(players_data)} | 👑 = Host | ⭐ = Admin | 👤 = Player")
-
-        except Exception as e:
-            print(f"❌ Error in process_list_players: {e}")
-            self.clientmessage("❌ Error showing players list", color=(1,0,0))
-
 def ActorMessage(msg: str, actor: spaz.Spaz):
     current_act = bs.get_foreground_host_activity()
     if current_act is None:
@@ -7677,4 +7676,5 @@ bs.apptimer(8.0, system_test)
 print("=" * 50)
 print("CheatMax System Code Loaded Successfully!")
 print("=" * 50)
+
 
