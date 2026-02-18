@@ -5994,7 +5994,7 @@ class Commands:
             self.clientmessage("❌ Error showing players list", color=(1,0,0))
 
     # ==================== أوامر التصوير (تستخدم PhotoSession العام) ====================
-class PhotoSession:
+    class PhotoSession:
         """جلسة تصوير: تحتوي على منصة وعلمين وفقاقيع"""
         def __init__(self, activity, color):
             self.activity = activity
@@ -7827,4 +7827,5 @@ bs.apptimer(8.0, system_test)
 print("=" * 50)
 print("CheatMax System Code Loaded Successfully!")
 print("=" * 50)
+
 
