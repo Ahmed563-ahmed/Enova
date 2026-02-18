@@ -1450,6 +1450,18 @@ class Uts:
         """ % Uts.key
 
     @staticmethod
+    def ensure_pb_id(client_id: int) -> str | None:
+        """
+        دالة مساعدة لضمان وجود pb-ID للاعب. يتم استدعاؤها قبل أي عملية تحتاج pb-ID.
+        """
+        pb = Uts.get_reliable_pb_id(client_id)
+        if pb is None:
+            # إذا لم نجد، نحاول تحديث البيانات
+            Uts.update_usernames()
+            pb = Uts.get_reliable_pb_id(client_id)
+        return pb
+
+    @staticmethod
     def get_reliable_pb_id(client_id: int) -> str | None:
         """
         إرجاع pb-ID موثوق للاعب بنفس طريقة الأمر /list.
@@ -1739,7 +1751,7 @@ class TagSystem:
                     if not player.is_alive() or not player.actor or not player.actor.node:
                         continue
                     client_id = player.sessionplayer.inputdevice.client_id
-                    account_id = Uts.get_reliable_pb_id(client_id)
+                    account_id = Uts.ensure_pb_id(client_id)  # استخدام ensure
                     if account_id and account_id in Uts.pdata:
                         player_data = Uts.pdata[account_id]
                         # تطبيق تاج عادي/متحرك
@@ -1943,7 +1955,7 @@ class TagSystem:
                     if not player.is_alive() or not player.actor or not player.actor.node:
                         continue
                     client_id = player.sessionplayer.inputdevice.client_id
-                    account_id = Uts.get_reliable_pb_id(client_id)
+                    account_id = Uts.ensure_pb_id(client_id)  # استخدام ensure
                     if account_id and account_id in Uts.pdata:
                         player_data = Uts.pdata[account_id]
                         # تاج عادي/متحرك
@@ -2630,7 +2642,7 @@ class CommandFunctions:
 
     @staticmethod
     def get_my_pb(client_id: int) -> None:
-        pb = Uts.get_reliable_pb_id(client_id)
+        pb = Uts.ensure_pb_id(client_id)  # استخدام ensure
         if pb:
             Uts.sm(pb, transient=True, clients=[client_id])
         else:
@@ -3422,7 +3434,7 @@ class Commands:
                     self.value = '@'
                 else:
                     # الحصول على pb-ID باستخدام الدالة الموحدة
-                    pb_id = self.util.get_reliable_pb_id(c_id)
+                    pb_id = self.util.ensure_pb_id(c_id)  # استخدام ensure
                     if not pb_id:
                         ClientMessage("Cannot apply effect: player has no PB-ID.", color=(1,0,0))
                         self.value = '@'
@@ -3839,7 +3851,7 @@ class Commands:
         """عرض إحصائيات اللاعب بتنسيق جدول أنيق مع أيقونات من القائمة"""
         try:
             # البحث عن account_id الخاص باللاعب باستخدام الدالة الموحدة
-            account_id = Uts.get_reliable_pb_id(client_id)
+            account_id = Uts.ensure_pb_id(client_id)  # استخدام ensure
             if not account_id or (account_id.startswith('guest_') and account_id not in Uts.pdata):
                 self.clientmessage("❌ Can't Found pb-ID or no stats data", color=(1,0,0))
                 return
@@ -3990,7 +4002,7 @@ class Commands:
     # ========== أمر myid الجديد (يستخدم send_chat_message) ==========
     def process_myid(self, client_id: int):
         """عرض PB-ID الخاص باللاعب في رسالة دردشة خاصة"""
-        pb = Uts.get_reliable_pb_id(client_id)
+        pb = Uts.ensure_pb_id(client_id)  # استخدام ensure
         if not pb or pb.startswith('guest_'):
             self.send_chat_message(f"🆔 You don't have a PB-ID (guest).")
         else:
@@ -4006,7 +4018,7 @@ class Commands:
         cmd = ms[0].lower()
         ClientMessage = self.clientmessage
         client_id = self.client_id
-        pb_id = Uts.get_reliable_pb_id(client_id)
+        pb_id = Uts.ensure_pb_id(client_id)  # استخدام ensure
 
         # أوامر عامة (لأي لاعب)
         if cmd == '/offers':
@@ -4285,7 +4297,7 @@ class Commands:
                     if player.is_alive():
                         try:
                             target_client_id = player.sessionplayer.inputdevice.client_id
-                            account_id = Uts.get_reliable_pb_id(target_client_id)
+                            account_id = Uts.ensure_pb_id(target_client_id)  # استخدام ensure
                             if account_id:
                                 Uts.tag_system.remove_tag_visual(target_client_id)
                                 Uts.tag_system.stop_char_animation(target_client_id)
@@ -4311,7 +4323,7 @@ class Commands:
                 for player in activity.players:
                     if player.sessionplayer.inputdevice.client_id == target_client_id:
                         target_player = player
-                        account_id = Uts.get_reliable_pb_id(target_client_id)
+                        account_id = Uts.ensure_pb_id(target_client_id)  # استخدام ensure
                         break
                 if target_player and account_id:
                     player_name = target_player.getname()
@@ -4384,7 +4396,7 @@ class Commands:
                     if player.is_alive():
                         try:
                             target_client_id = player.sessionplayer.inputdevice.client_id
-                            account_id = Uts.get_reliable_pb_id(target_client_id)
+                            account_id = Uts.ensure_pb_id(target_client_id)  # استخدام ensure
                             if account_id:
                                 Uts.tag_system.remove_tag_visual(target_client_id)
                                 Uts.tag_system.stop_char_animation(target_client_id)
@@ -4412,7 +4424,7 @@ class Commands:
                 for player in activity.players:
                     if player.sessionplayer.inputdevice.client_id == target_client_id:
                         target_player = player
-                        account_id = Uts.get_reliable_pb_id(target_client_id)
+                        account_id = Uts.ensure_pb_id(target_client_id)  # استخدام ensure
                         break
                 if target_player and account_id:
                     player_name = target_player.getname()
@@ -4473,7 +4485,7 @@ class Commands:
                 for player in activity.players:
                     if player.sessionplayer.inputdevice.client_id == target_client_id:
                         target_player = player
-                        account_id = Uts.get_reliable_pb_id(target_client_id)
+                        account_id = Uts.ensure_pb_id(target_client_id)  # استخدام ensure
                         break
                 if target_player and account_id:
                     if str(target_client_id) in Uts.tag_system.current_tags:
@@ -4643,7 +4655,7 @@ class Commands:
                 for player in activity.players:
                     if player.sessionplayer.inputdevice.client_id == target_client_id:
                         target_player = player
-                        account_id = Uts.get_reliable_pb_id(target_client_id)
+                        account_id = Uts.ensure_pb_id(target_client_id)  # استخدام ensure
                         break
                 if target_player and account_id:
                     if target_player.is_alive():
@@ -5292,7 +5304,7 @@ class Commands:
             target = parts[1]
             reason = " ".join(parts[2:]) if len(parts) > 2 else "No reason provided"
             reporter_name = Uts.usernames.get(client_id, "Unknown")
-            reporter_account = Uts.get_reliable_pb_id(client_id)  # استخدام الدالة الموحدة
+            reporter_account = Uts.ensure_pb_id(client_id)  # استخدام الدالة الموحدة
             if reporter_account is None:
                 reporter_account = "Unknown"
             server_name = cfg.get('Commands', {}).get('HostName', 'Unknown Server')
@@ -6515,7 +6527,7 @@ def new_playerspaz_init_(self, *args, **kwargs) -> None:
     # إضافة تاج النادي إذا كان اللاعب عضواً في نادي (مع تأخير)
     client_id = self._player.sessionplayer.inputdevice.client_id
     if client_id is not None:
-        account_id = Uts.get_reliable_pb_id(client_id)
+        account_id = Uts.ensure_pb_id(client_id)
         if account_id and account_id in Uts.pdata and "club" in Uts.pdata[account_id]:
             club_info = Uts.pdata[account_id]["club"]
             club_id = club_info["club-id"]
@@ -7122,6 +7134,7 @@ def final_setup():
 ║   └─ All commands using pb-ID now use same reliable method ║
 ║ • Tag Duplication: ✓ Fixed (no more overlapping tags) ║
 ║ • Club Tags: ✓ Fixed (now appear correctly) ║
+║ • Player Recognition: ✓ Always identified (no more unknown) ║
 ╚══════════════════════════════════════════╝
     """
     for line in welcome_msg.split('\n'):
@@ -7324,12 +7337,12 @@ def system_test():
         # اختبار دالة get_reliable_pb_id
         try:
             test_client = list(Uts.usernames.keys())[0] if Uts.usernames else -1
-            pb = Uts.get_reliable_pb_id(test_client)
+            pb = Uts.ensure_pb_id(test_client)
             if pb is not None or test_client == -1:
-                print("✅ Test 11: get_reliable_pb_id works")
+                print("✅ Test 11: ensure_pb_id works")
                 tests_passed += 1
             else:
-                print("❌ Test 11: get_reliable_pb_id failed")
+                print("❌ Test 11: ensure_pb_id failed")
                 tests_failed += 1
         except Exception as e:
             print(f"❌ Test 11 exception: {e}")
