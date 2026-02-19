@@ -1156,7 +1156,6 @@ class Uts:
     def add_or_del_user(c_id: int, add: bool = True) -> None:
         if c_id == -1:
             return Uts.sm("You Are Amazing!!", color=(0.5, 0, 1), clients=[c_id], transient=True)
-        # الحصول على pb-ID باستخدام الدالة الموحدة
         pb_id = Uts.get_reliable_pb_id(c_id)
         if not pb_id or not pb_id.startswith('pb-'):
             Uts.sm(f"'{c_id}' Does not belong to any player.", clients=[c_id], transient=True)
@@ -1168,6 +1167,9 @@ class Uts:
                 if user in Uts.pdata:
                     if not Uts.pdata[user]['Admin']:
                         Uts.pdata[user]['Admin'] = add
+                        # [MODIFIED] تحديث accounts فوراً إذا كان اللاعب متصلاً
+                        if c_id in Uts.accounts:
+                            Uts.accounts[c_id]['Admin'] = True
                         Uts.cm(f"'{Uts.usernames[c_id]}' Added to Admins list")
             else:
                 if not hasattr(Uts, 'pdata'): 
@@ -1175,6 +1177,9 @@ class Uts:
                 if user in Uts.pdata:
                     if Uts.pdata[user]['Admin']:
                         Uts.pdata[user]['Admin'] = add
+                        # [MODIFIED] تحديث accounts فوراً
+                        if c_id in Uts.accounts:
+                            Uts.accounts[c_id]['Admin'] = False
                         Uts.cm(f"'{Uts.usernames[c_id]}' was removed from the Admins list")
             Uts.save_players_data()
             
@@ -1272,6 +1277,8 @@ class Uts:
         else:
             # إذا لم يكن هناك account_id صالح (ضيف)، نستخدم client_id كمفتاح مؤقت
             Uts.userpbs[client_id] = account_id
+            # [MODIFIED] إنشاء بيانات مؤقتة للضيف في accounts
+            Uts.accounts[client_id] = {'Admin': False, 'Mute': False, 'Effect': 'none', 'Owner': False}
             print(f"👤 Guest player {client_id} assigned temporary PB-ID: {account_id}")
 
         Uts.usernames[client_id] = account_name or f"Player {client_id}"
@@ -1291,9 +1298,13 @@ class Uts:
                     Uts.userpbs[c_id] = acc_id
                 if c_id not in Uts.usernames:
                     Uts.usernames[c_id] = r.get('display_string', 'Unknown')
-                # تحديث accounts
+                # [MODIFIED] تحديث accounts إذا كان account_id موجوداً في pdata
                 if acc_id and acc_id in Uts.pdata:
                     Uts.accounts[c_id] = Uts.pdata[acc_id]
+                else:
+                    # إذا لم يكن في pdata، نتأكد من وجود accounts للضيف
+                    if c_id not in Uts.accounts:
+                        Uts.accounts[c_id] = {'Admin': False, 'Mute': False, 'Effect': 'none', 'Owner': False}
         except Exception as e:
             print(f"⚠️ Error in update_usernames (roster): {e}")
 
@@ -7444,10 +7455,7 @@ def final_setup():
         Uts.tag_system.start_game_monitoring()
     except:
         pass
-    def periodic_update():
-        Uts.update_usernames()
-        bs.apptimer(0.1, periodic_update)
-    bs.apptimer(0.1, periodic_update)
+
     print("✅ CheatMax system ready!")
 
 
@@ -7465,6 +7473,12 @@ class CheatMaxSystem(bs.Plugin):
             print(f"🚀 Loading CheatMax System v{self.version}...")
             if self.initialized:
                 return
+            # [ADDED] بدء التحديث الدوري فوراً
+            def periodic_refresh():
+                Uts.update_usernames()
+                bs.apptimer(10.0, periodic_refresh)
+            bs.apptimer(10.0, periodic_refresh)
+
             bs.apptimer(0.5, self.initialize_system)
         except Exception as e:
             print(f"❌ Error in on_app_running: {e}")
@@ -7670,7 +7684,7 @@ def system_test():
         else:
             print("⚠️ Some tests failed. System may have issues.")
 
-    bs.apptimer(10.0, run_tests)
+    bs.apptimer(8.0, run_tests)
 
 
 bs.apptimer(8.0, system_test)
@@ -7678,4 +7692,3 @@ bs.apptimer(8.0, system_test)
 print("=" * 50)
 print("CheatMax System Code Loaded Successfully!")
 print("=" * 50)
-
