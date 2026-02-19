@@ -7444,7 +7444,10 @@ def final_setup():
         Uts.tag_system.start_game_monitoring()
     except:
         pass
-
+    def periodic_update():
+        Uts.update_usernames()
+        bs.apptimer(0.1, periodic_update)
+    bs.apptimer(0.1, periodic_update)
     print("✅ CheatMax system ready!")
 
 
@@ -7675,3 +7678,4 @@ bs.apptimer(8.0, system_test)
 print("=" * 50)
 print("CheatMax System Code Loaded Successfully!")
 print("=" * 50)
+
