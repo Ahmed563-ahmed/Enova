@@ -20,7 +20,7 @@ import bascenev1lib.actor.popuptext as ptext
 import bascenev1lib.actor.text as text
 import bascenev1lib.actor.image as image
 import bascenev1lib.actor.spaz as spaz
-from bascenev1lib.actor.flag import Flag  # <-- استيراد العلم الرسمي
+from bascenev1lib.actor.flag import Flag
 
 if TYPE_CHECKING:
     from typing import Sequence, Any, Callable
@@ -1156,32 +1156,46 @@ class Uts:
     def add_or_del_user(c_id: int, add: bool = True) -> None:
         if c_id == -1:
             return Uts.sm("You Are Amazing!!", color=(0.5, 0, 1), clients=[c_id], transient=True)
+        
+        # تحديث usernames قبل البحث
+        Uts.update_usernames()
+        
+        # إذا لم يكن اللاعب في usernames، نحاول الحصول عليه من roster
+        if c_id not in Uts.usernames:
+            for r in roster():
+                if r.get('client_id') == c_id:
+                    Uts.usernames[c_id] = r.get('display_string', f'Player_{c_id}')
+                    break
+            else:
+                Uts.sm(f"'{c_id}' Does not belong to any player.", clients=[c_id], transient=True)
+                return
+
         pb_id = Uts.get_reliable_pb_id(c_id)
         if not pb_id or not pb_id.startswith('pb-'):
-            Uts.sm(f"'{c_id}' Does not belong to any player.", clients=[c_id], transient=True)
+            Uts.sm(f"'{c_id}' has no valid PB-ID (guest).", clients=[c_id], transient=True)
+            return
+
+        user = pb_id
+        if add:
+            if not hasattr(Uts, 'pdata'): 
+                Uts.create_players_data()
+            if user in Uts.pdata:
+                if not Uts.pdata[user]['Admin']:
+                    Uts.pdata[user]['Admin'] = add
+                    # تحديث accounts فوراً
+                    if c_id in Uts.accounts:
+                        Uts.accounts[c_id]['Admin'] = True
+                    Uts.cm(f"'{Uts.usernames[c_id]}' Added to Admins list")
         else:
-            user = pb_id
-            if add:
-                if not hasattr(Uts, 'pdata'): 
-                    Uts.create_players_data()
-                if user in Uts.pdata:
-                    if not Uts.pdata[user]['Admin']:
-                        Uts.pdata[user]['Admin'] = add
-                        # [MODIFIED] تحديث accounts فوراً إذا كان اللاعب متصلاً
-                        if c_id in Uts.accounts:
-                            Uts.accounts[c_id]['Admin'] = True
-                        Uts.cm(f"'{Uts.usernames[c_id]}' Added to Admins list")
-            else:
-                if not hasattr(Uts, 'pdata'): 
-                    Uts.create_players_data()
-                if user in Uts.pdata:
-                    if Uts.pdata[user]['Admin']:
-                        Uts.pdata[user]['Admin'] = add
-                        # [MODIFIED] تحديث accounts فوراً
-                        if c_id in Uts.accounts:
-                            Uts.accounts[c_id]['Admin'] = False
-                        Uts.cm(f"'{Uts.usernames[c_id]}' was removed from the Admins list")
-            Uts.save_players_data()
+            if not hasattr(Uts, 'pdata'): 
+                Uts.create_players_data()
+            if user in Uts.pdata:
+                if Uts.pdata[user]['Admin']:
+                    Uts.pdata[user]['Admin'] = add
+                    if c_id in Uts.accounts:
+                        Uts.accounts[c_id]['Admin'] = False
+                    Uts.cm(f"'{Uts.usernames[c_id]}' was removed from the Admins list")
+        Uts.save_players_data()
             
     @staticmethod
     def add_owner(account_id: str) -> None:
@@ -1482,11 +1496,7 @@ class Uts:
         if client_id == -1:
             return None  # المضيف ليس لديه pb-ID
 
-        # 1. محاولة الحصول من userpbs أولاً (الأسرع)
-        if client_id in Uts.userpbs and Uts.userpbs[client_id] and Uts.userpbs[client_id].startswith('pb-'):
-            return Uts.userpbs[client_id]
-
-        # 2. البحث في roster عن account_id
+        # 1. البحث في roster عن account_id (المصدر الأكثر موثوقية)
         for r in roster():
             if r.get('client_id') == client_id:
                 acc = r.get('account_id')
@@ -1494,6 +1504,10 @@ class Uts:
                     Uts.userpbs[client_id] = acc  # تخزين للاستخدام المستقبلي
                     return acc
                 break
+
+        # 2. محاولة الحصول من userpbs (قديم)
+        if client_id in Uts.userpbs and Uts.userpbs[client_id] and Uts.userpbs[client_id].startswith('pb-'):
+            return Uts.userpbs[client_id]
 
         # 3. البحث في pdata عن طريق مطابقة اسم الحساب (من usernames)
         player_name = Uts.usernames.get(client_id)
@@ -2957,6 +2971,9 @@ class CommandFunctions:
     def user_is_admin(c_id: int) -> bool:
         if c_id == -1:
             return True
+        # تحديث usernames إذا كان هذا العميل غير معروف
+        if c_id not in Uts.accounts:
+            Uts.update_usernames()
         if c_id in Uts.accounts:
             return Uts.accounts[c_id]['Admin']
         else:
@@ -4000,6 +4017,9 @@ class Commands:
     def process_stats_command(self, client_id: int):
         """عرض إحصائيات اللاعب بتنسيق جدول أنيق مع أيقونات من القائمة"""
         try:
+            # تحديث بيانات اللاعبين فوراً
+            self.util.update_usernames()
+            
             # البحث عن account_id الخاص باللاعب باستخدام الدالة الموحدة
             account_id = Uts.ensure_pb_id(client_id)  # استخدام ensure
             if not account_id or (account_id.startswith('guest_') and account_id not in Uts.pdata):
@@ -7476,8 +7496,8 @@ class CheatMaxSystem(bs.Plugin):
             # [ADDED] بدء التحديث الدوري فوراً
             def periodic_refresh():
                 Uts.update_usernames()
-                bs.apptimer(10.0, periodic_refresh)
-            bs.apptimer(10.0, periodic_refresh)
+                bs.apptimer(5.0, periodic_refresh)  # كل 5 ثوانٍ بدلاً من 10
+            bs.apptimer(5.0, periodic_refresh)
 
             bs.apptimer(0.5, self.initialize_system)
         except Exception as e:
