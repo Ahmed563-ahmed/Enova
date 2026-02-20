@@ -552,7 +552,53 @@ class Uts:
     # نظام الأندية (سيتم إنشاؤه لاحقاً)
     clubs_system = None
 
-    # ==================== دوال إدارة بيانات اللاعبين (مع الحقول الجديدة) ====================
+    # ==================== إضافة تتبع اللاعبين السابقين ====================
+    previous_players: dict[int, tuple[str, str]] = {}  # client_id -> (player_name, account_name)
+
+    @staticmethod
+    def check_player_changes():
+        """مقارنة اللاعبين الحاليين مع السابقين وإزالة التيجان للمغادرين"""
+        current_players = {}
+        try:
+            activity = bs.get_foreground_host_activity()
+            if activity is not None:
+                for player in activity.players:
+                    try:
+                        client_id = player.sessionplayer.inputdevice.client_id
+                        player_name = player.getname(full=True)
+                        account_name = player.sessionplayer.inputdevice.get_v1_account_name(full=True) or player_name
+                        current_players[client_id] = (player_name, account_name)
+                    except:
+                        continue
+        except:
+            pass
+
+        # تحديد المغادرين
+        left_players = set(Uts.previous_players.keys()) - set(current_players.keys())
+        for client_id in left_players:
+            # إزالة جميع التيجان
+            Uts.remove_all_tags(client_id)
+            # يمكن إضافة رسالة مغادرة إذا أردت (اختياري)
+            player_name, account_name = Uts.previous_players.get(client_id, ("Unknown", "Unknown"))
+            print(f"🚪 Player left: {player_name} (Client ID: {client_id})")
+
+        # تحديث القائمة السابقة
+        Uts.previous_players = current_players
+
+    @staticmethod
+    def remove_all_tags(client_id: int):
+        """إزالة جميع أنواع التيجان للاعب"""
+        # تاج مخصص/متحرك
+        if Uts.tag_system:
+            Uts.tag_system.remove_tag_visual(client_id)
+            Uts.tag_system.stop_char_animation(client_id)
+            Uts.tag_system.stop_animation(client_id)
+        # تاج النادي
+        if Uts.clubs_system:
+            Uts.clubs_system.remove_club_tag(client_id)
+        # أي تاجات أخرى يمكن إضافتها هنا
+
+    # ==================== باقي دوال Uts (مع تعديل update_usernames) ====================
 
     @staticmethod
     def add_player_data(account_id: str) -> None:
@@ -672,7 +718,7 @@ class Uts:
         Uts.save_players_data()
         print(f"✅ All ranks updated ({len(players)} players).")
 
-    # ==================== باقي دوال Uts ====================
+    # ==================== باقي دوال Uts (بدون تغيير) ====================
 
     @staticmethod
     def auto_ban_player(client_id: int, account_id: str | None, name: str, reason: str):
@@ -1487,6 +1533,9 @@ class Uts:
             except:
                 if c_id in Uts.players:
                     del Uts.players[c_id]
+
+        # بعد التحديث، نتحقق من تغيرات اللاعبين
+        Uts.check_player_changes()
 
     @staticmethod
     def save_settings() -> None:
@@ -7589,6 +7638,7 @@ def final_setup():
 ║ • Tag Duplication: ✓ Fixed (no more overlapping tags) ║
 ║ • Club Tags: ✓ Fixed (now appear correctly) ║
 ║ • Player Recognition: ✓ Always identified (no more unknown) ║
+║ • Auto-remove all tags on leave: ✓ Added (based on PlayersDisplay) ║
 ╚══════════════════════════════════════════╝
     """
     for line in welcome_msg.split('\n'):
@@ -7619,8 +7669,8 @@ class CheatMaxSystem(bs.Plugin):
             # [ADDED] بدء التحديث الدوري فوراً
             def periodic_refresh():
                 Uts.update_usernames()
-                bs.apptimer(5.0, periodic_refresh)  # كل 5 ثوانٍ بدلاً من 10
-            bs.apptimer(5.0, periodic_refresh)
+                bs.apptimer(3.0, periodic_refresh)  # كل 3 ثوانٍ بدلاً من 5
+            bs.apptimer(3.0, periodic_refresh)
 
             bs.apptimer(0.5, self.initialize_system)
         except Exception as e:
@@ -7817,6 +7867,18 @@ def system_test():
                 tests_passed += 1
             else:
                 print("❌ Test 12: Tag system not available")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        # اختبار إزالة التيجان عند المغادرة
+        try:
+            # التحقق من وجود دالة remove_all_tags
+            if hasattr(Uts, 'remove_all_tags'):
+                print("✅ Test 13: remove_all_tags function exists")
+                tests_passed += 1
+            else:
+                print("❌ Test 13: remove_all_tags function missing")
                 tests_failed += 1
         except:
             tests_failed += 1
