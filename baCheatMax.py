@@ -552,7 +552,127 @@ class Uts:
     # نظام الأندية (سيتم إنشاؤه لاحقاً)
     clubs_system = None
 
-    # ==================== نظام الطرد التلقائي للدخول/خروج السريع (تمت إزالته) ====================
+    # ==================== دوال إدارة بيانات اللاعبين (مع الحقول الجديدة) ====================
+
+    @staticmethod
+    def add_player_data(account_id: str) -> None:
+        """إنشاء بيانات لاعب جديدة بالبنية الكاملة (مع Rank, Admin-check, Stats)"""
+        if not hasattr(Uts, 'pdata'):
+            Uts.create_players_data()
+        if account_id not in Uts.pdata:
+            Uts.pdata[account_id] = {
+                'Mute': False,
+                'Effect': 'none',
+                'Admin': False,
+                'Owner': False,
+                'banned': False,
+                'Accounts': [],
+                'Rank': 0,                     # الترتيب العام (يمكن استخدامه للعرض)
+                'Admin-check': False,           # تحقق إضافي للأدمن
+                'Stats': {
+                    'goals': 0,
+                    'assists': 0,
+                    'wins': 0,
+                    'losses': 0,
+                    'draws': 0,
+                    'games': 0,
+                    'score': 0.0,
+                    'rank': 0                    # الترتيب داخل الإحصائيات
+                }
+            }
+            Uts.save_players_data()
+
+    @staticmethod
+    def migrate_player_data():
+        """ترحيل البيانات القديمة إلى البنية الجديدة بإضافة الحقول المفقودة"""
+        if not hasattr(Uts, 'pdata'):
+            return
+        changed = False
+        for acc_id, data in Uts.pdata.items():
+            # التأكد من وجود Rank
+            if 'Rank' not in data:
+                data['Rank'] = 0
+                changed = True
+            # التأكد من وجود Admin-check
+            if 'Admin-check' not in data:
+                data['Admin-check'] = data.get('Admin', False)  # نسخ من Admin كقيمة افتراضية
+                changed = True
+            # التأكد من وجود Stats بالبنية الكاملة
+            if 'Stats' not in data:
+                data['Stats'] = {
+                    'goals': 0,
+                    'assists': 0,
+                    'wins': 0,
+                    'losses': 0,
+                    'draws': 0,
+                    'games': 0,
+                    'score': 0.0,
+                    'rank': 0
+                }
+                changed = True
+            else:
+                stats = data['Stats']
+                # التأكد من وجود كل مفاتيح Stats
+                default_stats = {
+                    'goals': 0,
+                    'assists': 0,
+                    'wins': 0,
+                    'losses': 0,
+                    'draws': 0,
+                    'games': 0,
+                    'score': 0.0,
+                    'rank': 0
+                }
+                for key, val in default_stats.items():
+                    if key not in stats:
+                        stats[key] = val
+                        changed = True
+        if changed:
+            Uts.save_players_data()
+            print("✅ Player data migrated to new structure.")
+
+    @staticmethod
+    def update_player_rank(account_id: str):
+        """تحديث ترتيب لاعب معين بناءً على نقاطه"""
+        if account_id not in Uts.pdata:
+            return
+        # تجميع كل النقاط
+        scores = []
+        for acc, data in Uts.pdata.items():
+            if 'Stats' in data and 'score' in data['Stats']:
+                scores.append((acc, data['Stats']['score']))
+        # ترتيب تنازلي
+        scores.sort(key=lambda x: x[1], reverse=True)
+        # البحث عن ترتيب هذا اللاعب
+        for idx, (acc, _) in enumerate(scores, 1):
+            if acc == account_id:
+                new_rank = idx
+                break
+        else:
+            new_rank = 0
+        # تحديث rank في Stats و Rank العام
+        Uts.pdata[account_id]['Stats']['rank'] = new_rank
+        Uts.pdata[account_id]['Rank'] = new_rank
+        Uts.save_players_data()
+
+    @staticmethod
+    def update_all_ranks():
+        """إعادة حساب ترتيب جميع اللاعبين بناءً على النقاط"""
+        # تجميع كل النقاط
+        players = []
+        for acc, data in Uts.pdata.items():
+            if 'Stats' in data and 'score' in data['Stats']:
+                players.append((acc, data['Stats']['score']))
+        # ترتيب تنازلي
+        players.sort(key=lambda x: x[1], reverse=True)
+        # تحديث الرتب
+        for idx, (acc, _) in enumerate(players, 1):
+            Uts.pdata[acc]['Stats']['rank'] = idx
+            Uts.pdata[acc]['Rank'] = idx
+        Uts.save_players_data()
+        print(f"✅ All ranks updated ({len(players)} players).")
+
+    # ==================== باقي دوال Uts (بدون تغيير) ====================
 
     @staticmethod
     def auto_ban_player(client_id: int, account_id: str | None, name: str, reason: str):
@@ -1182,6 +1302,8 @@ class Uts:
             if user in Uts.pdata:
                 if not Uts.pdata[user]['Admin']:
                     Uts.pdata[user]['Admin'] = add
+                    # تحديث Admin-check أيضاً
+                    Uts.pdata[user]['Admin-check'] = True
                     # تحديث accounts فوراً
                     if c_id in Uts.accounts:
                         Uts.accounts[c_id]['Admin'] = True
@@ -1192,6 +1314,7 @@ class Uts:
             if user in Uts.pdata:
                 if Uts.pdata[user]['Admin']:
                     Uts.pdata[user]['Admin'] = add
+                    Uts.pdata[user]['Admin-check'] = False
                     if c_id in Uts.accounts:
                         Uts.accounts[c_id]['Admin'] = False
                     Uts.cm(f"'{Uts.usernames[c_id]}' was removed from the Admins list")
@@ -1207,13 +1330,26 @@ class Uts:
                 'Effect': 'none',
                 'Admin': True,
                 'Owner': True,
-                'banned': False,   # إضافة حقل الحظر
-                'Accounts': []
+                'banned': False,
+                'Accounts': [],
+                'Rank': 0,
+                'Admin-check': True,
+                'Stats': {
+                    'goals': 0,
+                    'assists': 0,
+                    'wins': 0,
+                    'losses': 0,
+                    'draws': 0,
+                    'games': 0,
+                    'score': 0.0,
+                    'rank': 0
+                }
             }
         else:
             Uts.pdata[account_id]['Admin'] = True
             Uts.pdata[account_id]['Owner'] = True
             Uts.pdata[account_id]['banned'] = False
+            Uts.pdata[account_id]['Admin-check'] = True
         Uts.save_players_data()
         print(f"Added owner: {account_id}")
 
@@ -1231,6 +1367,8 @@ class Uts:
         with open(file) as f:
             r = f.read()
             Uts.pdata = json.loads(r)
+        # ترحيل البيانات إلى البنية الجديدة
+        Uts.migrate_player_data()
             
     @staticmethod
     def create_tags_data() -> None:
@@ -1291,7 +1429,7 @@ class Uts:
         else:
             # إذا لم يكن هناك account_id صالح (ضيف)، نستخدم client_id كمفتاح مؤقت
             Uts.userpbs[client_id] = account_id
-            # [MODIFIED] إنشاء بيانات مؤقتة للضيف في accounts
+            # إنشاء بيانات مؤقتة للضيف في accounts
             Uts.accounts[client_id] = {'Admin': False, 'Mute': False, 'Effect': 'none', 'Owner': False}
             print(f"👤 Guest player {client_id} assigned temporary PB-ID: {account_id}")
 
@@ -1312,7 +1450,7 @@ class Uts:
                     Uts.userpbs[c_id] = acc_id
                 if c_id not in Uts.usernames:
                     Uts.usernames[c_id] = r.get('display_string', 'Unknown')
-                # [MODIFIED] تحديث accounts إذا كان account_id موجوداً في pdata
+                # تحديث accounts إذا كان account_id موجوداً في pdata
                 if acc_id and acc_id in Uts.pdata:
                     Uts.accounts[c_id] = Uts.pdata[acc_id]
                 else:
@@ -1350,20 +1488,6 @@ class Uts:
             except:
                 if c_id in Uts.players:
                     del Uts.players[c_id]
-
-    @staticmethod
-    def add_player_data(account_id: str) -> None:
-        if not hasattr(Uts, 'pdata'):
-            Uts.create_players_data()
-        if account_id not in Uts.pdata:
-            Uts.pdata[account_id] = {
-                'Mute': False,
-                'Effect': 'none',
-                'Admin': False,
-                'Owner': False,
-                'banned': False,   # إضافة حقل الحظر
-                'Accounts': []}
-            Uts.save_players_data()
 
     @staticmethod
     def save_settings() -> None:
