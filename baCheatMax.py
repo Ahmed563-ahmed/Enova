@@ -672,7 +672,7 @@ class Uts:
         Uts.save_players_data()
         print(f"✅ All ranks updated ({len(players)} players).")
 
-    # ==================== باقي دوال Uts (بدون تغيير) ====================
+    # ==================== باقي دوال Uts ====================
 
     @staticmethod
     def auto_ban_player(client_id: int, account_id: str | None, name: str, reason: str):
@@ -778,7 +778,6 @@ class Uts:
             w = json.dumps(Uts.reports_data, indent=4)
             f.write(w)
 
-    # ==================== تنظيف بيانات الحظر من الإدخالات غير الصالحة (المضيف) ====================
     @staticmethod
     def clean_bans_data():
         """إزالة أي بيانات حظر غير صالحة (مثل client_-1)"""
@@ -796,7 +795,6 @@ class Uts:
             Uts.save_bans_data()
             print(f"🧹 Cleaned invalid ban entries: {removed}")
 
-    # ==================== مراقبة الحظر الدورية (BombMaster style) - محسنة ====================
     @staticmethod
     def start_ban_monitoring():
         """بدء مراقبة دورية للاعبين المحظورين وطردهم فورًا (مع تحسينات)"""
@@ -872,7 +870,6 @@ class Uts:
         bs.apptimer(1.0, check_bans)
         print("✅ Ban monitoring started (improved version)")
 
-    # ==================== التحقق من الحظر عند الاتصال (بدون رسالة) - محسنة ====================
     @staticmethod
     def check_player_ban_on_join(player: bs.Player) -> bool:
         try:
@@ -1319,6 +1316,8 @@ class Uts:
                         Uts.accounts[c_id]['Admin'] = False
                     Uts.cm(f"'{Uts.usernames[c_id]}' was removed from the Admins list")
         Uts.save_players_data()
+        # تحديث accounts لجميع العملاء المرتبطين بنفس PB-ID
+        Uts.update_usernames()
             
     @staticmethod
     def add_owner(account_id: str) -> None:
@@ -1421,7 +1420,7 @@ class Uts:
             if account_name not in accounts:
                 accounts.append(account_name)
                 Uts.save_players_data()
-            Uts.accounts[client_id] = Uts.pdata[account_id]
+            Uts.accounts[client_id] = Uts.pdata[account_id]  # مرجع لنفس القاموس
             if Uts.pdata[account_id].get('Owner', False):
                 Uts.sm("You are the owner!", color=(1.0, 0.5, 0.0), transient=True, clients=[client_id])
             # تخزين PB-ID الحقيقي
@@ -1452,7 +1451,7 @@ class Uts:
                     Uts.usernames[c_id] = r.get('display_string', 'Unknown')
                 # تحديث accounts إذا كان account_id موجوداً في pdata
                 if acc_id and acc_id in Uts.pdata:
-                    Uts.accounts[c_id] = Uts.pdata[acc_id]
+                    Uts.accounts[c_id] = Uts.pdata[acc_id]  # مرجع
                 else:
                     # إذا لم يكن في pdata، نتأكد من وجود accounts للضيف
                     if c_id not in Uts.accounts:
