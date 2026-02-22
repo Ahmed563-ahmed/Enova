@@ -585,48 +585,37 @@ class Uts:
         # تحديث القائمة السابقة
         Uts.previous_players = current_players
 
-    @staticmethod
-    def remove_all_tags(client_id: int):
-        """إزالة جميع أنواع التيجان للاعب"""
-        # تاج مخصص/متحرك
-        if Uts.tag_system:
-            Uts.tag_system.remove_tag_visual(client_id)
-            Uts.tag_system.stop_char_animation(client_id)
-            Uts.tag_system.stop_animation(client_id)
-        # تاج النادي
-        if Uts.clubs_system:
-            Uts.clubs_system.remove_club_tag(client_id)
-        # أي تاجات أخرى يمكن إضافتها هنا
-
-    # ==================== باقي دوال Uts (مع تعديل update_usernames) ====================
 
     @staticmethod
     def add_player_data(account_id: str) -> None:
-        """إنشاء بيانات لاعب جديدة بالبنية الكاملة (مع Rank, Admin-check, Stats)"""
         if not hasattr(Uts, 'pdata'):
             Uts.create_players_data()
-        if account_id not in Uts.pdata:
-            Uts.pdata[account_id] = {
-                'Mute': False,
-                'Effect': 'none',
-                'Admin': False,
-                'Owner': False,
-                'banned': False,
-                'Accounts': [],
-                'Rank': 0,                     # الترتيب العام (يمكن استخدامه للعرض)
-                'Admin-check': False,           # تحقق إضافي للأدمن
-                'Stats': {
-                    'goals': 0,
-                    'assists': 0,
-                    'wins': 0,
-                    'losses': 0,
-                    'draws': 0,
-                    'games': 0,
-                    'score': 0.0,
-                    'rank': 0                    # الترتيب داخل الإحصائيات
-                }
+
+        # ❌ ممنوع إعادة الإنشاء
+        if account_id in Uts.pdata:
+            return
+
+        Uts.pdata[account_id] = {
+            'Mute': False,
+            'Effect': 'none',
+            'Admin': False,
+            'Owner': False,
+            'banned': False,
+            'Accounts': [],
+            'Rank': 0,
+            'Admin-check': False,
+            'Stats': {
+                'goals': 0,
+                'assists': 0,
+                'wins': 0,
+                'losses': 0,
+                'draws': 0,
+                'games': 0,
+                'score': 0.0,
+                'rank': 0
             }
-            Uts.save_players_data()
+        }
+        Uts.save_players_data()
 
     @staticmethod
     def migrate_player_data():
@@ -1364,7 +1353,7 @@ class Uts:
         Uts.save_players_data()
         # تحديث accounts لجميع العملاء المرتبطين بنفس PB-ID
         Uts.update_usernames()
-            
+
     @staticmethod
     def add_owner(account_id: str) -> None:
         if not hasattr(Uts, 'pdata'): 
@@ -1397,7 +1386,24 @@ class Uts:
             Uts.pdata[account_id]['Admin-check'] = True
         Uts.save_players_data()
         print(f"Added owner: {account_id}")
+    @staticmethod
+    def remove_all_tags(client_id: int):
+        # لا تشيل التاج لو اللاعب لسه موجود
+        if client_id in Uts.players:
+            try:
+                p = Uts.players[client_id]
+                if p.exists():
+                    return
+            except:
+                pass
 
+        if Uts.tag_system:
+            Uts.tag_system.remove_tag_visual(client_id)
+            Uts.tag_system.stop_char_animation(client_id)
+            Uts.tag_system.stop_animation(client_id)
+
+        if Uts.clubs_system:
+            Uts.clubs_system.remove_club_tag(client_id)
     @staticmethod
     def create_players_data() -> None:
         if hasattr(Uts, 'pdata'):
@@ -1458,7 +1464,7 @@ class Uts:
                 bs.chatmessage(f"Error in player_join: {e}")
             account_id = None
 
-        if account_id and account_id.startswith('pb'):
+        if account_id and account_id.startswith('pb-'):
             if account_id not in Uts.pdata:
                 Uts.add_player_data(account_id)
                 Uts.sm("Saving user data...", color=(0.35, 0.7, 0.1), transient=True, clients=[client_id])
@@ -1481,6 +1487,18 @@ class Uts:
         Uts.usernames[client_id] = account_name or f"Player {client_id}"
         Uts.useraccounts[client_id] = account_name or f"Player {client_id}"
         Uts.players[client_id] = sessionplayer
+        # إعادة تطبيق التاج بعد الدخول
+        def _restore_tags():
+            try:
+                if Uts.clubs_system:
+                    Uts.clubs_system.apply_club_tag(client_id)
+
+                if Uts.tag_system:
+                    Uts.tag_system.apply_tag(client_id)
+            except Exception as e:
+                print(f"⚠️ Failed to restore tag for {client_id}: {e}")
+
+        bs.apptimer(1, _restore_tags)
 
     @staticmethod
     def update_usernames() -> None:
