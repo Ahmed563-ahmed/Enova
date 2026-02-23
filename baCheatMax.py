@@ -1499,7 +1499,7 @@ class Uts:
                 print(f"⚠️ Failed to restore tag for {client_id}: {e}")
 
         bs.apptimer(1, _restore_tags)
-
+    
     @staticmethod
     def update_usernames() -> None:
         try:
@@ -3158,16 +3158,22 @@ class CommandFunctions:
         return bs.app.spaz_appearances
     
     @staticmethod
-    def user_is_admin(c_id: int) -> bool:
-        if c_id == -1:
-            return True
-        # تحديث usernames إذا كان هذا العميل غير معروف
-        if c_id not in Uts.accounts:
-            Uts.update_usernames()
-        if c_id in Uts.accounts:
-            return Uts.accounts[c_id]['Admin']
-        else:
+    def user_is_admin(client_id: int) -> bool:
+        # يجب التأكد من تحميل pdata
+        if not hasattr(Uts, 'pdata'):
+            Uts.create_players_data()
+
+        # الحصول على pb-ID الموثوق
+        account_id = Uts.get_reliable_pb_id(client_id)
+        if not account_id or not account_id.startswith('pb-'):
             return False
+
+        data = Uts.pdata.get(account_id)
+        if not data:
+            return False
+
+        # نستخدم فقط Admin و Owner من pdata
+        return data.get('Admin', False) or data.get('Owner', False)
             
     @staticmethod
     def user_is_owner(c_id: int) -> bool:
@@ -7285,6 +7291,31 @@ class MagicBox(bs.Actor):
 Uts.tag_system = TagSystem()
 Uts.leaderboard_display = LeaderboardDisplay()
 Uts.clubs_system = ClubsSystem()  # الآن ClubsSystem يعرف Uts
+
+# ==================== إضافة مراقبة خروج اللاعبين (التاج) ====================
+def start_player_monitor():
+    def loop():
+        Uts.check_player_changes()
+        bs.apptimer(1.0, loop)
+    bs.apptimer(1.0, loop)
+
+start_player_monitor()
+
+# ==================== تعديل handlemessage في PlayerSpaz لإزالة التاج عند الموت ====================
+# نعيد تعريف الدالة مع الاحتفاظ بالأصلية
+original_spaz_handlemessage = PlayerSpaz.handlemessage
+
+def new_spaz_handlemessage(self, msg):
+    if isinstance(msg, bs.DieMessage):
+        try:
+            client_id = self._player.sessionplayer.inputdevice.client_id
+            Uts.remove_all_tags(client_id)
+        except:
+            pass
+    # استدعاء الدالة الأصلية
+    original_spaz_handlemessage(self, msg)
+
+PlayerSpaz.handlemessage = new_spaz_handlemessage
 
 # ==================== دوال الإعداد والتشغيل ====================
 def _install() -> None:
