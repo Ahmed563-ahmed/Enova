@@ -1323,36 +1323,51 @@ class Uts:
                 return
 
         pb_id = Uts.get_reliable_pb_id(c_id)
-        if not pb_id or not pb_id.startswith('pb-'):
-            Uts.sm(f"'{c_id}' has no valid PB-ID (guest).", clients=[c_id], transient=True)
-            return
-
-        user = pb_id
+        # حتى لو لم يكن pb_id صالحاً، نسمح بإضافة الأدمن باستخدام client_id فقط
+        # سنخزن الصلاحية في accounts مباشرة، ونحاول تحديث pdata إذا توفر pb_id
+        
         if add:
-            if not hasattr(Uts, 'pdata'): 
-                Uts.create_players_data()
-            if user in Uts.pdata:
-                if not Uts.pdata[user]['Admin']:
-                    Uts.pdata[user]['Admin'] = add
-                    # تحديث Admin-check أيضاً
-                    Uts.pdata[user]['Admin-check'] = True
-                    # تحديث accounts فوراً
-                    if c_id in Uts.accounts:
-                        Uts.accounts[c_id]['Admin'] = True
-                    Uts.cm(f"'{Uts.usernames[c_id]}' Added to Admins list")
+            # تحديث accounts على الفور
+            if c_id not in Uts.accounts:
+                Uts.accounts[c_id] = {'Admin': False, 'Mute': False, 'Effect': 'none', 'Owner': False}
+            Uts.accounts[c_id]['Admin'] = True
+            Uts.accounts[c_id]['Owner'] = False  # تأكيد
+            
+            # تحديث pdata إذا كان لدينا pb_id صالح
+            if pb_id and pb_id.startswith('pb-') and pb_id in Uts.pdata:
+                Uts.pdata[pb_id]['Admin'] = True
+                Uts.pdata[pb_id]['Admin-check'] = True
+                # ربط accounts مع pdata
+                Uts.accounts[c_id] = Uts.pdata[pb_id]  # استبدال بالمرجع
+            else:
+                # لا يوجد pb_id صالح، نخزن الصلاحية في accounts فقط، وننشئ إدخالاً مؤقتاً في pdata إذا أردنا
+                # يمكن إنشاء pdata مؤقت باستخدام client_id كمفتاح
+                temp_key = f"guest_{c_id}"
+                if temp_key not in Uts.pdata:
+                    Uts.add_player_data(temp_key)  # تنشئ بيانات جديدة
+                Uts.pdata[temp_key]['Admin'] = True
+                Uts.pdata[temp_key]['Admin-check'] = True
+                # ربط accounts مع pdata المؤقت
+                Uts.accounts[c_id] = Uts.pdata[temp_key]
+            
+            Uts.cm(f"'{Uts.usernames[c_id]}' Added to Admins list")
         else:
-            if not hasattr(Uts, 'pdata'): 
-                Uts.create_players_data()
-            if user in Uts.pdata:
-                if Uts.pdata[user]['Admin']:
-                    Uts.pdata[user]['Admin'] = add
-                    Uts.pdata[user]['Admin-check'] = False
-                    if c_id in Uts.accounts:
-                        Uts.accounts[c_id]['Admin'] = False
-                    Uts.cm(f"'{Uts.usernames[c_id]}' was removed from the Admins list")
+            # إزالة الصلاحية
+            if c_id in Uts.accounts:
+                Uts.accounts[c_id]['Admin'] = False
+                # إذا كان مرتبطاً بـ pdata، نزيل منه أيضاً
+                if pb_id and pb_id.startswith('pb-') and pb_id in Uts.pdata:
+                    Uts.pdata[pb_id]['Admin'] = False
+                    Uts.pdata[pb_id]['Admin-check'] = False
+                else:
+                    temp_key = f"guest_{c_id}"
+                    if temp_key in Uts.pdata:
+                        Uts.pdata[temp_key]['Admin'] = False
+                        Uts.pdata[temp_key]['Admin-check'] = False
+            Uts.cm(f"'{Uts.usernames[c_id]}' was removed from the Admins list")
+        
         Uts.save_players_data()
-        # تحديث accounts لجميع العملاء المرتبطين بنفس PB-ID
-        Uts.update_usernames()
+        Uts.update_usernames()  # لمزامنة accounts مع pdata
 
     @staticmethod
     def add_owner(account_id: str) -> None:
@@ -1482,6 +1497,11 @@ class Uts:
             Uts.userpbs[client_id] = account_id
             # إنشاء بيانات مؤقتة للضيف في accounts
             Uts.accounts[client_id] = {'Admin': False, 'Mute': False, 'Effect': 'none', 'Owner': False}
+            # نحاول ربط الضيف بأي بيانات pdata سابقة باستخدام client_id كمفتاح مؤقت
+            temp_key = f"guest_{client_id}"
+            if temp_key in Uts.pdata:
+                # إذا كان هناك بيانات سابقة (مثلاً بسبب إضافته كأدمن من قبل)، نربطها
+                Uts.accounts[client_id] = Uts.pdata[temp_key]
             print(f"👤 Guest player {client_id} assigned temporary PB-ID: {account_id}")
 
         Uts.usernames[client_id] = account_name or f"Player {client_id}"
@@ -3159,21 +3179,22 @@ class CommandFunctions:
     
     @staticmethod
     def user_is_admin(client_id: int) -> bool:
-        # يجب التأكد من تحميل pdata
-        if not hasattr(Uts, 'pdata'):
-            Uts.create_players_data()
-
-        # الحصول على pb-ID الموثوق
+        # نعطي الأولوية لـ Uts.accounts (المرتبط بـ client_id) لأنه قد يحتوي على صلاحية حتى للضيوف
+        if client_id in Uts.accounts:
+            # إذا كان لديه إدخال في accounts، نستخدم صلاحيته مباشرة
+            return Uts.accounts[client_id].get('Admin', False)
+        
+        # إذا لم نجده في accounts، نحاول البحث في pdata باستخدام pb-id
         account_id = Uts.get_reliable_pb_id(client_id)
-        if not account_id or not account_id.startswith('pb-'):
-            return False
-
-        data = Uts.pdata.get(account_id)
-        if not data:
-            return False
-
-        # نستخدم فقط Admin و Owner من pdata
-        return data.get('Admin', False) or data.get('Owner', False)
+        if account_id and account_id.startswith('pb-') and account_id in Uts.pdata:
+            return Uts.pdata[account_id].get('Admin', False)
+        
+        # محاولة أخيرة: البحث في pdata باستخدام client_id كمفتاح مؤقت (للضيوف الذين أضيفوا كأدمن سابقاً)
+        temp_key = f"guest_{client_id}"
+        if temp_key in Uts.pdata:
+            return Uts.pdata[temp_key].get('Admin', False)
+        
+        return False
             
     @staticmethod
     def user_is_owner(c_id: int) -> bool:
