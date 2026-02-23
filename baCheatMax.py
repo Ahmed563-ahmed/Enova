@@ -1,22 +1,29 @@
-# -*- coding: utf-8 -*-
-# CheatMax System v2.0.2 – Advanced Tag, Admin, Clubs & Protection System
-# تم التنظيم والإكمال بواسطة المساعد
+# ba_meta require api 9
+from __future__ import annotations
 
+from typing import TYPE_CHECKING
+import os, random, json
+import shutil
+from datetime import datetime, timedelta
 import bascenev1 as bs
 import bauiv1 as bui
 import babase as ba
 import _babase
-import os
-import json
-import random
-import shutil
 import time
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from bascenev1._activity import Activity
+from bascenev1lib.actor.bomb import Bomb
+from bascenev1lib.gameutils import SharedObjects
+from bascenev1lib.mainmenu import MainMenuActivity
+from bascenev1lib.actor.playerspaz import PlayerSpaz
+from bascenev1lib.actor.spazfactory import SpazFactory
+import bascenev1lib.actor.popuptext as ptext
+import bascenev1lib.actor.text as text
+import bascenev1lib.actor.image as image
+import bascenev1lib.actor.spaz as spaz
+from bascenev1lib.actor.flag import Flag
 
 if TYPE_CHECKING:
-    pass
-
+    from typing import Sequence, Any, Callable
 # ==================== إعدادات اللغة ====================
 class Lang:
     def __init__(self, text: str, subs: list[str] = 'none'):
