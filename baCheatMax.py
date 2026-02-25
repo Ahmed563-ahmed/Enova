@@ -9,6 +9,7 @@ import bascenev1 as bs
 import bauiv1 as bui
 import babase as ba
 import _babase
+import time
 from bascenev1._activity import Activity
 from bascenev1lib.actor.bomb import Bomb
 from bascenev1lib.gameutils import SharedObjects
@@ -1464,47 +1465,237 @@ class Uts:
             w = json.dumps(Uts.tags, indent=4)
             f.write(w)
 
-    # ==================== دالة موحدة وآمنة لجلب PB-ID (محسّنة) ====================
     @staticmethod
-    def ensure_pb_id(client_id: int, max_attempts: int = 5) -> str | None:
-        """
-        تحاول جلب PB-ID للاعب بعدة طرق.
-        إذا لم تجد في المرة الأولى، تعيد المحاولة باستخدام bs.apptimer.
-        هذه الدالة غير متزامنة وتستدعي نفسها بشكل متكرر.
-        """
-        if client_id == -1:
-            return None
-        attempt = 0
+    def player_join(player: bs.Player) -> None:
+        if not hasattr(Uts, "pdata"):
+            Uts.create_players_data()
+        try:
+            sessionplayer = player.sessionplayer
+            account_id = sessionplayer.get_v1_account_id()
+            client_id = sessionplayer.inputdevice.client_id
+            account_name = sessionplayer.inputdevice.get_v1_account_name(True)
+        except Exception as e:
+            if "account" not in str(e).lower():
+                bs.chatmessage(f"Error in player_join: {e}")
+            account_id = None
 
-        def try_fetch():
-            nonlocal attempt
-            attempt += 1
-            # 1. البحث في roster
+        if account_id and account_id.startswith('pb-'):
+            if account_id not in Uts.pdata:
+                Uts.add_player_data(account_id)
+                Uts.sm("Saving user data...", color=(0.35, 0.7, 0.1), transient=True, clients=[client_id])
+            accounts = Uts.pdata[account_id]['Accounts']
+            if account_name not in accounts:
+                accounts.append(account_name)
+                Uts.save_players_data()
+            Uts.accounts[client_id] = Uts.pdata[account_id]  # مرجع لنفس القاموس
+            if Uts.pdata[account_id].get('Owner', False):
+                Uts.sm("You are the owner!", color=(1.0, 0.5, 0.0), transient=True, clients=[client_id])
+            # تخزين PB-ID الحقيقي
+            Uts.userpbs[client_id] = account_id
+        else:
+            # إذا لم يكن هناك account_id صالح (ضيف)، نستخدم client_id كمفتاح مؤقت
+            Uts.userpbs[client_id] = account_id
+            # إنشاء بيانات مؤقتة للضيف في accounts
+            Uts.accounts[client_id] = {'Admin': False, 'Mute': False, 'Effect': 'none', 'Owner': False}
+            # نحاول ربط الضيف بأي بيانات pdata سابقة باستخدام client_id كمفتاح مؤقت
+            temp_key = f"guest_{client_id}"
+            if temp_key in Uts.pdata:
+                # إذا كان هناك بيانات سابقة (مثلاً بسبب إضافته كأدمن من قبل)، نربطها
+                Uts.accounts[client_id] = Uts.pdata[temp_key]
+            print(f"👤 Guest player {client_id} assigned temporary PB-ID: {account_id}")
+
+        Uts.usernames[client_id] = account_name or f"Player {client_id}"
+        Uts.useraccounts[client_id] = account_name or f"Player {client_id}"
+        Uts.players[client_id] = sessionplayer
+        # إعادة تطبيق التاج بعد الدخول
+        def _restore_tags():
+            try:
+                if Uts.clubs_system:
+                    Uts.clubs_system.apply_club_tag(client_id)
+
+                if Uts.tag_system:
+                    Uts.tag_system.apply_tag(client_id)
+            except Exception as e:
+                print(f"⚠️ Failed to restore tag for {client_id}: {e}")
+
+        bs.apptimer(1, _restore_tags)
+    
+    @staticmethod
+    def update_usernames() -> None:
+        try:
+            # التحديث من roster
             for r in roster():
-                if r.get('client_id') == client_id:
-                    acc = r.get('account_id')
-                    if acc and acc.startswith('pb-'):
-                        Uts.userpbs[client_id] = acc
-                        return acc
-            # 2. البحث في Uts.userpbs (ربما مخزناً سابقاً)
-            if client_id in Uts.userpbs and Uts.userpbs[client_id].startswith('pb-'):
-                return Uts.userpbs[client_id]
-            # 3. البحث في pdata عن طريق مطابقة الاسم
-            name = Uts.usernames.get(client_id)
-            if name:
-                for acc_id, data in Uts.pdata.items():
-                    if 'Accounts' in data and name in data['Accounts']:
-                        if acc_id.startswith('pb-'):
-                            Uts.userpbs[client_id] = acc_id
-                            return acc_id
-            # إذا لم نجد ولم نصل للحد الأقصى، نعيد المحاولة بعد قليل
-            if attempt < max_attempts:
-                bs.apptimer(0.3, lambda: try_fetch())
-            else:
-                print(f"⚠️ Could not fetch PB-ID for client {client_id} after {max_attempts} attempts.")
-            return None
+                c_id = r.get('client_id')
+                if c_id is None:
+                    continue
+                acc_id = r.get('account_id')
+                if acc_id and acc_id.startswith('pb'):
+                    Uts.userpbs[c_id] = acc_id
+                if c_id not in Uts.usernames:
+                    Uts.usernames[c_id] = r.get('display_string', 'Unknown')
+                # تحديث accounts إذا كان account_id موجوداً في pdata
+                if acc_id and acc_id in Uts.pdata:
+                    Uts.accounts[c_id] = Uts.pdata[acc_id]  # مرجع
+                else:
+                    # إذا لم يكن في pdata، نتأكد من وجود accounts للضيف
+                    if c_id not in Uts.accounts:
+                        Uts.accounts[c_id] = {'Admin': False, 'Mute': False, 'Effect': 'none', 'Owner': False}
+        except Exception as e:
+            print(f"⚠️ Error in update_usernames (roster): {e}")
 
-        return try_fetch()
+        # التأكد من أن كل client_id له إدخال في userpbs
+        for cid in list(Uts.usernames.keys()):
+            if cid not in Uts.userpbs:
+                # حاول الحصول على PB-ID من بيانات الجلسة
+                if cid in Uts.players and Uts.players[cid].exists():
+                    try:
+                        acc = Uts.players[cid].get_v1_account_id()
+                        if acc and acc.startswith('pb'):
+                            Uts.userpbs[cid] = acc
+                            continue
+                    except:
+                        pass
+                # استخدام guest_ مؤقت
+                Uts.userpbs[cid] = f"guest_{cid}"
+                print(f"⚠️ Guest player {cid} assigned temporary PB-ID: guest_{cid}")
+
+        # تحديث من players dict
+        for c_id, p in list(Uts.players.items()):
+            try:
+                if p.exists():
+                    Uts.usernames[c_id] = p.getname(full=True)
+                    Uts.shortnames[c_id] = p.getname(full=False)
+                    acc = p.get_v1_account_id()
+                    if acc and acc.startswith('pb'):
+                        Uts.userpbs[c_id] = acc
+            except:
+                if c_id in Uts.players:
+                    del Uts.players[c_id]
+
+        # بعد التحديث، نتحقق من تغيرات اللاعبين
+        Uts.check_player_changes()
+
+    @staticmethod
+    def save_settings() -> None:
+        global cfg
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxSettings.json'
+        with open(file, 'w') as f:
+            w = json.dumps(cfg, indent=4)
+            f.write(w)
+
+    @staticmethod
+    def create_settings() -> None:
+        global cfg
+        folder = Uts.directory_user + '/Configs'
+        file = folder + '/CheatMaxSettings.json'
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+        if not os.path.exists(file):
+            with open(file, 'w') as f:
+                f.write('{}')
+        with open(file) as f:
+            r = f.read()
+            cfg = json.loads(r)
+        # إضافة إعداد الطقس الافتراضي
+        if 'Commands' not in cfg:
+            cfg['Commands'] = {}
+        if 'Weather' not in cfg['Commands']:
+            cfg['Commands']['Weather'] = 'none'
+            Uts.save_settings()
+        # إعداد لوحة المتصدرين (افتراضي معطل)
+        if 'ShowStatsLeaderboard' not in cfg['Commands']:
+            cfg['Commands']['ShowStatsLeaderboard'] = False
+            Uts.save_settings()
+
+    @staticmethod
+    def create_user_system_scripts() -> None:
+        import shutil
+        app = _babase.app.env
+        if app.python_directory_user is None:
+            raise RuntimeError('user python dir unset')
+        if app.python_directory_app is None:
+            raise RuntimeError('app python dir unset')
+        path = app.python_directory_user + '/sys/' + app.engine_version + '_' + str(_babase.app.env.engine_build_number)
+        if os.path.exists(path):
+            print(f"System scripts already exist at: '{path}'")
+            return
+        try:
+            print(f'COPYING "{app.python_directory_app}" -> "{path}".')
+            shutil.copytree(app.python_directory_app, path, 
+                           ignore=shutil.ignore_patterns('__pycache__'))
+            print(f"Created system scripts at: '{path}'")
+            print(f"Restart {bui.appname()} to use them.")
+            print("(use babase.quit() to exit the game)")
+        except Exception as e:
+            print(f"Error creating system scripts: {e}")
+
+    @staticmethod
+    def create_data_text(self) -> None:
+        if isinstance(self, MainMenuActivity):
+            return
+        if getattr(self, '_text_data', None):
+            self._text_data.node.delete()
+        if cfg['Commands'].get('ShowInfo'):
+            info = f"\ue043|Host: {cfg['Commands'].get('HostName', '???')}\n\ue01e|Description: {cfg['Commands'].get('Description', '???')}\n\ue01e|Version: {_babase.app.env.engine_version}"
+            color = tuple(list(cfg['Commands'].get('InfoColor', Uts.colors()['white'])) + [1])
+            self._text_data = text.Text(info,
+                position=(-650.0, -200.0), color=color)
+
+    @staticmethod
+    def create_live_chat(self,
+                         live: bool = True,
+                         chat: list[int, str] = None,
+                         admin: bool = False) -> None:
+        if isinstance(self, MainMenuActivity):
+            return
+        if getattr(self, '_live_chat', None):
+            self._live_chat.node.delete()
+        if cfg['Commands'].get('ChatLive'):
+            max_chats = 6
+            chats = list()
+            txt = str()
+            icon = bui.charstr(bui.SpecialChar.STEAM_LOGO) if admin else ''
+            if any(bs.get_chat_messages()):
+                if len(Chats) == max_chats:
+                    Chats.pop(0)
+                if live:
+                    name = Uts.shortnames.get(chat[0], chat[0])
+                    msg = chat[1]
+                    Chats.append(f'{icon}{name}: {msg}')
+                for msg in Chats:
+                    if len(chats) != max_chats:
+                        chats.append(msg)
+                    else: break
+                txt = '\n'.join(chats)
+            livetext = "\ue043 CHAT LIVE \ue043"
+            txt = (livetext + '\n' + ''.join(['=' for s 
+                in range(len(livetext))]) + '\n') + txt
+            self._live_chat = text.Text(txt, position=(650.0, 200.0),
+                color=(1, 1, 1, 1), h_align=text.Text.HAlign.RIGHT)
+
+    @staticmethod
+    def funtion() -> str:
+        return """    %s
+    try:
+        cm = babase.app.cheatmax_filter_chat(msg, client_id)
+        if cm == '@':
+            return None
+    except Exception:
+        pass
+        """ % Uts.key
+
+    @staticmethod
+    def ensure_pb_id(client_id: int) -> str | None:
+        """
+        دالة مساعدة لضمان وجود pb-ID للاعب. يتم استدعاؤها قبل أي عملية تحتاج pb-ID.
+        """
+        pb = Uts.get_reliable_pb_id(client_id)
+        if pb is None:
+            # إذا لم نجد، نحاول تحديث البيانات
+            Uts.update_usernames()
+            pb = Uts.get_reliable_pb_id(client_id)
+        return pb
 
     @staticmethod
     def get_reliable_pb_id(client_id: int) -> str | None:
