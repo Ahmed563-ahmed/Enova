@@ -1254,11 +1254,10 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                 'color': (1, 1, 1),
                 'h_align': 'center',
                 'v_align': 'center',
-                'position': (0, -300),  # أعلى المنتصف بقليل
+                'position': (0, 200),  # أعلى المنتصف بقليل
                 'shadow': 1.0,
                 'flatness': 1.0,
                 'big': True,
-                'v_attach': 'top'
             })
         
         # بدء العد التنازلي
