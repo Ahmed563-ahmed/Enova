@@ -2799,7 +2799,7 @@ class ClubsSystem:
                     'flatness': 1.0,
                     'h_align': 'center',
                     'v_align': 'center',
-                    'scale': 0.009,
+                    'scale': 0.01,
                     'color': back_color_tuple,
                     'opacity': 0.8
                 })
@@ -2818,7 +2818,7 @@ class ClubsSystem:
                     'flatness': 1.0,
                     'h_align': 'center',
                     'v_align': 'center',
-                    'scale': 0.008,
+                    'scale': 0.01,
                     'color': front_color_tuple,
                     'opacity': 1.0
                 })
