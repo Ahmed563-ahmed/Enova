@@ -1251,7 +1251,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         self.timer_text = bs.newnode('text',
             attrs={
                 'text': self._format_time(self.remaining_time),
-                'scale': 0.3,
+                'scale': 0.5,
                 'color': (1, 1, 1),
                 'h_align': 'center',
                 'v_align': 'center',
