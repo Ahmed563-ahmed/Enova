@@ -363,6 +363,9 @@ NEON_COLORS = {
     'purple': (0.5, 0, 1)
 }
 
+# ثابت لمدة العداد الزمني المستقل (بالثواني)
+CUSTOM_TIMER_DURATION = 300  # 5 دقائق
+
 # ba_meta export bascenev1.GameActivity
 class SoccerGame(bs.TeamGameActivity[Player, Team]):
     creator = "XERO Club"
@@ -565,10 +568,10 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         else:
             self.scoreboard = Scoreboard()
         
-        # متغيرات العداد الزمني المخصص
+        # متغيرات العداد الزمني المخصص (مستقل عن الإعدادات)
         self.timer_text: Optional[bs.Node] = None
         self.timer_running = False
-        self.remaining_time = self.match_time
+        self.remaining_time = CUSTOM_TIMER_DURATION  # استخدام القيمة الثابتة
 
     # ==================== تحميل الإعدادات من JSON ====================
     def load_config(self):
@@ -1229,12 +1232,8 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         
         self.map_highlights()
         
-        # إعداد العداد الزمني المخصص بدلاً من المؤقت القياسي
-        if self.time_limit > 0:
-            self._setup_custom_timer()
-        else:
-            # إذا كان الوقت لا نهائي، نخفي العداد
-            self.timer_text = None
+        # إعداد العداد الزمني المخصص (يعمل دائماً)
+        self._setup_custom_timer()
         
         self.ball_spawn_pos = self.map.get_flag_position(None)
         
@@ -1251,7 +1250,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         self.timer_text = bs.newnode('text',
             attrs={
                 'text': self._format_time(self.remaining_time),
-                'scale': 0.5,
+                'scale': 1.8,
                 'color': (1, 1, 1),
                 'h_align': 'center',
                 'v_align': 'center',
