@@ -1254,7 +1254,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                 'color': (1, 1, 1),
                 'h_align': 'center',
                 'v_align': 'center',
-                'position': (0, -220),  # أعلى المنتصف بقليل
+                'position': (0, -250),  # أعلى المنتصف بقليل
                 'shadow': 1.0,
                 'flatness': 1.0,
                 'big': True,
@@ -1296,16 +1296,16 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
             
             # تكبير النص قليلاً مع كل ثانية
             bs.animate(self.timer_text, 'scale', {
-                0: 1.8,
-                0.1: 2.2,
-                0.2: 1.8
+                0: 0.7,
+                0.1: 0.9,
+                0.2: 0.7
             })
         else:
             # لون عادي مع نبض خفيف كل ثانية
             bs.animate(self.timer_text, 'scale', {
-                0: 1.8,
-                0.05: 2.0,
-                0.1: 1.8
+                0: 0.7,
+                0.05: 1.0,
+                0.1: 0.7
             })
         
         # تقليل الوقت
