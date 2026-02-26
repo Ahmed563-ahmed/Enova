@@ -564,6 +564,11 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
             )]
         else:
             self.scoreboard = Scoreboard()
+        
+        # متغيرات العداد الزمني المخصص
+        self.timer_text: Optional[bs.Node] = None
+        self.timer_running = False
+        self.remaining_time = self.match_time
 
     # ==================== تحميل الإعدادات من JSON ====================
     def load_config(self):
@@ -1223,7 +1228,14 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         self.apply_weather()
         
         self.map_highlights()
-        self.setup_standard_time_limit(self.time_limit)
+        
+        # إعداد العداد الزمني المخصص بدلاً من المؤقت القياسي
+        if self.time_limit > 0:
+            self._setup_custom_timer()
+        else:
+            # إذا كان الوقت لا نهائي، نخفي العداد
+            self.timer_text = None
+        
         self.ball_spawn_pos = self.map.get_flag_position(None)
         
         if self.gk_mode:
@@ -1232,6 +1244,76 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
             self._update_scoreboard()
             self.spawn_ball()
             self.start_border_lights_animation()
+
+    def _setup_custom_timer(self):
+        """إنشاء عداد زمني مخصص في أعلى منتصف الشاشة"""
+        # إنشاء نص العداد
+        self.timer_text = bs.newnode('text',
+            attrs={
+                'text': self._format_time(self.remaining_time),
+                'scale': 0.3,
+                'color': (1, 1, 1),
+                'h_align': 'center',
+                'v_align': 'center',
+                'position': (0, -200),  # أعلى المنتصف بقليل
+                'shadow': 1.0,
+                'flatness': 1.0,
+                'big': True,
+                'v_attach': 'top'
+            })
+        
+        # بدء العد التنازلي
+        self.timer_running = True
+        self._update_timer()
+
+    def _format_time(self, seconds: int) -> str:
+        """تحويل الثواني إلى صيغة MM:SS"""
+        mins = seconds // 60
+        secs = seconds % 60
+        return f"{mins:02d}:{secs:02d}"
+
+    def _update_timer(self):
+        """تحديث العداد كل ثانية"""
+        if not self.timer_running or self.has_ended():
+            return
+        
+        if self.remaining_time <= 0:
+            # انتهاء الوقت - إنهاء اللعبة
+            self.timer_text.text = "00:00"
+            self.end_game()
+            return
+        
+        # تحديث النص
+        time_str = self._format_time(self.remaining_time)
+        self.timer_text.text = time_str
+        
+        # تأثيرات عند اقتراب النهاية (آخر 10 ثوانٍ)
+        if self.remaining_time <= 10:
+            # لون أحمر وميض
+            if self.remaining_time % 2 == 0:
+                self.timer_text.color = (1, 0, 0)
+            else:
+                self.timer_text.color = (1, 1, 1)
+            
+            # تكبير النص قليلاً مع كل ثانية
+            bs.animate(self.timer_text, 'scale', {
+                0: 1.8,
+                0.1: 2.2,
+                0.2: 1.8
+            })
+        else:
+            # لون عادي مع نبض خفيف كل ثانية
+            bs.animate(self.timer_text, 'scale', {
+                0: 1.8,
+                0.05: 2.0,
+                0.1: 1.8
+            })
+        
+        # تقليل الوقت
+        self.remaining_time -= 1
+        
+        # جدولة التحديث التالي بعد ثانية
+        bs.timer(1.0, self._update_timer)
 
     def show_points_animation(self, player, points, color):
         """عرض أنيميشن للنقاط مع خلفية جميلة"""
@@ -1336,6 +1418,9 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
 
     def end_game(self) -> None:
         """إنهاء المباراة – تحديث إحصائيات الفوز/الخسارة/التعادل"""
+        # إيقاف العداد
+        self.timer_running = False
+        
         # ⭐ تحديد الفائز والخاسر أو التعادل
         winner = None
         loser = None
@@ -2072,5 +2157,3 @@ class SoccerMap(maps.HockeyStadium):
 class SoccerPlugin(babase.Plugin):
     def on_app_running(self) -> None:
         bs._map.register_map(SoccerMap)
-"""Killer"""
-"""Modded by Killer#0001"""
