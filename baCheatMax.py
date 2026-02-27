@@ -5499,7 +5499,103 @@ class Commands:
                     pass
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
-    
+    class SimpleMatchCommand(bs.Plugin):
+        def on_app_running(self):
+            # تثبيت الفلتر
+            bs.app.chat_filter = self.filter_chat
+
+        def filter_chat(self, msg: str, client_id: int):
+            if msg.startswith('/match'):
+                self.process_match_command(msg, client_id)
+                return None
+            return msg
+
+        def process_match_command(self, msg: str, client_id: int):
+            try:
+                parts = msg.split()
+                if len(parts) < 3:
+                    self.client_message(client_id, "❌ Use: /match <r,g,b left> <r,g,b right>")
+                    return
+
+                # تحليل الألوان
+                try:
+                    r1, g1, b1 = map(float, parts[1].split(','))
+                    color_left = (r1, g1, b1)
+                    r2, g2, b2 = map(float, parts[2].split(','))
+                    color_right = (r2, g2, b2)
+                except:
+                    self.client_message(client_id, "❌ Invalid color format. Use r,g,b (e.g., 1,0,0)")
+                    return
+
+                activity = bs.get_foreground_host_activity()
+                if not activity:
+                    self.client_message(client_id, "❌ No active game")
+                    return
+
+                shared = SharedObjects.get()
+                solid_material = bs.Material()
+                solid_material.add_actions(
+                    conditions=('they_have_material', shared.player_material),
+                    actions=(
+                        ('modify_part_collision', 'collide', True),
+                        ('modify_part_collision', 'physical', True)))
+
+                with activity.context:
+                    # منصة يسرى
+                    pos_left = (-4.0, 0.25, -3.0)
+                    size = (4.0, 0.5, 1.9)
+                    bs.newnode('locator',
+                        attrs={
+                            'shape': 'box',
+                            'position': pos_left,
+                            'color': color_left,
+                            'opacity': 1.0,
+                            'draw_beauty': True,
+                            'additive': False,
+                            'size': size
+                        })
+                    bs.newnode('region',
+                        attrs={
+                            'position': pos_left,
+                            'scale': size,
+                            'type': 'box',
+                            'materials': (shared.footing_material, solid_material)
+                        })
+
+                    # منصة يمنى
+                    pos_right = (4.0, 0.25, -3.0)
+                    bs.newnode('locator',
+                        attrs={
+                            'shape': 'box',
+                            'position': pos_right,
+                            'color': color_right,
+                            'opacity': 1.0,
+                            'draw_beauty': True,
+                            'additive': False,
+                            'size': size
+                        })
+                    bs.newnode('region',
+                        attrs={
+                            'position': pos_right,
+                            'scale': size,
+                            'type': 'box',
+                            'materials': (shared.footing_material, solid_material)
+                        })
+
+                    # أعلام
+                    Flag(position=(-6.0, 0.0, -3.0), color=color_left).autoretain()
+                    Flag(position=(-2.0, 0.0, -3.0), color=color_left).autoretain()
+                    Flag(position=(2.0, 0.0, -3.0), color=color_right).autoretain()
+                    Flag(position=(6.0, 0.0, -3.0), color=color_right).autoretain()
+
+                self.client_message(client_id, "✅ Match created!")
+
+            except Exception as e:
+                self.client_message(client_id, f"❌ Error: {str(e)}")
+                print(f"Match error: {e}")
+
+        def client_message(self, client_id: int, text: str):
+            bs.screenmessage(text, clients=[client_id], transient=True)
     def process_reports_command(self, client_id: int):
         """عرض التقارير"""
         try:
