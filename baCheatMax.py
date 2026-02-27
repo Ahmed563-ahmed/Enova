@@ -5625,6 +5625,8 @@ class Commands:
         except Exception as e:
             print(f"❌ Error in process_ban_command: {e}")
             self.clientmessage(f"❌ خطأ: {str(e)[:50]}", color=(1,0,0))
+
+    # ==================== الأمر /match - إنشاء مستطيلين + أربعة أعلام ====================
     def process_match_command(self, msg: str, client_id: int):
         """إنشاء مستطيلين (أيسر وأيمن) بلونين مختلفين، مع أربعة أعلام (علمين لكل جانب)"""
         try:
@@ -5722,6 +5724,8 @@ class Commands:
 
         except Exception as e:
             self.clientmessage(f"❌ Error in /match: {str(e)[:50]}", color=(1,0,0))
+
+        # ==================== باقي الدوال (process_unban_command, process_report_command, إلخ) ====================
     def process_unban_command(self, msg: str, client_id: int):
         """إلغاء حظر لاعب"""
         try:
