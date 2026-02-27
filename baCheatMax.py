@@ -8,7 +8,7 @@ import shutil
 import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Sequence
-
+import traceback
 import bascenev1 as bs
 import bauiv1 as bui
 import babase as ba
@@ -4969,7 +4969,144 @@ class Commands:
                     pass
         except Exception as e:
             self.clientmessage(f"❌ Warn error: {str(e)[:50]}", color=(1,0,0))
+    def process_match_command(self, msg: str, client_id: int):
+        """إنشاء مستطيلين (أيسر وأيمن) بلونين مختلفين، مع أربعة أعلام (علمين لكل جانب)"""
+        
+        try:
+            print(f"🔥 DEBUG: /match called by client {client_id}")
+            
+            # ✅ التحقق من أن المستخدم مشرف
+            if not self.fct.user_is_admin(client_id):
+                self.clientmessage("❌ You must be an admin to use this command.", color=(1,0,0))
+                print("❌ DEBUG: User not admin")
+                return
 
+            parts = msg.split()
+            print(f"🔥 DEBUG: parts = {parts}")
+            
+            if len(parts) < 3:
+                self.clientmessage("❌ Use: /match <r,g,b left> <r,g,b right>", color=(1,0,0))
+                self.clientmessage("📝 Example: /match 1,0,0 0,0,1", color=(1,1,0))
+                print("❌ DEBUG: Not enough arguments")
+                return
+
+            # تحليل اللون الأول (الأيسر)
+            try:
+                r1, g1, b1 = map(float, parts[1].split(','))
+                color_left = (r1, g1, b1)
+                print(f"🔥 DEBUG: color_left = {color_left}")
+            except Exception as e:
+                self.clientmessage("❌ Invalid left color format. Use r,g,b (e.g., 1,0,0)", color=(1,0,0))
+                print(f"❌ DEBUG: Left color error: {e}")
+                return
+
+            # تحليل اللون الثاني (الأيمن)
+            try:
+                r2, g2, b2 = map(float, parts[2].split(','))
+                color_right = (r2, g2, b2)
+                print(f"🔥 DEBUG: color_right = {color_right}")
+            except Exception as e:
+                self.clientmessage("❌ Invalid right color format. Use r,g,b (e.g., 0,0,1)", color=(1,0,0))
+                print(f"❌ DEBUG: Right color error: {e}")
+                return
+
+            activity = bs.get_foreground_host_activity()
+            if not activity:
+                self.clientmessage("❌ No active game. Please start a game first (e.g., Soccer).", color=(1,0,0))
+                print("❌ DEBUG: No activity")
+                return
+
+            print(f"🔥 DEBUG: Activity found: {activity}")
+
+            # إعداد المواد للوقوف على المنصات
+            from bascenev1lib.gameutils import SharedObjects
+            shared = SharedObjects.get()
+            print("🔥 DEBUG: SharedObjects obtained")
+
+            solid_material = bs.Material()
+            solid_material.add_actions(
+                conditions=('they_have_material', shared.player_material),
+                actions=(
+                    ('modify_part_collision', 'collide', True),
+                    ('modify_part_collision', 'physical', True)))
+            print("🔥 DEBUG: solid_material created")
+
+            with activity.context:
+                print("🔥 DEBUG: Inside activity.context")
+                
+                # ===== المنصة اليسرى =====
+                pos_left = (-4.0, 0.25, -3.0)
+                size_left = (4.0, 0.5, 1.9)
+                print(f"🔥 DEBUG: Creating left platform at {pos_left}")
+                
+                platform_left = bs.newnode('locator',
+                    attrs={
+                        'shape': 'box',
+                        'position': pos_left,
+                        'color': color_left,
+                        'opacity': 1.0,
+                        'draw_beauty': True,
+                        'additive': False,
+                        'size': size_left
+                    })
+                print("🔥 DEBUG: left platform node created")
+                
+                region_left = bs.newnode('region',
+                    attrs={
+                        'position': pos_left,
+                        'scale': size_left,
+                        'type': 'box',
+                        'materials': (shared.footing_material, solid_material)
+                    })
+                print("🔥 DEBUG: left region node created")
+
+                # ===== المنصة اليمنى =====
+                pos_right = (4.0, 0.25, -3.0)
+                size_right = (4.0, 0.5, 1.9)
+                print(f"🔥 DEBUG: Creating right platform at {pos_right}")
+                
+                platform_right = bs.newnode('locator',
+                    attrs={
+                        'shape': 'box',
+                        'position': pos_right,
+                        'color': color_right,
+                        'opacity': 1.0,
+                        'draw_beauty': True,
+                        'additive': False,
+                        'size': size_right
+                    })
+                print("🔥 DEBUG: right platform node created")
+                
+                region_right = bs.newnode('region',
+                    attrs={
+                        'position': pos_right,
+                        'scale': size_right,
+                        'type': 'box',
+                        'materials': (shared.footing_material, solid_material)
+                    })
+                print("🔥 DEBUG: right region node created")
+
+                # ===== الأعلام (4) =====
+                from bascenev1lib.actor.flag import Flag
+                print("🔥 DEBUG: Imported Flag")
+                
+                Flag(position=(-6.0, 0.0, -3.0), color=color_left).autoretain()
+                print("🔥 DEBUG: Flag 1 created")
+                Flag(position=(-2.0, 0.0, -3.0), color=color_left).autoretain()
+                print("🔥 DEBUG: Flag 2 created")
+                Flag(position=(2.0, 0.0, -3.0), color=color_right).autoretain()
+                print("🔥 DEBUG: Flag 3 created")
+                Flag(position=(6.0, 0.0, -3.0), color=color_right).autoretain()
+                print("🔥 DEBUG: Flag 4 created")
+
+            self.clientmessage(f"✅ Match setup created with left color {color_left} and right color {color_right}", color=(0,1,0))
+            print("🔥 DEBUG: Command completed successfully")
+
+        except Exception as e:
+            # طباعة الخطأ الكامل في السجل
+            print(f"❌❌❌ ERROR in /match: {e}")
+            traceback.print_exc()  # هذا سيطبع الـ traceback الكامل في السجل
+            self.clientmessage(f"❌ An error occurred: {str(e)[:100]}", color=(1,0,0))
     def process_warns_command(self, msg: str, client_id: int):
         try:
             self.util.update_usernames()
@@ -5362,110 +5499,7 @@ class Commands:
                     pass
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
-    def process_match_command(self, msg: str, client_id: int):
-        """إنشاء مستطيلين (أيسر وأيمن) بلونين مختلفين، مع أربعة أعلام (علمين لكل جانب)"""
-        try:
-            # ✅ التحقق من أن المستخدم مشرف
-            if not self.fct.user_is_admin(client_id):
-                self.clientmessage("❌ You must be an admin to use this command.", color=(1,0,0))
-                return
-
-            parts = msg.split()
-            if len(parts) < 3:
-                self.clientmessage("❌ Use: /match <r,g,b left> <r,g,b right>", color=(1,0,0))
-                self.clientmessage("📝 Example: /match 1,0,0 0,0,1", color=(1,1,0))
-                return
-
-            # تحليل اللون الأول (الأيسر)
-            try:
-                r1, g1, b1 = map(float, parts[1].split(','))
-                color_left = (r1, g1, b1)
-            except Exception:
-                self.clientmessage("❌ Invalid left color format. Use r,g,b (e.g., 1,0,0)", color=(1,0,0))
-                return
-
-            # تحليل اللون الثاني (الأيمن)
-            try:
-                r2, g2, b2 = map(float, parts[2].split(','))
-                color_right = (r2, g2, b2)
-            except Exception:
-                self.clientmessage("❌ Invalid right color format. Use r,g,b (e.g., 0,0,1)", color=(1,0,0))
-                return
-
-            activity = bs.get_foreground_host_activity()
-            if not activity:
-                self.clientmessage("❌ No active game. Please start a game first (e.g., Soccer).", color=(1,0,0))
-                return
-
-            # إعداد المواد للوقوف على المنصات
-            shared = SharedObjects.get()
-            solid_material = bs.Material()
-            solid_material.add_actions(
-                conditions=('they_have_material', shared.player_material),
-                actions=(
-                    ('modify_part_collision', 'collide', True),
-                    ('modify_part_collision', 'physical', True)))
-
-            with activity.context:
-                # ===== المنصة اليسرى =====
-                pos_left = (-4.0, 0.25, -3.0)
-                size_left = (4.0, 0.5, 1.9)  # عرض 4 وحدات
-                platform_left = bs.newnode('locator',
-                    attrs={
-                        'shape': 'box',
-                        'position': pos_left,
-                        'color': color_left,
-                        'opacity': 1.0,
-                        'draw_beauty': True,
-                        'additive': False,
-                        'size': size_left
-                    })
-                # منطقة تصادم للمنصة اليسرى
-                region_left = bs.newnode('region',
-                    attrs={
-                        'position': pos_left,
-                        'scale': size_left,
-                        'type': 'box',
-                        'materials': (shared.footing_material, solid_material)
-                    })
-
-                # ===== المنصة اليمنى =====
-                pos_right = (4.0, 0.25, -3.0)
-                size_right = (4.0, 0.5, 1.9)
-                platform_right = bs.newnode('locator',
-                    attrs={
-                        'shape': 'box',
-                        'position': pos_right,
-                        'color': color_right,
-                        'opacity': 1.0,
-                        'draw_beauty': True,
-                        'additive': False,
-                        'size': size_right
-                    })
-                region_right = bs.newnode('region',
-                    attrs={
-                        'position': pos_right,
-                        'scale': size_right,
-                        'type': 'box',
-                        'materials': (shared.footing_material, solid_material)
-                    })
-
-                # ===== الأعلام (4) =====
-                # العلم الأيسر للمنصة اليسرى (عند x = -6)
-                Flag(position=(-6.0, 0.0, -3.0), color=color_left).autoretain()
-                # العلم الأيمن للمنصة اليسرى (عند x = -2)
-                Flag(position=(-2.0, 0.0, -3.0), color=color_left).autoretain()
-                # العلم الأيسر للمنصة اليمنى (عند x = 2)
-                Flag(position=(2.0, 0.0, -3.0), color=color_right).autoretain()
-                # العلم الأيمن للمنصة اليمنى (عند x = 6)
-                Flag(position=(6.0, 0.0, -3.0), color=color_right).autoretain()
-
-            self.clientmessage(f"✅ Match setup created with left color {color_left} and right color {color_right}", color=(0,1,0))
-
-        except Exception as e:
-            # طباعة الخطأ في سجل اللعبة (logs) وإرسال رسالة للمستخدم
-            print(f"❌ Error in /match: {e}")
-            self.clientmessage(f"❌ An error occurred: {str(e)[:50]}", color=(1,0,0))
+    
     def process_reports_command(self, client_id: int):
         """عرض التقارير"""
         try:
