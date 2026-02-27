@@ -558,14 +558,14 @@ class Uts:
     @staticmethod
     def refresh_player_status(client_id: int) -> bool:
         """
-        تفحص حالة اللاعب (أدمن، كابتن، عضو نادي، تاج) وتحدث الكاش.
+        تفحص حالة اللاعب (أدمن، كابتن، عضو نادي، تاج) وتحدث الكاش فقط عند التغيير.
         تعيد True إذا تغيرت الحالة، False إذا بقيت كما هي.
         """
         old = Uts.player_status_cache.get(client_id, {})
         now = time.time()
 
-        # إذا مر أقل من 5 ثوانٍ على آخر تحديث، نتجاهل (لتجنب التكرار)
-        if old.get('timestamp', 0) > now - 5:
+        # إذا كان هناك كاش قديم ولم يمر وقت طويل، نتجنب الفحص المتكرر
+        if old.get('timestamp', 0) > now - 5:  # 5 ثوان حد أدنى
             return False
 
         new_status = {
@@ -2042,55 +2042,69 @@ class TagSystem:
 
     def quick_apply_tags(self, activity):
         """
-        تطبيق التيجان بناءً على كاش الحالة، مع تطبيقها فقط عند تغير الحالة.
+        تطبيق التيجان بناءً على كاش الحالة، مع تقليل تردد فحص الأدمن.
         """
         try:
             if not activity or not hasattr(activity, 'players'):
                 return
+            now = time.time()
             for player in activity.players:
                 try:
                     if not player.is_alive() or not player.actor or not player.actor.node:
                         continue
                     client_id = player.sessionplayer.inputdevice.client_id
 
-                    # تحديث حالة اللاعب في الكاش، إذا تغيرت نعيد تطبيق التيجان
-                    if Uts.refresh_player_status(client_id):
-                        # الحالة تغيرت، نعيد تطبيق كل شيء
-                        self.remove_tag_visual(client_id)
-                        self.stop_char_animation(client_id)
-                        self.stop_animation(client_id)
-                        if Uts.clubs_system:
-                            Uts.clubs_system.remove_club_tag(client_id)
+                    # تحديد ما إذا كنا بحاجة لتحديث الحالة
+                    need_refresh = True
+                    if client_id in Uts.player_status_cache:
+                        cached = Uts.player_status_cache[client_id]
+                        if cached.get('admin'):
+                            # الأدمن: نفحص كل 30 ثانية فقط
+                            if now - cached.get('timestamp', 0) < 30:
+                                need_refresh = False
+                        else:
+                            # اللاعبون العاديون: نفحص كل 3 ثوان
+                            if now - cached.get('timestamp', 0) < 3:
+                                need_refresh = False
 
-                        # الآن نطبق التيجان حسب الحالة الجديدة
-                        status = Uts.player_status_cache.get(client_id, {})
-                        if status.get('admin'):
-                            # الأدمن لا يحتاج تيجان (أو يمكن وضع تاج خاص بالأدمن)
-                            continue
+                    if need_refresh:
+                        if Uts.refresh_player_status(client_id):
+                            # الحالة تغيرت، نعيد تطبيق كل شيء
+                            self.remove_tag_visual(client_id)
+                            self.stop_char_animation(client_id)
+                            self.stop_animation(client_id)
+                            if Uts.clubs_system:
+                                Uts.clubs_system.remove_club_tag(client_id)
 
-                        account_id = Uts.get_reliable_pb_id(client_id)
-                        if account_id and account_id in Uts.pdata:
-                            player_data = Uts.pdata[account_id]
+                    # الآن نطبق التيجان حسب الحالة الحالية (المخزنة)
+                    status = Uts.player_status_cache.get(client_id, {})
+                    if status.get('admin'):
+                        # الأدمن لا يحتاج تيجان (يمكنك إضافة تاج خاص بالأدمن هنا إذا أردت)
+                        continue
 
-                            # تطبيق تاج النادي إذا كان عضو
-                            if status.get('club_member'):
-                                club_info = player_data.get('club')
-                                if club_info:
-                                    club_id = club_info['club-id']
-                                    club_data = Uts.clubs_system.get_club_by_id(club_id) if Uts.clubs_system else None
-                                    if club_data:
-                                        role = club_info.get('role', 'player')
-                                        Uts.clubs_system.create_club_tag(player.actor, client_id, club_data, role, activity)
+                    account_id = Uts.get_reliable_pb_id(client_id)
+                    if account_id and account_id in Uts.pdata:
+                        player_data = Uts.pdata[account_id]
 
-                            # تطبيق تاج عادي/متحرك إذا كان موجوداً (وليس أدمن)
-                            if 'Tag' in player_data and not status.get('admin'):
-                                tag_data = player_data['Tag']
-                                if tag_data.get('type') == 'animated':
-                                    self.create_animated_tag_gradual(player, client_id, tag_data, activity)
-                                else:
-                                    self.create_tag_with_char_animation(player, client_id, tag_data['text'],
-                                                                      tuple(tag_data.get('color', (1,1,1))),
-                                                                      tag_data.get('scale', 0.03), activity)
+                        # تطبيق تاج النادي إذا كان عضو
+                        if status.get('club_member'):
+                            club_info = player_data.get('club')
+                            if club_info:
+                                club_id = club_info['club-id']
+                                club_data = Uts.clubs_system.get_club_by_id(club_id) if Uts.clubs_system else None
+                                if club_data:
+                                    role = club_info.get('role', 'player')
+                                    Uts.clubs_system.create_club_tag(player.actor, client_id, club_data, role, activity)
+
+                        # تطبيق تاج عادي/متحرك إذا كان موجوداً (وليس أدمن)
+                        if 'Tag' in player_data and not status.get('admin'):
+                            tag_data = player_data['Tag']
+                            if tag_data.get('type') == 'animated':
+                                self.create_animated_tag_gradual(player, client_id, tag_data, activity)
+                            else:
+                                self.create_tag_with_char_animation(player, client_id, tag_data['text'],
+                                                                  tuple(tag_data.get('color', (1,1,1))),
+                                                                  tag_data.get('scale', 0.03), activity)
                 except Exception as e:
                     continue
         except Exception as e:
@@ -7844,9 +7858,10 @@ def start_status_monitor():
                 for player in activity.players:
                     if player.is_alive():
                         client_id = player.sessionplayer.inputdevice.client_id
-                        # تحديث الكاش
-                        Uts.refresh_player_status(client_id)
-                # بعد التحديث، نطبق التيجان على من تغيرت حالتهم
+                        # تحديث الكاش فقط عند الضرورة (سيتم التحكم بالتردد داخل quick_apply_tags)
+                        # لا حاجة لاستدعاء refresh هنا، لأن quick_apply_tags ستفعل ذلك
+                        pass
+                # نطبق التيجان على من تغيرت حالتهم
                 Uts.tag_system.quick_apply_tags(activity)
         except Exception as e:
             print(f"⚠️ Status monitor error: {e}")
