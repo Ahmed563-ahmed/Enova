@@ -488,7 +488,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         self.ball_tex = self.ball_textures.get(int(settings.get('Ball Texture', 1)), 
                                               bs.gettexture('ouyaUButton'))
         self.ball_model = bs.getmesh('shield')
-        self.ball_sound = bs.getsound('metalHit')
+        self.ball_sound = bs.getsound('impact')  # لن يُستخدم بعد الآن
         
         # المواد
         self.ball_material = bs.Material()
@@ -502,9 +502,10 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
             conditions=(('we_are_younger_than', 100), 'and',
                         ('they_have_material', shared.object_material)),
             actions=('modify_node_collision', 'collide', True))
-        self.ball_material.add_actions(
-            conditions=('they_have_material', shared.footing_material),
-            actions=('impact_sound', self.ball_sound, 0.2, 5))
+        # تم إزالة سطر الصوت هنا
+        # self.ball_material.add_actions(
+        #     conditions=('they_have_material', shared.footing_material),
+        #     actions=('impact_sound', self.ball_sound, 0.5, 5))
         self.ball_material.add_actions(
             conditions=('they_have_material', shared.player_material),
             actions=(('call', 'at_connect', self.handle_ball_player_collide)))
