@@ -552,6 +552,7 @@ class Uts:
     # نظام الأندية (سيتم إنشاؤه لاحقاً)
     clubs_system = None
     disco_lights: list[bs.Node] = []
+    disco_active: bool = False
 
     # ==================== كاش حالة اللاعبين (جديد) ====================
     player_status_cache: dict[int, dict] = {}  # client_id -> {admin: bool, captain: bool, club_member: bool, tag: str, timestamp}
@@ -1571,10 +1572,10 @@ class Uts:
         def _restore_tags():
             try:
                 if Uts.clubs_system:
-                    Uts.clubs_system.apply_club_tag(client_id)
+                    Uts.clubs_system.apply_club_tag(client_id)   # <-- علق هذا السطر
 
                 if Uts.tag_system:
-                    Uts.tag_system.apply_tag(client_id)
+                    Uts.tag_system.apply_tag(client_id)          # <-- وعلق هذا السطر
             except Exception as e:
                 print(f"⚠️ Failed to restore tag for {client_id}: {e}")
 
@@ -1810,6 +1811,7 @@ class Uts:
                 if cid is not None:
                     return cid
         return None
+            # إعادة تطبيق التاج بعد الدخول
     
 
 
