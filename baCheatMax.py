@@ -4003,10 +4003,10 @@ class Commands:
             self.process_match_command(msg, self.client_id)
             self.value = '@'
         elif ms[0] == '/disco':
-            self.process_disco_command(client_id)
+            self.process_disco_command(msg, self.client_id)
             self.value = '@'
         elif ms[0] == '/disdisco':
-            self.process_disdisco_command(client_id)
+            self.process_disdisco_command(msg, self.client_id)
             self.value = '@'
     def owner_commands(self) -> None:
         msg = self.msg.strip()
