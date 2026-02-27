@@ -1572,10 +1572,12 @@ class Uts:
         def _restore_tags():
             try:
                 if Uts.clubs_system:
-                    Uts.clubs_system.apply_club_tag(client_id)   # <-- علق هذا السطر
+                    # Uts.clubs_system.apply_club_tag(client_id)  # غير موجودة، تم التعليق
+                    pass
 
                 if Uts.tag_system:
-                    Uts.tag_system.apply_tag(client_id)          # <-- وعلق هذا السطر
+                    # Uts.tag_system.apply_tag(client_id)          # غير موجودة، تم التعليق
+                    pass
             except Exception as e:
                 print(f"⚠️ Failed to restore tag for {client_id}: {e}")
 
@@ -1811,8 +1813,6 @@ class Uts:
                 if cid is not None:
                     return cid
         return None
-            # إعادة تطبيق التاج بعد الدخول
-    
 
 
 # ==================== LeaderboardDisplay (يُعرف بعد Uts) ====================
@@ -2064,6 +2064,10 @@ class TagSystem:
                         cached = Uts.player_status_cache[client_id]
                         if cached.get('admin'):
                             # الأدمن: نفحص كل 30 ثانية فقط
+                            if now - cached.get('timestamp', 0) < 30:
+                                need_refresh = False
+                        elif cached.get('tag') is not None:
+                            # إذا كان لديه تاج، نفحص كل 30 ثانية أيضاً (لا نريد إعادة تطبيقه كثيراً)
                             if now - cached.get('timestamp', 0) < 30:
                                 need_refresh = False
                         else:
@@ -5044,7 +5048,7 @@ class Commands:
             self.clientmessage(f"✅ Placed {color_str} {shape} at ({x},{y},{z})", color=(0,1,0))
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
-    def process_disco_command(self, client_id: int):
+    def process_disco_command(self, msg: str, client_id: int):
         """تفعيل وضع الديسكو: 20 ضوء بألوان عشوائية وتأثير tint متغير"""
         activity = bs.get_foreground_host_activity()
         if not activity:
@@ -5052,7 +5056,7 @@ class Commands:
             return
 
         # إزالة أي أضواء سابقة
-        self.process_disdisco_command(client_id)
+        self.process_disdisco_command(msg, client_id)
 
         with activity.context:
             gnode = activity.globalsnode
@@ -5113,7 +5117,7 @@ class Commands:
 
         self.clientmessage("🪩 Disco mode activated! (20 lights, random colors)", color=(0,1,1))
 
-    def process_disdisco_command(self, client_id: int):
+    def process_disdisco_command(self, msg: str, client_id: int):
         """إيقاف الديسكو وإزالة الأضواء وإعادة tint إلى الوضع الطبيعي"""
         activity = bs.get_foreground_host_activity()
         if not activity:
@@ -8023,6 +8027,7 @@ def final_setup():
 ║ • Auto-remove all tags on leave: ✓ Added (based on PlayersDisplay) ║
 ║ • **NEW** Player Status Cache: ✓ Optimized (checks admin first, then club/tag) ║
 ║   └─ Tags applied only when status changes, no spam.         ║
+║ • **NEW** Disco Command: ✓ Added (/disco & /disdisco)        ║
 ╚══════════════════════════════════════════╝
     """
     for line in welcome_msg.split('\n'):
@@ -8289,4 +8294,3 @@ bs.apptimer(8.0, system_test)
 print("=" * 50)
 print("CheatMax System Code Loaded Successfully!")
 print("=" * 50)
-
