@@ -551,6 +551,7 @@ class Uts:
     warns_data = {}
     # نظام الأندية (سيتم إنشاؤه لاحقاً)
     clubs_system = None
+    disco_lights: list[bs.Node] = []
 
     # ==================== كاش حالة اللاعبين (جديد) ====================
     player_status_cache: dict[int, dict] = {}  # client_id -> {admin: bool, captain: bool, club_member: bool, tag: str, timestamp}
@@ -1809,6 +1810,7 @@ class Uts:
                 if cid is not None:
                     return cid
         return None
+    
 
 
 # ==================== LeaderboardDisplay (يُعرف بعد Uts) ====================
@@ -2961,7 +2963,7 @@ class CommandFunctions:
             '/weather', '/tops', '-statsrestart',
             '/club', '/photo', '/photoclear',   # الأمر الجديد
             # ===== الأوامر الجديدة لـ A-Soccer =====
-            '/backtext', '/fronttext', '/grab', '/fighting', '/match'
+            '/backtext', '/fronttext', '/grab', '/fighting', '/match','/disco', '/disdisco'
         ]
 
     @staticmethod
@@ -4000,6 +4002,12 @@ class Commands:
         elif ms[0] == '/match':
             self.process_match_command(msg, self.client_id)
             self.value = '@'
+        elif ms[0] == '/disco':
+            self.process_disco_command(client_id)
+            self.value = '@'
+        elif ms[0] == '/disdisco':
+            self.process_disdisco_command(client_id)
+            self.value = '@'
     def owner_commands(self) -> None:
         msg = self.msg.strip()
         ms = self.arguments
@@ -5034,7 +5042,93 @@ class Commands:
             self.clientmessage(f"✅ Placed {color_str} {shape} at ({x},{y},{z})", color=(0,1,0))
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
+    def process_disco_command(self, client_id: int):
+        """تفعيل وضع الديسكو: 20 ضوء بألوان عشوائية وتأثير tint متغير"""
+        activity = bs.get_foreground_host_activity()
+        if not activity:
+            self.clientmessage("❌ No active game", color=(1,0,0))
+            return
 
+        # إزالة أي أضواء سابقة
+        self.process_disdisco_command(client_id)
+
+        with activity.context:
+            gnode = activity.globalsnode
+            # بدء تأثير tint متغير عشوائياً كل 0.5 ثانية
+            def disco_tint():
+                if not hasattr(Uts, 'disco_active') or not Uts.disco_active:
+                    return
+                r = random.uniform(0.2, 1.0)
+                g = random.uniform(0.2, 1.0)
+                b = random.uniform(0.2, 1.0)
+                # تجنب الأبيض (كل القيم > 0.9 معاً)
+                if r > 0.9 and g > 0.9 and b > 0.9:
+                    r = 0.3
+                bs.animate_array(gnode, 'tint', 3, {
+                    0: gnode.tint,
+                    0.07: (0, 0, 0),
+                    0.3: (r, g, b)
+                })
+                # إعادة الجدولة بعد ثانية
+                bs.apptimer(0.5, disco_tint)
+
+            Uts.disco_active = True
+            disco_tint()
+
+            # إنشاء 20 ضوء في مواقع عشوائية
+            for _ in range(20):
+                x = random.uniform(-15, 15)
+                y = random.uniform(1, 10)
+                z = random.uniform(-15, 15)
+                # لون عشوائي مع تجنب الأبيض
+                r = random.uniform(0.2, 1.0)
+                g = random.uniform(0.2, 1.0)
+                b = random.uniform(0.2, 1.0)
+                if r > 0.9 and g > 0.9 and b > 0.9:
+                    r = 0.3
+                light = bs.newnode('light',
+                    attrs={
+                        'position': (x, y, z),
+                        'color': (r, g, b),
+                        'radius': 0.5,        # حجم صغير
+                        'intensity': 2.0,
+                        'height_attenuated': False
+                    })
+                # تغيير لون الضوء بشكل عشوائي كل 0.3 ثانية
+                def disco_light(light_node):
+                    if not hasattr(Uts, 'disco_active') or not Uts.disco_active:
+                        return
+                    r2 = random.uniform(0.2, 1.0)
+                    g2 = random.uniform(0.2, 1.0)
+                    b2 = random.uniform(0.2, 1.0)
+                    if r2 > 0.9 and g2 > 0.9 and b2 > 0.9:
+                        r2 = 0.3
+                    light_node.color = (r2, g2, b2)
+                    bs.apptimer(0.3, lambda: disco_light(light_node))
+
+                disco_light(light)
+                Uts.disco_lights.append(light)
+
+        self.clientmessage("🪩 Disco mode activated! (20 lights, random colors)", color=(0,1,1))
+
+    def process_disdisco_command(self, client_id: int):
+        """إيقاف الديسكو وإزالة الأضواء وإعادة tint إلى الوضع الطبيعي"""
+        activity = bs.get_foreground_host_activity()
+        if not activity:
+            self.clientmessage("❌ No active game", color=(1,0,0))
+            return
+
+        Uts.disco_active = False
+        with activity.context:
+            gnode = activity.globalsnode
+            gnode.tint = (1, 1, 1)  # إعادة اللون الأصلي
+            # إزالة جميع أضواء الديسكو
+            for light in Uts.disco_lights:
+                if light and light.exists():
+                    light.delete()
+            Uts.disco_lights.clear()
+
+        self.clientmessage("✅ Disco mode disabled. Lights removed.", color=(0,1,0))
     def process_spawnball_command(self, msg: str, client_id: int):
         """إنشاء كرة قدم قابلة للضرب"""
         try:
@@ -8193,3 +8287,4 @@ bs.apptimer(8.0, system_test)
 print("=" * 50)
 print("CheatMax System Code Loaded Successfully!")
 print("=" * 50)
+
