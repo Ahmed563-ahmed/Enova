@@ -711,6 +711,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
         self.kill_ball()
         bs.timer(self.gmbsd, self.gk_setup)
 
+    
     def handle_score(self) -> None:
         try:
             assert self.ball is not None
@@ -718,38 +719,51 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
             gnode = bs.getactivity().globalsnode
             region = bs.getcollision().sourcenode
             index = 0
+            
             for i in range(len(self.score_regions)):
                 if region == self.score_regions[i].node:
                     index = i
                     break
+            
             scoring_team = None
-            team_color = (1, 1, 1)
+            team_color = (1, 1, 1)  
+            
             for team in self.teams:
                 if team.id == index:
                     team.score += 1
                     scoring_team = team
                     team_color = team.color
+                    
                     for player in scoring_team.players:
                         if player.actor:
                             player.actor.handlemessage(bs.CelebrateMessage(self.bsd))
+            
             if scoring_team is not None:
                 goal_time = bs.time()
+                
                 scorer = None
                 assister = None
+                
                 if scoring_team.id in self.ball.all_players_touched:
                     scorer = self.ball.all_players_touched[scoring_team.id]
+                    
                 if hasattr(self.ball, 'hit_timestamps') and self.ball.hit_timestamps:
                     sorted_timestamps = sorted(self.ball.hit_timestamps, key=lambda x: x[1], reverse=True)
+                    
                     for player, hit_time in sorted_timestamps:
                         if player is None or not hasattr(player, 'team') or player.team is None:
                             continue
+                        
                         if player == scorer:
                             continue
+                        
                         if player.team.id == scoring_team.id:
                             time_diff = goal_time - hit_time
+                            
                             if time_diff <= 3.0:
                                 assister = player
                                 break
+                
                 if scorer is None:
                     for player in scoring_team.players:
                         if player is not None and player in self.ball.all_players_hitted:
@@ -757,11 +771,14 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                             try:
                                 if hasattr(scorer, 'getname'):
                                     scorer_name = scorer.getname()
-                            except:
-                                pass
+                            except Exception as e:
+                                print(f"Error in fallback scorer: {e}")
                             break
+                
+                # ⭐ تحديث الإحصائيات – هدف + تمريرة حاسمة
                 if scorer is not None:
                     self._update_stats_goal(scorer, assister)
+                
                 try:
                     pos = bs.getcollision().position
                     explosion = bs.newnode('explosion', attrs={
@@ -771,6 +788,7 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                     })
                 except:
                     pass
+                
                 try:
                     bs.animate_array(gnode, 'tint', 3, {0: gnode.tint, 0.07: (0, 0, 0), 0.3: gnode.tint})
                     bs.cameraflash(duration=1 if int(self.bsd) < 1 else int(self.bsd))
@@ -778,21 +796,318 @@ class SoccerGame(bs.TeamGameActivity[Player, Team]):
                     self.cheer_sound.play()
                 except:
                     pass
+                
                 self.kill_ball()
+                
                 self._update_scoreboard()
+                
                 if scoring_team.score >= self.score_to_win:
                     self.end_game()
             
-            # عرض UI للمسجل والممرر (كما في الكود السابق) - تم اختصاره للطول
-            # يمكن إضافته كاملاً إذا أردت، لكنه ليس ضرورياً للتعديلات الجديدة.
-            
+            if scorer is not None and hasattr(scorer, 'getname'):
+                try:
+                    icon_info = scorer.get_icon()
+                    
+                    border_node = bs.newnode('image',
+                                            attrs={
+                                                'texture': bs.gettexture('circle'),
+                                                'color': team_color,
+                                                'position': (-160, 140),
+                                                'scale': (140, 140),
+                                                'opacity': 0.8,
+                                                'attach': 'center',
+                                                'has_alpha_channel': True
+                                            })
+                    
+                    char_node = bs.newnode('image',
+                                            attrs={
+                                                'texture': icon_info['texture'],
+                                                'tint_texture': icon_info['tint_texture'],
+                                                'tint_color': icon_info['tint_color'],
+                                                'tint2_color': icon_info['tint2_color'],
+                                                'position': (-160, 140),
+                                                'scale': (120, 120),
+                                                'opacity': 1.0,
+                                                'attach': 'center',
+                                                'mask_texture': bs.gettexture('characterIconMask'),
+                                                'vr_depth': -10
+                                            })
+
+                    name_node = bs.newnode('text',
+                                        attrs={
+                                            'text': scorer.getname(),
+                                            'scale': 1.4,
+                                            'color': team_color,
+                                            'h_align': 'left',
+                                            'v_align': 'center',
+                                            'shadow': 0.8,
+                                            'flatness': 1.0,
+                                            'position': (-80, 80),
+                                            'h_attach': 'center',
+                                            'v_attach': 'center',
+                                            'maxwidth': 200,
+                                            'big': True
+                                        })
+
+                    scores_node = bs.newnode('text',
+                                            attrs={
+                                                'text': 'SCORES!',
+                                                'scale': 1.4,
+                                                'color': (1.0, 0.9, 0.0),
+                                                'h_align': 'left',
+                                                'v_align': 'center',
+                                                'shadow': 1.0,
+                                                'flatness': 1.0,
+                                                'position': (-80, 10),
+                                                'h_attach': 'center',
+                                                'v_attach': 'center',
+                                                'big': True,
+                                                'maxwidth': 250
+                                            })
+
+                    display_time = 2.5
+                    
+                    bs.animate_array(border_node, 'scale', 2, {
+                        0.0: (0, 0), 
+                        0.2: (150, 150),
+                        0.3: (140, 140)
+                    })
+                    bs.animate(border_node, 'opacity', {
+                        0.0: 0, 
+                        0.1: 0.6,
+                        0.2: 0.8,
+                        display_time - 0.2: 0.8, 
+                        display_time: 0
+                    })
+                    
+                    bs.animate_array(char_node, 'scale', 2, {
+                        0.1: (0, 0),
+                        0.3: (130, 130),
+                        0.4: (120, 120)
+                    })
+                    bs.animate(char_node, 'opacity', {
+                        0.0: 0, 
+                        0.2: 0.8, 
+                        0.3: 1,
+                        display_time - 0.2: 1, 
+                        display_time: 0
+                    })
+                    
+                    bs.animate(char_node, 'rotate', {
+                        0.3: 0,
+                        0.6: 5,
+                        0.9: -5,
+                        1.2: 0
+                    })
+                    
+                    bs.animate(name_node, 'scale', {
+                        0.0: 0, 
+                        0.15: 0.8,
+                        0.25: 0.65
+                    })
+                    bs.animate(name_node, 'opacity', {
+                        0.0: 0, 
+                        0.1: 0.8,
+                        0.2: 1, 
+                        display_time - 0.2: 1, 
+                        display_time: 0
+                    })
+                    
+                    bs.animate_array(name_node, 'color', 3, {
+                        0.0: team_color,
+                        0.5: (1, 1, 1),
+                        1.0: team_color,
+                        1.5: (1, 1, 1),
+                        2.0: team_color
+                    })
+                    
+                    bs.animate(scores_node, 'scale', {
+                        0.0: 0, 
+                        0.1: 1,
+                        0.15: 0.8,
+                        0.3: 0.7,
+                        0.35: 0.6
+                    })
+                    bs.animate(scores_node, 'opacity', {
+                        0.0: 0, 
+                        0.1: 1, 
+                        display_time - 0.3: 1, 
+                        display_time: 0
+                    })
+                    
+                    bs.animate_array(scores_node, 'color', 3, {
+                        0.0: (1.0, 0.9, 0.0),
+                        0.2: (1.0, 1.0, 1.0),
+                        0.4: (1.0, 0.9, 0.0),
+                        0.6: (1.0, 1.0, 1.0),
+                        0.8: (1.0, 0.9, 0.0),
+                        1.0: (1.0, 1.0, 1.0),
+                        1.2: (1.0, 0.9, 0.0),
+                        1.4: (1.0, 1.0, 1.0),
+                        1.6: (1.0, 0.9, 0.0),
+                        1.8: (1.0, 1.0, 1.0),
+                        2.0: (1.0, 0.9, 0.0)
+                    })
+
+                    bs.timer(display_time + 0.1, border_node.delete)
+                    bs.timer(display_time + 0.1, char_node.delete)
+                    bs.timer(display_time + 0.1, name_node.delete)
+                    bs.timer(display_time + 0.1, scores_node.delete)
+                    
+                    self.ding_sound.play()  
+                    
+                except Exception as e:
+                    print(f"Error showing scorer UI: {e}")
+
+            if assister is not None and hasattr(assister, 'getname'):
+                def show_assister_info():
+                    try:
+                        icon_info = assister.get_icon()
+                        
+                        border_node = bs.newnode('image',
+                                                attrs={
+                                                    'texture': bs.gettexture('circle'),
+                                                    'color': (0.7, 0.7, 1.0),
+                                                    'position': (145, 35),
+                                                    'scale': (40, 40),
+                                                    'opacity': 0.8,
+                                                    'attach': 'center',
+                                                    'has_alpha_channel': True
+                                                })
+                        
+                        char_node = bs.newnode('image',
+                                                attrs={
+                                                    'texture': icon_info['texture'],
+                                                    'tint_texture': icon_info['tint_texture'],
+                                                    'tint_color': icon_info['tint_color'],
+                                                    'tint2_color': icon_info['tint2_color'],
+                                                    'position': (145, 35),
+                                                    'scale': (40, 40),
+                                                    'opacity': 1.0,
+                                                    'attach': 'center',
+                                                    'mask_texture': bs.gettexture('characterIconMask'),
+                                                    'vr_depth': -10
+                                                })
+
+                        name_node = bs.newnode('text',
+                                            attrs={
+                                                'text': assister.getname(),
+                                                'scale': 0.3,
+                                                'color': (0.7, 0.7, 1.0),
+                                                'h_align': 'right',
+                                                'v_align': 'center',
+                                                'shadow': 0.8,
+                                                'flatness': 1.0,
+                                                'position': (80, -50),
+                                                'h_attach': 'center',
+                                                'v_attach': 'center',
+                                                'maxwidth': 200,
+                                                'big': True
+                                            })
+
+                        assist_node = bs.newnode('text',
+                                                attrs={
+                                                    'text': 'ASSIST',
+                                                    'scale': 0.6,
+                                                    'color': (0.5, 1.0, 0.5),
+                                                    'h_align': 'right',
+                                                    'v_align': 'center',
+                                                    'shadow': 1.0,
+                                                    'flatness': 1.0,
+                                                    'position': (80, -95),
+                                                    'h_attach': 'center',
+                                                    'v_attach': 'center',
+                                                    'big': True,
+                                                    'maxwidth': 250
+                                                })
+
+                        display_time = 2.0
+                        
+                        bs.animate_array(border_node, 'scale', 2, {
+                            0.0: (0, 0), 
+                            0.15: (140, 140),
+                            0.25: (80,80)
+                        })
+                        bs.animate(border_node, 'opacity', {
+                            0.0: 0, 
+                            0.1: 0.6,
+                            0.15: 0.8,
+                            display_time - 0.15: 0.8, 
+                            display_time: 0
+                        })
+                        
+                        bs.animate_array(char_node, 'scale', 2, {
+                            0.1: (0, 0), 
+                            0.25: (120, 120),
+                            0.3: (70, 70)
+                        })
+                        bs.animate(char_node, 'opacity', {
+                            0.0: 0, 
+                            0.15: 0.9,
+                            0.2: 1, 
+                            display_time - 0.15: 1, 
+                            display_time: 0
+                        })
+                        
+                        bs.animate(name_node, 'scale', {
+                            0.0: 0, 
+                            0.1: 0.6,
+                            0.15: 0.35
+                        })
+                        bs.animate(name_node, 'opacity', {
+                            0.0: 0, 
+                            0.1: 1, 
+                            display_time - 0.15: 1, 
+                            display_time: 0
+                        })
+                        
+                        bs.animate_array(name_node, 'color', 3, {
+                            0.0: (0.7, 0.7, 1.0),
+                            0.5: (1.0, 1.0, 1.0),
+                            1.0: (0.7, 0.7, 1.0),
+                            1.5: (1.0, 1.0, 1.0)
+                        })
+                        
+                        bs.animate(assist_node, 'scale', {
+                            0.0: 0, 
+                            0.08: 1,
+                            0.12: 0.4
+                        })
+                        bs.animate(assist_node, 'opacity', {
+                            0.0: 0, 
+                            0.08: 1, 
+                            display_time - 0.15: 1, 
+                            display_time: 0
+                        })
+                        
+                        bs.animate_array(assist_node, 'color', 3, {
+                            0.0: (0.5, 1.0, 0.5),
+                            0.2: (1.0, 1.0, 1.0),
+                            0.4: (0.5, 1.0, 0.5),
+                            0.6: (1.0, 1.0, 1.0),
+                            0.8: (0.5, 1.0, 0.5),
+                            1.0: (1.0, 1.0, 1.0),
+                            1.2: (0.5, 1.0, 0.5)
+                        })
+
+                        bs.timer(display_time + 0.1, border_node.delete)
+                        bs.timer(display_time + 0.1, char_node.delete)
+                        bs.timer(display_time + 0.1, name_node.delete)
+                        bs.timer(display_time + 0.1, assist_node.delete)
+                        
+                        self.ding_sound.play()  
+                        
+                    except Exception as e:
+                        print(f"Error showing assister UI: {e}")
+                
+                bs.timer(0.5, show_assister_info)
         except Exception as e:
             print(f"Error in handle_score: {e}")
             import traceback
             traceback.print_exc()
+            
             if hasattr(self, 'kill_ball'):
                 self.kill_ball()
-
     def update_score_gk_mode(self) -> None:
         try:
             if hasattr(self, 'gk_goals_num_txt') and hasattr(self, 'gk_saves_num_txt'):
