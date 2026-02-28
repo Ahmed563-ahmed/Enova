@@ -2930,13 +2930,6 @@ class ClubsSystem:
 
             # تخزين العقد
             self.club_tags[client_id] = [tag_back, tag_front, math_back, math_front]
-
-            # تحديث فوري للرؤوس فوق اللاعبين (كما في سيرفر kokex)
-            try:
-                from club_tag import apply_club_tag
-                apply_club_tag(spaz._player)
-            except:
-                pass
     def remove_club_tag(self, client_id: int):
         """إزالة تاج النادي للاعب"""
         if client_id in self.club_tags:
@@ -3290,25 +3283,6 @@ class CommandFunctions:
     
     @staticmethod
     def user_is_admin(client_id: int) -> bool:
-        """تحقق مما إذا كان اللاعب أدمن (دائم أو مؤقت)"""
-        if client_id == -1:
-            return True
-        
-        # 1. التحقق من الـ PB-ID (الأكثر موثوقية)
-        pb_id = Uts.get_reliable_pb_id(client_id)
-        if pb_id and pb_id.startswith("pb-"):
-            if pb_id in Uts.pdata and Uts.pdata[pb_id].get("Admin", False):
-                return True
-        
-        # 2. التحقق من الحسابات المؤقتة (الجلسة الحالية)
-        if client_id in Uts.accounts:
-            if Uts.accounts[client_id].get("Admin", False):
-                return True
-                
-        # 3. التحقق من pdata باستخدام client_id كمفتاح (للمشاع)
-        temp_key = f"guest_{client_id}"
-        if temp_key in Uts.pdata and Uts.pdata[temp_key].get("Admin", False):
-            return True
         # نعطي الأولوية لـ Uts.accounts (المرتبط بـ client_id) لأنه قد يحتوي على صلاحية حتى للضيوف
         if client_id in Uts.accounts:
             # إذا كان لديه إدخال في accounts، نستخدم صلاحيته مباشرة
@@ -5619,143 +5593,126 @@ class Commands:
 
     # ========== دالة find_target_data محسنة لتحديث userpbs ==========
     def find_target_data(self, target):
-        """
-        البحث عن بيانات اللاعب باستخدام:
-        - Client ID (رقم)
-        - PB-ID (يبدأ بـ pb-)
-        - الاسم الكامل (من usernames أو roster أو pdata)
-        - كلمة 'all' لاستهداف جميع اللاعبين
-        """
-        target = str(target).strip()
-        if not target:
-            return None
-
-        # 1. البحث باستخدام Client ID (رقم صحيح)
+        """البحث عن لاعب باستخدام PB-ID أو Client ID أو الاسم - مع تحديث userpbs"""
         try:
-            c_id = int(target)
-            # التحقق من وجوده في usernames أولاً
-            if c_id in Uts.usernames:
-                name = Uts.usernames[c_id]
-                account_id = Uts.get_reliable_pb_id(c_id)
-                return {
-                    'client_id': c_id,
-                    'account_id': account_id,
-                    'name': name,
-                    'type': 'client_id'
-                }
-            # إذا لم نجده في usernames، نبحث في roster
-            for r in roster():
-                if r.get('client_id') == c_id:
+            if target.startswith('pb-') or '=' in target or (len(target) > 10 and '-' in target):
+                print(f"🔍 Searching by PB-ID: {target}")
+                for client_id, account_id in list(Uts.userpbs.items()):
+                    if account_id == target:
+                        name = Uts.usernames.get(client_id, f"Player {client_id}")
+                        print(f"✅ Found player by PB-ID: {name} (Client ID: {client_id})")
+                        # تحديث userpbs للتأكد
+                        Uts.userpbs[client_id] = target
+                        return {
+                            'client_id': client_id,
+                            'account_id': account_id,
+                            'name': name,
+                            'type': 'pb_id'
+                        }
+                for r in roster():
                     account_id = r.get('account_id')
-                    name = r.get('display_string', f"Player {c_id}")
-                    # تخزين PB-ID في userpbs للاستخدام المستقبلي
-                    if account_id and account_id.startswith('pb-') and c_id is not None:
-                        Uts.userpbs[c_id] = account_id
+                    if account_id == target:
+                        client_id = r.get('client_id')
+                        name = r.get('display_string', f"Player {client_id}")
+                        print(f"✅ Found in roster by PB-ID: {name} (Client ID: {client_id})")
+                        if client_id is not None:
+                            Uts.userpbs[client_id] = target
+                        return {
+                            'client_id': client_id,
+                            'account_id': account_id,
+                            'name': name,
+                            'type': 'pb_id'
+                        }
+            try:
+                target_client_id = int(target)
+                print(f"🔍 Searching by Client ID: {target_client_id}")
+                if target_client_id in Uts.usernames:
+                    name = Uts.usernames[target_client_id]
+                    account_id = Uts.get_reliable_pb_id(target_client_id)  # استخدام الدالة الموحدة
+                    print(f"✅ Found player by Client ID: {name} (Account ID: {account_id})")
                     return {
-                        'client_id': c_id,
+                        'client_id': target_client_id,
                         'account_id': account_id,
                         'name': name,
                         'type': 'client_id'
                     }
-        except ValueError:
-            pass  # ليس Client ID رقمي
-
-        # 2. البحث باستخدام PB-ID (يبدأ بـ pb-)
-        if target.startswith('pb-'):
-            # نبحث عن client_id لهذا الحساب (إذا كان متصلاً حالياً)
-            for c_id, acc in Uts.userpbs.items():
-                if acc == target:
-                    name = Uts.usernames.get(c_id, target)
+                for r in roster():
+                    client_id = r.get('client_id')
+                    if client_id == target_client_id:
+                        account_id = r.get('account_id')
+                        name = r.get('display_string', f"Player {client_id}")
+                        print(f"✅ Found in roster by Client ID: {name} (Account ID: {account_id})")
+                        if account_id and account_id.startswith('pb-') and client_id is not None:
+                            Uts.userpbs[client_id] = account_id
+                        return {
+                            'client_id': client_id,
+                            'account_id': account_id,
+                            'name': name,
+                            'type': 'client_id'
+                        }
+            except ValueError:
+                pass
+            print(f"🔍 Searching by name: {target}")
+            # 1. البحث في usernames
+            for client_id, name in list(Uts.usernames.items()):
+                if name.lower() == target.lower():
+                    account_id = Uts.get_reliable_pb_id(client_id)  # استخدام الدالة الموحدة
+                    print(f"✅ Found player by name in usernames: {name} (Client ID: {client_id}, Account ID: {account_id})")
                     return {
-                        'client_id': c_id,
-                        'account_id': target,
+                        'client_id': client_id,
+                        'account_id': account_id,
                         'name': name,
-                        'type': 'pb_id'
+                        'type': 'name'
                     }
-            # إذا لم يكن متصلاً، نعيد بيانات جزئية
-            return {
-                'client_id': None,
-                'account_id': target,
-                'name': target,
-                'type': 'pb_id'
-            }
-
-        # 3. البحث بالاسم في usernames (قاموس الأسماء الحالية)
-        target_lower = target.lower()
-        for c_id, name in list(Uts.usernames.items()):
-            if name.lower() == target_lower:
-                account_id = Uts.get_reliable_pb_id(c_id)
-                return {
-                    'client_id': c_id,
-                    'account_id': account_id,
-                    'name': name,
-                    'type': 'name'
-                }
-
-        # 4. البحث بالاسم في roster (قائمة اللاعبين الحاليين)
-        for r in roster():
-            display_name = r.get('display_string', '')
-            if display_name.lower() == target_lower:
-                client_id = r.get('client_id')
-                account_id = r.get('account_id')
-                name = display_name
-                if account_id and account_id.startswith('pb-') and client_id is not None:
-                    Uts.userpbs[client_id] = account_id
-                return {
-                    'client_id': client_id,
-                    'account_id': account_id,
-                    'name': name,
-                    'type': 'name'
-                }
-            # البحث في قائمة players داخل كل إدخال
-            for player in r.get('players', []):
-                player_name = player.get('name_full', '')
-                if player_name.lower() == target_lower:
+            # 2. البحث في roster
+            for r in roster():
+                display_name = r.get('display_string', '')
+                if display_name.lower() == target.lower():
                     client_id = r.get('client_id')
                     account_id = r.get('account_id')
+                    print(f"✅ Found in roster by name: {display_name} (Client ID: {client_id}, Account ID: {account_id})")
                     if account_id and account_id.startswith('pb-') and client_id is not None:
                         Uts.userpbs[client_id] = account_id
                     return {
                         'client_id': client_id,
                         'account_id': account_id,
-                        'name': player_name,
+                        'name': display_name,
                         'type': 'name'
                     }
-
-        # 5. البحث في pdata عبر قائمة Accounts (للاعبين غير المتصلين حالياً)
-        for acc_id, acc_data in Uts.pdata.items():
-            accounts_list = acc_data.get('Accounts', [])
-            for stored_name in accounts_list:
-                if stored_name.lower() == target_lower:
-                    # البحث عن client_id لهذا الحساب إذا كان متصلاً
-                    for c_id, pb in Uts.userpbs.items():
-                        if pb == acc_id:
+            # 3. البحث في pdata عن طريق Accounts (مطابقة الاسم مع أي حساب في القائمة)
+            for acc_id, acc_data in Uts.pdata.items():
+                if 'Accounts' in acc_data:
+                    for stored_name in acc_data['Accounts']:
+                        if stored_name.lower() == target.lower():
+                            # نبحث عن client_id لهذا الحساب
+                            for cid, pb in Uts.userpbs.items():
+                                if pb == acc_id:
+                                    return {
+                                        'client_id': cid,
+                                        'account_id': acc_id,
+                                        'name': stored_name,
+                                        'type': 'name'
+                                    }
+                            # إذا لم نجد client_id متصل، نعيد بدون client_id
                             return {
-                                'client_id': c_id,
+                                'client_id': None,
                                 'account_id': acc_id,
                                 'name': stored_name,
                                 'type': 'name'
                             }
-                    # غير متصل، نعيد بدون client_id
-                    return {
-                        'client_id': None,
-                        'account_id': acc_id,
-                        'name': stored_name,
-                        'type': 'name'
-                    }
-
-        # 6. كلمة "all" لاستهداف جميع اللاعبين
-        if target_lower in ['all', 'الكل', 'كل', 'جميع']:
-            return {
-                'client_id': -999,
-                'account_id': 'all',
-                'name': 'All Players',
-                'type': 'all'
-            }
-
-        # 7. لم يتم العثور على أي تطابق
-        print(f"❌ Target not found: {target}")
-        return None
+            if target.lower() in ['all', 'الكل', 'كل', 'جميع']:
+                print(f"🔍 Target is 'all'")
+                return {
+                    'client_id': -999,
+                    'account_id': 'all',
+                    'name': 'All Players',
+                    'type': 'all'
+                }
+            print(f"❌ Target not found: {target}")
+            return None
+        except Exception as e:
+            print(f"❌ Error in find_target_data: {e}")
+            return None
 
     def process_ban_command(self, msg: str, client_id: int):
         """حظر لاعب"""
@@ -6327,29 +6284,50 @@ class Commands:
                             player_name = players_list[0].get('name_full', player_name)
                         
                         # ========== البحث عن PB-ID بثلاث طرق ==========
-                        # Get from roster directly
-                        account_id = r.get("account_id")
-                        if account_id and account_id.startswith("pb-"):
-                            pb_id = account_id
-                            Uts.userpbs[client_id] = pb_id
-                        else:
-                            pb_id = Uts.userpbs.get(client_id, "No PB-ID")
-                        account_id = r.get("account_id")
-                        tag_text = ''
-                        if account_id and account_id in Uts.pdata:
-                            tag_data = Uts.pdata[account_id].get('Tag', {})
-                            tag_text = tag_data.get('text', '')
+                        pb_id = "No PB-ID"
+                        
                         # 1. من account_id في الـ roster (الأكثر دقة)
-                        # 1. Get from roster directly
-                        # 1. Get from roster directly
-                        account_id = r.get("account_id")
-                        if account_id and account_id.startswith("pb-"):
+                        account_id = r.get('account_id')
+                        if account_id and account_id.startswith('pb-'):
                             pb_id = account_id
+                            # تحديث userpbs فوراً
                             Uts.userpbs[client_id] = pb_id
                         else:
-                            # 2. Try userpbs
-                            pb_id = Uts.userpbs.get(client_id, "No PB-ID")
+                            # 2. من userpbs
+                            pb_from_userpbs = Uts.userpbs.get(client_id)
+                            if pb_from_userpbs and pb_from_userpbs.startswith('pb-'):
+                                pb_id = pb_from_userpbs
+                            else:
+                                # 3. البحث في pdata عن طريق مطابقة اسم الحساب
+                                for acc_id, acc_data in Uts.pdata.items():
+                                    if 'Accounts' in acc_data and account_name in acc_data['Accounts']:
+                                        pb_id = acc_id
+                                        # تحديث userpbs للاستخدام المستقبلي
+                                        Uts.userpbs[client_id] = pb_id
+                                        break
+                        
+                        # ========== تحديد الدور ==========
+                        if client_id == -1:
+                            role = "👑 Host"
+                        elif client_id in Uts.accounts and Uts.accounts[client_id].get('Admin', False):
+                            role = "⭐ Admin"
+                        else:
+                            role = "👤 Player"
+                        
+                        # ========== الحصول على التاج ==========
+                        tag_text = "None"
+                        if pb_id != "No PB-ID" and pb_id in Uts.pdata and 'Tag' in Uts.pdata[pb_id]:
+                            tag_data = Uts.pdata[pb_id]['Tag']
+                            tag_text = tag_data.get('text', 'None')
+                        
+                        players_data.append({
+                            'pb_id': pb_id,
+                            'role': role,
+                            'account_name': account_name,
+                            'player_name': player_name,
+                            'client_id': client_id,
                             'tag': tag_text
+                        })
                     except Exception as e:
                         print(f"⚠️ Error processing player in /list: {e}")
                         continue
