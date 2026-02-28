@@ -7391,16 +7391,22 @@ Uts.clubs_system = ClubsSystem()  # الآن ClubsSystem يعرف Uts
 # تم إزالة start_player_monitor بالكامل
 
 # ==================== تعديل handlemessage في PlayerSpaz لإزالة التاج عند الموت ====================
-# نعيد تعريف الدالة مع الاحتفاظ بالأصلية
 original_spaz_handlemessage = PlayerSpaz.handlemessage
 
 def new_spaz_handlemessage(self, msg):
     if isinstance(msg, bs.DieMessage):
         try:
             client_id = self._player.sessionplayer.inputdevice.client_id
-            Uts.remove_all_tags(client_id)
-        except:
-            pass
+            # إزالة التيجان العادية
+            if Uts.tag_system:
+                Uts.tag_system.remove_tag_visual(client_id)
+                Uts.tag_system.stop_char_animation(client_id)
+                Uts.tag_system.stop_animation(client_id)
+            # إزالة تاج النادي
+            if Uts.clubs_system:
+                Uts.clubs_system.remove_club_tag(client_id)
+        except Exception as e:
+            print(f"⚠️ Error removing tags on death: {e}")
     # استدعاء الدالة الأصلية
     original_spaz_handlemessage(self, msg)
 
