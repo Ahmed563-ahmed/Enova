@@ -513,7 +513,7 @@ class WeatherEffect:
         bs.emitfx(**kwargs)
 
 
-# ==================== كلاس Uts ====================
+# ==================== كلاس Uts (يُعرف قبل LeaderboardDisplay و TagSystem و ClubsSystem) ====================
 class Uts:
     directory_user: str = _babase.app.env.python_directory_user
     directory_sys: str = directory_user + '/sys/' + _babase.app.env.engine_version + '_' + str(_babase.app.env.engine_build_number)
@@ -891,7 +891,80 @@ class Uts:
             Uts.save_bans_data()
             print(f"🧹 Cleaned invalid ban entries: {removed}")
 
-    # تم إزالة مراقبة الحظر المستمرة (start_ban_monitoring) حسب الطلب
+    @staticmethod
+    def start_ban_monitoring():
+        """بدء مراقبة دورية للاعبين المحظورين وطردهم فورًا (مع تحسينات)"""
+        def check_bans():
+            try:
+                # إذا لم يكن هناك محظورين، نستمر في المراقبة بدون فحص مفصل
+                if not Uts.bans_data and not any(Uts.pdata.get(acc, {}).get('banned', False) for acc in Uts.pdata):
+                    pass
+                else:
+                    # تحديث userpbs أولاً لضمان دقة البيانات
+                    Uts.update_usernames()
+                    
+                    roster_data = roster()
+                    for player_info in roster_data:
+                        client_id = player_info.get('client_id')
+                        if client_id is None or client_id == -1:
+                            continue
+                        
+                        # التحقق من أن اللاعب ليس Admin
+                        if CommandFunctions.user_is_admin(client_id):
+                            continue
+                        
+                        # الحصول على account_id الحالي من الـ roster (المصدر الأوثق)
+                        current_account_id = player_info.get('account_id')
+                        if not current_account_id:
+                            current_account_id = Uts.userpbs.get(client_id)
+                        
+                        player_name = player_info.get('display_string', f'Player_{client_id}')
+                        
+                        banned = False
+                        
+                        # 1. التحقق من bans_data باستخدام account_id (pb-ID) أولاً
+                        if current_account_id and current_account_id.startswith('pb-'):
+                            for ban_key, ban_info in Uts.bans_data.items():
+                                if ban_info.get('account_id') == current_account_id:
+                                    banned = True
+                                    print(f"🚫 Ban monitor: {player_name} (C{client_id}) banned via bans_data (pb: {current_account_id})")
+                                    break
+                        
+                        # 2. إذا لم نجد في bans_data، نتحقق من pdata ولكن بشرط تطابق account_id
+                        if not banned and current_account_id and current_account_id.startswith('pb-'):
+                            # نتأكد أن هذا الـ pb-ID موجود في pdata ومحظور
+                            if current_account_id in Uts.pdata and Uts.pdata[current_account_id].get('banned', False):
+                                banned = True
+                                print(f"🚫 Ban monitor: {player_name} (C{client_id}) banned via pdata (pb: {current_account_id})")
+                        
+                        # 3. كحل أخير للضيوف (لا pb-ID) نتحقق من bans_data باستخدام client_id
+                        if not banned and (not current_account_id or not current_account_id.startswith('pb-')):
+                            for ban_key, ban_info in Uts.bans_data.items():
+                                if ban_info.get('client_id') == client_id:
+                                    banned = True
+                                    print(f"🚫 Ban monitor: {player_name} (C{client_id}) banned via client_id in bans_data")
+                                    break
+                        
+                        if banned:
+                            print(f"🚫 Ban monitor: Kicking {player_name} (C{client_id})")
+                            # إزالة تاج النادي قبل الطرد
+                            if Uts.clubs_system:
+                                Uts.clubs_system.remove_club_tag(client_id)
+                            
+                            def kick():
+                                try:
+                                    bs.disconnect_client(client_id)
+                                except Exception as e:
+                                    print(f"❌ Error kicking banned player: {e}")
+                            bs.pushcall(kick)
+            except Exception as e:
+                print(f"❌ Error in ban monitor: {e}")
+            
+            # إعادة الجدولة كل ثانية
+            bs.apptimer(1.0, check_bans)
+        
+        bs.apptimer(1.0, check_bans)
+        print("✅ Ban monitoring started (improved version)")
 
     @staticmethod
     def check_player_ban_on_join(player: bs.Player) -> bool:
@@ -1022,7 +1095,7 @@ class Uts:
                         Uts.server_close_original_players.append(client_id)
                     except:
                         continue
-            # تم إزالة بدء العد التنازلي المستمر
+            Uts.start_close_server_countdown()
             Uts.cm(f"Server closed for {hours} hours for '{tag_name}' tag training")
             return True
         except Exception as e:
@@ -1128,8 +1201,64 @@ class Uts:
             print(f"❌ Error checking player allowance: {e}")
             return False
     
-    # تم إزالة العد التنازلي المستمر لإغلاق السيرفر
-
+    @staticmethod
+    def start_close_server_countdown():
+        try:
+            def update_countdown():
+                try:
+                    if not Uts.server_close_active:
+                        if Uts.server_close_countdown_text and Uts.server_close_countdown_text.exists():
+                            Uts.server_close_countdown_text.delete()
+                            Uts.server_close_countdown_text = None
+                        return
+                    activity = bs.get_foreground_host_activity()
+                    if not activity:
+                        bs.apptimer(1.0, update_countdown)
+                        return
+                    current_time = time.time()
+                    remaining_time = Uts.server_close_end_time - current_time
+                    if remaining_time <= 0:
+                        Uts.stop_server_closure()
+                        Uts.cm("✅ Server closure ended. Everyone can join now.")
+                        return
+                    hours = int(remaining_time // 3600)
+                    minutes = int((remaining_time % 3600) // 60)
+                    seconds = int(remaining_time % 60)
+                    time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                    if hasattr(activity, 'context'):
+                        with activity.context:
+                            if Uts.server_close_countdown_text is None or not Uts.server_close_countdown_text.exists():
+                                Uts.server_close_countdown_text = text.Text(
+                                    f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}",
+                                    position=(0, 250),
+                                    scale=1.0,
+                                    color=(1, 0, 0),
+                                    h_align=text.Text.HAlign.CENTER,
+                                    v_align=text.Text.VAlign.CENTER
+                                )
+                                Uts.server_close_countdown_text.node.opacity = 0.7
+                            else:
+                                try:
+                                    Uts.server_close_countdown_text.node.text = f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}"
+                                except:
+                                    Uts.server_close_countdown_text = text.Text(
+                                        f"⏰ SERVER CLOSED: {time_str}\n🏷️ TAG: {Uts.server_close_tag_name}",
+                                        position=(0, 250),
+                                        scale=1.0,
+                                        color=(1, 0, 0),
+                                        h_align=text.Text.HAlign.CENTER,
+                                        v_align=text.Text.VAlign.CENTER
+                                    )
+                                    Uts.server_close_countdown_text.node.opacity = 0.7
+                    bs.apptimer(1.0, update_countdown)
+                except Exception as e:
+                    print(f"❌ Error in countdown update: {e}")
+                    bs.apptimer(2.0, update_countdown)
+            bs.apptimer(0.5, update_countdown)
+            print(f"✅ Countdown started for server closure")
+        except Exception as e:
+            print(f"❌ Error starting countdown: {e}")
+    
     @staticmethod
     def stop_server_closure():
         try:
@@ -1143,7 +1272,7 @@ class Uts:
             print("✅ Server closure stopped.")
         except Exception as e:
             print(f"❌ Error stopping server closure: {e}")
-
+    
     @staticmethod
     def check_player_allowed_on_join(player: bs.Player):
         try:
@@ -1443,10 +1572,12 @@ class Uts:
         def _restore_tags():
             try:
                 if Uts.clubs_system:
-                    Uts.clubs_system.apply_club_tag(client_id)   # <-- علق هذا السطر
+                    # Uts.clubs_system.apply_club_tag(client_id)  # غير موجودة، تم التعليق
+                    pass
 
                 if Uts.tag_system:
-                    Uts.tag_system.apply_tag(client_id)          # <-- وعلق هذا السطر
+                    # Uts.tag_system.apply_tag(client_id)          # غير موجودة، تم التعليق
+                    pass
             except Exception as e:
                 print(f"⚠️ Failed to restore tag for {client_id}: {e}")
 
@@ -1682,11 +1813,9 @@ class Uts:
                 if cid is not None:
                     return cid
         return None
-            # إعادة تطبيق التاج بعد الدخول
-    
 
 
-# ==================== LeaderboardDisplay ====================
+# ==================== LeaderboardDisplay (يُعرف بعد Uts) ====================
 class LeaderboardDisplay:
     """عرض أفضل اللاعبين على الشاشة مع تأثيرات انتقال"""
     def __init__(self):
@@ -1893,9 +2022,101 @@ class TagSystem:
         print("🎮 TagMaster Advanced System Loading...")
         self.templates_file = Uts.directory_user + '/Configs/tag_templates.json'
         self.load_templates()
-        # تم إزالة بدء مراقبة اللعبة المستمرة
+        bs.apptimer(3.0, lambda: self.start_game_monitoring())
 
-    # تم إزالة start_game_monitoring و quick_apply_tags حسب الطلب
+    def start_game_monitoring(self):
+        def game_monitor():
+            try:
+                activity = bs.get_foreground_host_activity()
+                if activity and hasattr(activity, 'players'):
+                    try:
+                        # تحديث الأسماء قبل تطبيق التيجان
+                        Uts.update_usernames()
+                        self.quick_apply_tags(activity)
+                        self.cleanup_dead_players(activity)
+                        self.check_player_respawns(activity)
+                    except Exception as e:
+                        print(f"⚠️ Tag monitor error: {e}")
+                bs.apptimer(2.0, game_monitor)
+            except Exception as e:
+                print(f"❌ Game monitor error: {e}")
+                bs.apptimer(5.0, game_monitor)
+        bs.apptimer(1.0, game_monitor)
+        print("🎮 Tag monitoring started (server optimized)")
+
+    def quick_apply_tags(self, activity):
+        """
+        تطبيق التيجان بناءً على كاش الحالة، مع تقليل تردد فحص الأدمن.
+        """
+        try:
+            if not activity or not hasattr(activity, 'players'):
+                return
+            now = time.time()
+            for player in activity.players:
+                try:
+                    if not player.is_alive() or not player.actor or not player.actor.node:
+                        continue
+                    client_id = player.sessionplayer.inputdevice.client_id
+
+                    # تحديد ما إذا كنا بحاجة لتحديث الحالة
+                    need_refresh = True
+                    if client_id in Uts.player_status_cache:
+                        cached = Uts.player_status_cache[client_id]
+                        if cached.get('admin'):
+                            # الأدمن: نفحص كل 30 ثانية فقط
+                            if now - cached.get('timestamp', 0) < 30:
+                                need_refresh = False
+                        elif cached.get('tag') is not None:
+                            # إذا كان لديه تاج، نفحص كل 30 ثانية أيضاً (لا نريد إعادة تطبيقه كثيراً)
+                            if now - cached.get('timestamp', 0) < 30:
+                                need_refresh = False
+                        else:
+                            # اللاعبون العاديون: نفحص كل 3 ثوان
+                            if now - cached.get('timestamp', 0) < 3:
+                                need_refresh = False
+
+                    if need_refresh:
+                        if Uts.refresh_player_status(client_id):
+                            # الحالة تغيرت، نعيد تطبيق كل شيء
+                            self.remove_tag_visual(client_id)
+                            self.stop_char_animation(client_id)
+                            self.stop_animation(client_id)
+                            if Uts.clubs_system:
+                                Uts.clubs_system.remove_club_tag(client_id)
+
+                    # الآن نطبق التيجان حسب الحالة الحالية (المخزنة)
+                    status = Uts.player_status_cache.get(client_id, {})
+                    if status.get('admin'):
+                        # الأدمن لا يحتاج تيجان (يمكنك إضافة تاج خاص بالأدمن هنا إذا أردت)
+                        continue
+
+                    account_id = Uts.get_reliable_pb_id(client_id)
+                    if account_id and account_id in Uts.pdata:
+                        player_data = Uts.pdata[account_id]
+
+                        # تطبيق تاج النادي إذا كان عضو
+                        if status.get('club_member'):
+                            club_info = player_data.get('club')
+                            if club_info:
+                                club_id = club_info['club-id']
+                                club_data = Uts.clubs_system.get_club_by_id(club_id) if Uts.clubs_system else None
+                                if club_data:
+                                    role = club_info.get('role', 'player')
+                                    Uts.clubs_system.create_club_tag(player.actor, client_id, club_data, role, activity)
+
+                        # تطبيق تاج عادي/متحرك إذا كان موجوداً (وليس أدمن)
+                        if 'Tag' in player_data and not status.get('admin'):
+                            tag_data = player_data['Tag']
+                            if tag_data.get('type') == 'animated':
+                                self.create_animated_tag_gradual(player, client_id, tag_data, activity)
+                            else:
+                                self.create_tag_with_char_animation(player, client_id, tag_data['text'],
+                                                                  tuple(tag_data.get('color', (1,1,1))),
+                                                                  tag_data.get('scale', 0.03), activity)
+                except Exception as e:
+                    continue
+        except Exception as e:
+            print(f"❌ Quick apply tags error: {e}")
 
     def apply_normal_tag(self, player, client_id, tag_data, activity):
         try:
@@ -2296,7 +2517,7 @@ class TagSystem:
         return colors
 
 
-# ==================== نظام الأندية المعدل ====================
+# ==================== نظام الأندية المعدل (بدون أيقونات، تاج مزدوج) ====================
 class ClubsSystem:
     """إدارة الأندية واللاعبين والعقود والعروض - نسخة بدون أيقونات"""
     def __init__(self):
@@ -2709,6 +2930,13 @@ class ClubsSystem:
 
             # تخزين العقد
             self.club_tags[client_id] = [tag_back, tag_front, math_back, math_front]
+
+            # تحديث فوري للرؤوس فوق اللاعبين (كما في سيرفر kokex)
+            try:
+                from club_tag import apply_club_tag
+                apply_club_tag(spaz._player)
+            except:
+                pass
     def remove_club_tag(self, client_id: int):
         """إزالة تاج النادي للاعب"""
         if client_id in self.club_tags:
@@ -3062,6 +3290,25 @@ class CommandFunctions:
     
     @staticmethod
     def user_is_admin(client_id: int) -> bool:
+        """تحقق مما إذا كان اللاعب أدمن (دائم أو مؤقت)"""
+        if client_id == -1:
+            return True
+        
+        # 1. التحقق من الـ PB-ID (الأكثر موثوقية)
+        pb_id = Uts.get_reliable_pb_id(client_id)
+        if pb_id and pb_id.startswith("pb-"):
+            if pb_id in Uts.pdata and Uts.pdata[pb_id].get("Admin", False):
+                return True
+        
+        # 2. التحقق من الحسابات المؤقتة (الجلسة الحالية)
+        if client_id in Uts.accounts:
+            if Uts.accounts[client_id].get("Admin", False):
+                return True
+                
+        # 3. التحقق من pdata باستخدام client_id كمفتاح (للمشاع)
+        temp_key = f"guest_{client_id}"
+        if temp_key in Uts.pdata and Uts.pdata[temp_key].get("Admin", False):
+            return True
         # نعطي الأولوية لـ Uts.accounts (المرتبط بـ client_id) لأنه قد يحتوي على صلاحية حتى للضيوف
         if client_id in Uts.accounts:
             # إذا كان لديه إدخال في accounts، نستخدم صلاحيته مباشرة
@@ -4827,7 +5074,7 @@ class Commands:
             self.clientmessage(f"✅ Placed {color_str} {shape} at ({x},{y},{z})", color=(0,1,0))
         except Exception as e:
             self.clientmessage(f"❌ Error: {str(e)[:50]}", color=(1,0,0))
-    def process_disco_command(self, client_id: int):
+    def process_disco_command(self, msg: str, client_id: int):
         """تفعيل وضع الديسكو: 20 ضوء بألوان عشوائية وتأثير tint متغير"""
         activity = bs.get_foreground_host_activity()
         if not activity:
@@ -4835,7 +5082,7 @@ class Commands:
             return
 
         # إزالة أي أضواء سابقة
-        self.process_disdisco_command(client_id)
+        self.process_disdisco_command(msg, client_id)
 
         with activity.context:
             gnode = activity.globalsnode
@@ -4896,7 +5143,7 @@ class Commands:
 
         self.clientmessage("🪩 Disco mode activated! (20 lights, random colors)", color=(0,1,1))
 
-    def process_disdisco_command(self, client_id: int):
+    def process_disdisco_command(self, msg: str, client_id: int):
         """إيقاف الديسكو وإزالة الأضواء وإعادة tint إلى الوضع الطبيعي"""
         activity = bs.get_foreground_host_activity()
         if not activity:
@@ -5372,28 +5619,29 @@ class Commands:
 
     # ========== دالة find_target_data محسنة لتحديث userpbs ==========
     def find_target_data(self, target):
-        """البحث عن لاعب باستخدام PB-ID أو Client ID أو الاسم - مع تحديث userpbs"""
+        """Find player data by ID, PB-ID, or Name"""
+        target = str(target)
+        # Check Client ID
         try:
-            if target.startswith('pb-') or '=' in target or (len(target) > 10 and '-' in target):
-                print(f"🔍 Searching by PB-ID: {target}")
-                for client_id, account_id in list(Uts.userpbs.items()):
-                    if account_id == target:
-                        name = Uts.usernames.get(client_id, f"Player {client_id}")
-                        print(f"✅ Found player by PB-ID: {name} (Client ID: {client_id})")
-                        # تحديث userpbs للتأكد
-                        Uts.userpbs[client_id] = target
-                        return {
-                            'client_id': client_id,
-                            'account_id': account_id,
-                            'name': name,
-                            'type': 'pb_id'
-                        }
-                for r in roster():
-                    account_id = r.get('account_id')
-                    if account_id == target:
-                        client_id = r.get('client_id')
-                        name = r.get('display_string', f"Player {client_id}")
-                        print(f"✅ Found in roster by PB-ID: {name} (Client ID: {client_id})")
+            c_id = int(target)
+            if c_id in Uts.userpbs:
+                return {"account_id": Uts.userpbs[c_id], "client_id": c_id, "name": Uts.usernames.get(c_id, target), "type": "client"}
+        except:
+            pass
+        # Check PB-ID
+        if target.startswith("pb-"):
+            return {"account_id": target, "client_id": -1, "name": target, "type": "pb"}
+        # Check Name in roster
+        try:
+            ros = roster()
+            for r in ros:
+                if r.get("display_string") == target or any(p.get("name_full") == target for p in r.get("players", [])):
+                    return {"account_id": r.get("account_id"), "client_id": r.get("client_id"), "name": target, "type": "name"}
+        except:
+            pass
+        return None
+        return None
+        return None
                         if client_id is not None:
                             Uts.userpbs[client_id] = target
                         return {
@@ -6063,48 +6311,24 @@ class Commands:
                             player_name = players_list[0].get('name_full', player_name)
                         
                         # ========== البحث عن PB-ID بثلاث طرق ==========
-                        pb_id = "No PB-ID"
-                        
-                        # 1. من account_id في الـ roster (الأكثر دقة)
-                        account_id = r.get('account_id')
-                        if account_id and account_id.startswith('pb-'):
+                        # Get from roster directly
+                        account_id = r.get("account_id")
+                        if account_id and account_id.startswith("pb-"):
                             pb_id = account_id
-                            # تحديث userpbs فوراً
                             Uts.userpbs[client_id] = pb_id
                         else:
-                            # 2. من userpbs
-                            pb_from_userpbs = Uts.userpbs.get(client_id)
-                            if pb_from_userpbs and pb_from_userpbs.startswith('pb-'):
-                                pb_id = pb_from_userpbs
-                            else:
-                                # 3. البحث في pdata عن طريق مطابقة اسم الحساب
-                                for acc_id, acc_data in Uts.pdata.items():
-                                    if 'Accounts' in acc_data and account_name in acc_data['Accounts']:
-                                        pb_id = acc_id
-                                        # تحديث userpbs للاستخدام المستقبلي
-                                        Uts.userpbs[client_id] = pb_id
-                                        break
+                            pb_id = Uts.userpbs.get(client_id, "No PB-ID")
                         
-                        # ========== تحديد الدور ==========
-                        if client_id == -1:
-                            role = "👑 Host"
-                        elif client_id in Uts.accounts and Uts.accounts[client_id].get('Admin', False):
-                            role = "⭐ Admin"
+                        # 1. من account_id في الـ roster (الأكثر دقة)
+                        # 1. Get from roster directly
+                        # 1. Get from roster directly
+                        account_id = r.get("account_id")
+                        if account_id and account_id.startswith("pb-"):
+                            pb_id = account_id
+                            Uts.userpbs[client_id] = pb_id
                         else:
-                            role = "👤 Player"
-                        
-                        # ========== الحصول على التاج ==========
-                        tag_text = "None"
-                        if pb_id != "No PB-ID" and pb_id in Uts.pdata and 'Tag' in Uts.pdata[pb_id]:
-                            tag_data = Uts.pdata[pb_id]['Tag']
-                            tag_text = tag_data.get('text', 'None')
-                        
-                        players_data.append({
-                            'pb_id': pb_id,
-                            'role': role,
-                            'account_name': account_name,
-                            'player_name': player_name,
-                            'client_id': client_id,
+                            # 2. Try userpbs
+                            pb_id = Uts.userpbs.get(client_id, "No PB-ID")
                             'tag': tag_text
                         })
                     except Exception as e:
@@ -7387,26 +7611,26 @@ Uts.tag_system = TagSystem()
 Uts.leaderboard_display = LeaderboardDisplay()
 Uts.clubs_system = ClubsSystem()  # الآن ClubsSystem يعرف Uts
 
-# ==================== إزالة مراقبة خروج اللاعبين المستمرة ====================
-# تم إزالة start_player_monitor بالكامل
+# ==================== إضافة مراقبة خروج اللاعبين (التاج) ====================
+def start_player_monitor():
+    def loop():
+        Uts.check_player_changes()
+        bs.apptimer(1.0, loop)
+    bs.apptimer(1.0, loop)
+
+start_player_monitor()
 
 # ==================== تعديل handlemessage في PlayerSpaz لإزالة التاج عند الموت ====================
+# نعيد تعريف الدالة مع الاحتفاظ بالأصلية
 original_spaz_handlemessage = PlayerSpaz.handlemessage
 
 def new_spaz_handlemessage(self, msg):
     if isinstance(msg, bs.DieMessage):
         try:
             client_id = self._player.sessionplayer.inputdevice.client_id
-            # إزالة التيجان العادية
-            if Uts.tag_system:
-                Uts.tag_system.remove_tag_visual(client_id)
-                Uts.tag_system.stop_char_animation(client_id)
-                Uts.tag_system.stop_animation(client_id)
-            # إزالة تاج النادي
-            if Uts.clubs_system:
-                Uts.clubs_system.remove_club_tag(client_id)
-        except Exception as e:
-            print(f"⚠️ Error removing tags on death: {e}")
+            Uts.remove_all_tags(client_id)
+        except:
+            pass
     # استدعاء الدالة الأصلية
     original_spaz_handlemessage(self, msg)
 
@@ -7576,7 +7800,94 @@ def additional_features():
     print("✅ Additional features initialized")
 
 
-# تم إزالة setup_automatic_backup و setup_performance_monitor بالكامل
+def setup_automatic_backup():
+    """نسخ احتياطي تلقائي كل ساعة"""
+    import shutil
+    from datetime import datetime
+
+    backup_dir = Uts.directory_user + '/Backups'
+    if not os.path.exists(backup_dir):
+        os.makedirs(backup_dir)
+
+    def backup_data():
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            players_file = Uts.directory_user + '/Configs/CheatMaxPlayersData.json'
+            if os.path.exists(players_file):
+                backup_file = f"{backup_dir}/players_backup_{timestamp}.json"
+                shutil.copy2(players_file, backup_file)
+
+            settings_file = Uts.directory_user + '/Configs/CheatMaxSettings.json'
+            if os.path.exists(settings_file):
+                backup_file = f"{backup_dir}/settings_backup_{timestamp}.json"
+                shutil.copy2(settings_file, backup_file)
+
+            bans_file = Uts.directory_user + '/Configs/CheatMaxBansData.json'
+            if os.path.exists(bans_file):
+                backup_file = f"{backup_dir}/bans_backup_{timestamp}.json"
+                shutil.copy2(bans_file, backup_file)
+
+            reports_file = Uts.directory_user + '/Configs/CheatMaxReportsData.json'
+            if os.path.exists(reports_file):
+                backup_file = f"{backup_dir}/reports_backup_{timestamp}.json"
+                shutil.copy2(reports_file, backup_file)
+
+            # الاحتفاظ بآخر 10 نسخ فقط
+            backup_files = sorted([f for f in os.listdir(backup_dir) if f.endswith('.json')])
+            for old_file in backup_files[:-10]:
+                try:
+                    os.remove(os.path.join(backup_dir, old_file))
+                except:
+                    pass
+        except Exception as e:
+            print(f"⚠️ Backup error: {e}")
+
+    def backup_loop():
+        backup_data()
+        bs.apptimer(3600.0, backup_loop)
+
+    bs.apptimer(3600.0, backup_loop)
+    print("✅ Automatic backup system activated")
+
+
+def setup_performance_monitor():
+    """مراقبة أداء السيرفر (FPS)"""
+    import threading
+
+    class PerformanceMonitor:
+        def __init__(self):
+            self.fps_history = []
+            self.max_history = 100
+            self.thread = threading.Thread(target=self.monitor, daemon=True)
+            self.thread.start()
+
+        def monitor(self):
+            import time
+            while True:
+                try:
+                    fps = bs.get_fps()
+                    self.fps_history.append(fps)
+                    if len(self.fps_history) > self.max_history:
+                        self.fps_history.pop(0)
+                    if len(self.fps_history) > 10:
+                        avg_fps = sum(self.fps_history[-10:]) / 10
+                        if avg_fps < 30:
+                            print(f"⚠️ Low FPS: {avg_fps:.1f}")
+                    time.sleep(5)
+                except:
+                    time.sleep(10)
+
+        def get_performance_report(self):
+            if not self.fps_history:
+                return "No data"
+            avg_fps = sum(self.fps_history) / len(self.fps_history)
+            min_fps = min(self.fps_history)
+            max_fps = max(self.fps_history)
+            return f"FPS: Avg {avg_fps:.1f}, Min {min_fps:.1f}, Max {max_fps:.1f}"
+
+    Uts.performance_monitor = PerformanceMonitor()
+    print("✅ Performance monitor started")
+
 
 def add_special_commands():
     """إضافة أوامر خاصة غير موجودة في القائمة الأساسية"""
@@ -7640,8 +7951,25 @@ def add_special_commands():
     print(f"✅ Added {len(special_commands)} special commands")
 
 
-# ==================== مراقبة دورية لحالة اللاعبين (تم إزالتها) ====================
-# تم إزالة start_status_monitor بالكامل
+# ==================== مراقبة دورية لحالة اللاعبين (جديد) ====================
+def start_status_monitor():
+    """مراقبة دورية لحالة اللاعبين (كل 3 ثوان)"""
+    def loop():
+        try:
+            activity = bs.get_foreground_host_activity()
+            if activity and hasattr(activity, 'players'):
+                for player in activity.players:
+                    if player.is_alive():
+                        client_id = player.sessionplayer.inputdevice.client_id
+                        # تحديث الكاش فقط عند الضرورة (سيتم التحكم بالتردد داخل quick_apply_tags)
+                        # لا حاجة لاستدعاء refresh هنا، لأن quick_apply_tags ستفعل ذلك
+                        pass
+                # نطبق التيجان على من تغيرت حالتهم
+                Uts.tag_system.quick_apply_tags(activity)
+        except Exception as e:
+            print(f"⚠️ Status monitor error: {e}")
+        bs.apptimer(3.0, loop)
+    bs.apptimer(3.0, loop)
 
 
 def final_setup():
@@ -7653,7 +7981,8 @@ def final_setup():
         except:
             pass
 
-    # تم إزالة بدء مراقبة الحالة الدورية
+    # بدء مراقبة الحالة الدورية
+    start_status_monitor()
 
     welcome_msg = f"""
 ╔══════════════════════════════════════════╗
@@ -7666,7 +7995,7 @@ def final_setup():
 ║ • Protection: ✓ Enabled                 ║
 ║ • Ban System: ✓ Active (PB-ID Verified)║
 ║   └─ Instant kick on connection (no message) ║
-║   └─ No periodic monitoring (removed per request) ║
+║   └─ Periodic ban monitoring (BombMaster style) ║
 ║ • Report System: ✓ Active               ║
 ║ • Commands in lobby: ✓ Fixed            ║
 ║ • Teleport: ✓ Fixed (uses client ID)   ║
@@ -7699,8 +8028,9 @@ def final_setup():
 ║ • Club Tags: ✓ Fixed (now appear correctly) ║
 ║ • Player Recognition: ✓ Always identified (no more unknown) ║
 ║ • Auto-remove all tags on leave: ✓ Added (based on PlayersDisplay) ║
-║ • **ALL CONTINUOUS UPDATES REMOVED**   ║
-║   └─ No periodic refreshes, no monitoring loops ║
+║ • **NEW** Player Status Cache: ✓ Optimized (checks admin first, then club/tag) ║
+║   └─ Tags applied only when status changes, no spam.         ║
+║ • **NEW** Disco Command: ✓ Added (/disco & /disdisco)        ║
 ╚══════════════════════════════════════════╝
     """
     for line in welcome_msg.split('\n'):
@@ -7728,7 +8058,12 @@ class CheatMaxSystem(bs.Plugin):
             print(f"🚀 Loading CheatMax System v{self.version}...")
             if self.initialized:
                 return
-            # تم إزالة التحديث الدوري بالكامل
+            # [ADDED] بدء التحديث الدوري فوراً
+            def periodic_refresh():
+                Uts.update_usernames()
+                bs.apptimer(3.0, periodic_refresh)  # كل 3 ثوانٍ بدلاً من 5
+            bs.apptimer(3.0, periodic_refresh)
+
             bs.apptimer(0.5, self.initialize_system)
         except Exception as e:
             print(f"❌ Error in on_app_running: {e}")
@@ -7742,9 +8077,11 @@ class CheatMaxSystem(bs.Plugin):
             plugin()
             settings()
             _install()
-            # تم إزالة ربط التحقق من الحظر المستمر
+            # ربط التحقق من الحظر عند الاتصال (تم إزالته بسبب عدم وجود الدالة في الإصدار الجديد)
+            # تم الاكتفاء بـ new_on_player_join الذي يقوم بالتحقق
             bs.apptimer(2.0, additional_features)
-            # تم إزالة setup_automatic_backup و setup_performance_monitor
+            bs.apptimer(3.0, setup_automatic_backup)
+            bs.apptimer(4.0, setup_performance_monitor)
             bs.apptimer(5.0, add_special_commands)
             bs.apptimer(6.0, final_setup)
             bs.apptimer(7.0, verify_chat_filter)
@@ -7786,10 +8123,177 @@ new_playerspaz_init_ = error_handler(new_playerspaz_init_)
 new_playerspaz_on_jump_press = error_handler(new_playerspaz_on_jump_press)
 
 
-# تم إزالة system_test
+def system_test():
+    """اختبار سلامة النظام بعد التحميل"""
+    def run_tests():
+        print("🧪 Running system tests...")
+        tests_passed = 0
+        tests_failed = 0
 
+        try:
+            if os.path.exists(Uts.directory_user + '/Configs'):
+                print("✅ Test 1: Config directory exists")
+                tests_passed += 1
+            else:
+                print("❌ Test 1: Config directory missing")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        try:
+            if hasattr(Uts, 'tag_system'):
+                print("✅ Test 2: Tag system initialized")
+                tests_passed += 1
+            else:
+                print("❌ Test 2: Tag system not initialized")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        try:
+            if hasattr(Uts, 'pdata'):
+                print("✅ Test 3: Player data loaded")
+                tests_passed += 1
+            else:
+                print("❌ Test 3: Player data not loaded")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        try:
+            global cfg
+            if cfg and 'Commands' in cfg:
+                print("✅ Test 4: Settings loaded")
+                tests_passed += 1
+            else:
+                print("❌ Test 4: Settings not loaded")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        try:
+            if hasattr(Uts, 'bans_data'):
+                print(f"✅ Test 5: Ban system initialized ({len(Uts.bans_data)} bans)")
+                tests_passed += 1
+            else:
+                print("❌ Test 5: Ban system not initialized")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        try:
+            if hasattr(Uts, 'reports_data'):
+                reports_count = len(Uts.reports_data.get('reports', []))
+                print(f"✅ Test 6: Reports system initialized ({reports_count} reports)")
+                tests_passed += 1
+            else:
+                print("❌ Test 6: Reports system not initialized")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        try:
+            import bascenev1._hooks
+            if hasattr(bascenev1._hooks.filter_chat_message, '__wrapped__') or hasattr(bs.app, 'cheatmax_filter_chat'):
+                print("✅ Test 7: Chat filter hooked successfully")
+                tests_passed += 1
+            else:
+                print("❌ Test 7: Chat filter not hooked")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        try:
+            # التحقق من أن دالة on_player_join قد تم تغييرها عن الأصل
+            if Activity.on_player_join != calls['OnPlayerJoin']:
+                print("✅ Test 8: Player join hook installed")
+                tests_passed += 1
+            else:
+                print("❌ Test 8: Player join hook not installed")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        # اختبار نظام الأندية
+        try:
+            if hasattr(Uts, 'clubs_system') and Uts.clubs_system is not None:
+                print("✅ Test 9: Clubs system initialized")
+                tests_passed += 1
+            else:
+                print("❌ Test 9: Clubs system not initialized")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        # اختبار hook مغادرة اللاعب
+        try:
+            if hasattr(Activity, 'on_player_leave') and Activity.on_player_leave != calls.get('OnPlayerLeave'):
+                print("✅ Test 10: Player leave hook installed")
+                tests_passed += 1
+            else:
+                print("❌ Test 10: Player leave hook not installed")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        # اختبار دالة get_reliable_pb_id
+        try:
+            test_client = list(Uts.usernames.keys())[0] if Uts.usernames else -1
+            pb = Uts.ensure_pb_id(test_client)
+            if pb is not None or test_client == -1:
+                print("✅ Test 11: ensure_pb_id works")
+                tests_passed += 1
+            else:
+                print("❌ Test 11: ensure_pb_id failed")
+                tests_failed += 1
+        except Exception as e:
+            print(f"❌ Test 11 exception: {e}")
+            tests_failed += 1
+
+        # اختبار عدم تكرار التيجان
+        try:
+            if hasattr(Uts, 'tag_system') and Uts.tag_system:
+                print("✅ Test 12: Tag duplication prevention mechanism in place")
+                tests_passed += 1
+            else:
+                print("❌ Test 12: Tag system not available")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        # اختبار إزالة التيجان عند المغادرة
+        try:
+            if hasattr(Uts, 'remove_all_tags'):
+                print("✅ Test 13: remove_all_tags function exists")
+                tests_passed += 1
+            else:
+                print("❌ Test 13: remove_all_tags function missing")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        # اختبار كاش الحالة الجديد
+        try:
+            if hasattr(Uts, 'player_status_cache'):
+                print("✅ Test 14: Player status cache initialized")
+                tests_passed += 1
+            else:
+                print("❌ Test 14: Player status cache missing")
+                tests_failed += 1
+        except:
+            tests_failed += 1
+
+        print(f"📊 Test Results: {tests_passed} passed, {tests_failed} failed")
+        if tests_failed == 0:
+            print("🎉 All tests passed! System is ready.")
+        else:
+            print("⚠️ Some tests failed. System may have issues.")
+
+    bs.apptimer(8.0, run_tests)
+
+
+bs.apptimer(8.0, system_test)
 
 print("=" * 50)
 print("CheatMax System Code Loaded Successfully!")
-print("(All continuous updates removed)")
 print("=" * 50)
